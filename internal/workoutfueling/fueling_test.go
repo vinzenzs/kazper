@@ -454,3 +454,42 @@ func TestFueling_WorkoutFuelRoundingAtResponseBoundary(t *testing.T) {
 	require.NotNil(t, out.IntraWindow.WorkoutFuel.Totals.CarbsG)
 	assert.Equal(t, 76.8, *out.IntraWindow.WorkoutFuel.Totals.CarbsG)
 }
+
+// ----- RPE + GI distress score surfacing -----
+
+func TestFueling_SurfacesRPEAndGIWhenSet(t *testing.T) {
+	f := setup(t)
+	// Create a workout WITH rehearsal fields.
+	rpe := 7
+	gi := 2
+	w := &workouts.Workout{
+		Source:          workouts.SourceManual,
+		Sport:           workouts.SportBike,
+		StartedAt:       time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC),
+		EndedAt:         time.Date(2026, 7, 15, 9, 30, 0, 0, time.UTC),
+		RPE:             &rpe,
+		GIDistressScore: &gi,
+	}
+	_, err := f.workoutsRepo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+
+	rec := doGet(t, f.r, "/workouts/"+w.ID.String()+"/fueling")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var out workoutfueling.WorkoutFueling
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.NotNil(t, out.RPE)
+	assert.Equal(t, 7, *out.RPE)
+	require.NotNil(t, out.GIDistressScore)
+	assert.Equal(t, 2, *out.GIDistressScore)
+}
+
+func TestFueling_OmitsRPEAndGIWhenNull(t *testing.T) {
+	f := setup(t)
+	id := makeWorkout(t, f.workoutsRepo)
+	rec := doGet(t, f.r, "/workouts/"+id.String()+"/fueling")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.NotContains(t, body, `"rpe"`)
+	assert.NotContains(t, body, `"gi_distress_score"`)
+}

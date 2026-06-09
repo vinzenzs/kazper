@@ -164,6 +164,95 @@ func TestList_WindowFilterAndOrdering(t *testing.T) {
 	assert.Equal(t, "g:later", *rows[1].ExternalID)
 }
 
+// ----- RPE + GI distress score (rehearsal-outcome fields) -----
+
+func TestUpsert_StoresRPEAndGIDistressScore(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	w.RPE = ptrI(7)
+	w.GIDistressScore = ptrI(2)
+	_, err := repo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(context.Background(), w.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.RPE)
+	assert.Equal(t, 7, *got.RPE)
+	require.NotNil(t, got.GIDistressScore)
+	assert.Equal(t, 2, *got.GIDistressScore)
+}
+
+func TestUpsert_OmittedRPEAndGIRemainNull(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	// Don't set RPE/GI — they stay nil.
+	_, err := repo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+	got, err := repo.GetByID(context.Background(), w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.RPE)
+	assert.Nil(t, got.GIDistressScore)
+}
+
+func TestUpsert_DBChecksRejectOutOfRange(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	w.RPE = ptrI(11) // out of 1..10
+	_, err := repo.Upsert(context.Background(), w)
+	require.Error(t, err, "DB CHECK constraint must reject rpe=11")
+}
+
+func TestUpsert_DBChecksRejectOutOfRangeGI(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	w.GIDistressScore = ptrI(6) // out of 1..5
+	_, err := repo.Upsert(context.Background(), w)
+	require.Error(t, err, "DB CHECK constraint must reject gi_distress_score=6")
+}
+
+func TestPatch_SetClearAndLeaveUnchanged(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+
+	w := sample(nil, 600)
+	w.RPE = ptrI(7)
+	w.GIDistressScore = ptrI(2)
+	_, err := repo.Upsert(ctx, w)
+	require.NoError(t, err)
+
+	// Set RPE to 8; leave GI unchanged.
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{
+		RPE: ptrI(8),
+	}))
+	got, err := repo.GetByID(ctx, w.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 8, *got.RPE)
+	assert.Equal(t, 2, *got.GIDistressScore, "untouched field stays at previous value")
+
+	// Clear RPE via the ClearRPE flag.
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{
+		ClearRPE: true,
+	}))
+	got, err = repo.GetByID(ctx, w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.RPE)
+	assert.Equal(t, 2, *got.GIDistressScore, "GI still unchanged")
+
+	// Clear GI too.
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{
+		ClearGIDistressScore: true,
+	}))
+	got, err = repo.GetByID(ctx, w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.RPE)
+	assert.Nil(t, got.GIDistressScore)
+}
+
 func TestList_EmptyWindowReturnsEmpty(t *testing.T) {
 	pool := storetest.NewPool(t)
 	repo := workouts.NewRepo(pool)

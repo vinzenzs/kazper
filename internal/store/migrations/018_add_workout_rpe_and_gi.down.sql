@@ -1,0 +1,2 @@
+ALTER TABLE workouts DROP COLUMN IF EXISTS gi_distress_score;
+ALTER TABLE workouts DROP COLUMN IF EXISTS rpe;

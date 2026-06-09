@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, name, started_at, ended_at, kcal_burned, avg_hr, tss, notes, created_at, updated_at`
+const selectCols = `id, external_id, source, sport, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, notes, created_at, updated_at`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -49,31 +49,39 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
         INSERT INTO workouts (
             id, external_id, source, sport, name,
             started_at, ended_at,
-            kcal_burned, avg_hr, tss, notes,
+            kcal_burned, avg_hr, tss,
+            rpe, gi_distress_score,
+            notes,
             created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7,
-            $8, $9, $10, $11,
-            $12, $13
+            $8, $9, $10,
+            $11, $12,
+            $13,
+            $14, $15
         )
         ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET
-            source       = EXCLUDED.source,
-            sport        = EXCLUDED.sport,
-            name         = EXCLUDED.name,
-            started_at   = EXCLUDED.started_at,
-            ended_at     = EXCLUDED.ended_at,
-            kcal_burned  = EXCLUDED.kcal_burned,
-            avg_hr       = EXCLUDED.avg_hr,
-            tss          = EXCLUDED.tss,
-            notes        = EXCLUDED.notes,
-            updated_at   = EXCLUDED.updated_at
-        RETURNING id, created_at = $12 AS inserted
+            source            = EXCLUDED.source,
+            sport             = EXCLUDED.sport,
+            name              = EXCLUDED.name,
+            started_at        = EXCLUDED.started_at,
+            ended_at          = EXCLUDED.ended_at,
+            kcal_burned       = EXCLUDED.kcal_burned,
+            avg_hr            = EXCLUDED.avg_hr,
+            tss               = EXCLUDED.tss,
+            rpe               = EXCLUDED.rpe,
+            gi_distress_score = EXCLUDED.gi_distress_score,
+            notes             = EXCLUDED.notes,
+            updated_at        = EXCLUDED.updated_at
+        RETURNING id, created_at = $14 AS inserted
     `
 	row := r.q.QueryRow(ctx, q,
 		w.ID, w.ExternalID, string(w.Source), string(w.Sport), w.Name,
 		w.StartedAt, w.EndedAt,
-		w.KcalBurned, w.AvgHR, w.TSS, w.Notes,
+		w.KcalBurned, w.AvgHR, w.TSS,
+		w.RPE, w.GIDistressScore,
+		w.Notes,
 		w.CreatedAt, w.UpdatedAt,
 	)
 	var (
@@ -105,18 +113,29 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Workout, error) {
 }
 
 // PatchParams carries the optional mutable fields. nil pointers mean "leave
-// the existing value unchanged".
+// the existing value unchanged". For the two nullable integer rehearsal
+// signals (rpe, gi_distress_score) we expose a tri-state: nil + ClearX=false
+// means "leave unchanged", non-nil pointer means "set to that value",
+// nil + ClearX=true means "clear to NULL". The handler decodes JSON `null`
+// into ClearX=true (numeric-null-clears convention — see design.md decision #6).
 type PatchParams struct {
 	Name       *string
 	Notes      *string
 	KcalBurned *float64
 	AvgHR      *int
 	TSS        *float64
+
+	RPE                  *int
+	ClearRPE             bool
+	GIDistressScore      *int
+	ClearGIDistressScore bool
 }
 
 // HasUpdates reports whether at least one mutable field is being changed.
 func (p PatchParams) HasUpdates() bool {
-	return p.Name != nil || p.Notes != nil || p.KcalBurned != nil || p.AvgHR != nil || p.TSS != nil
+	return p.Name != nil || p.Notes != nil || p.KcalBurned != nil || p.AvgHR != nil || p.TSS != nil ||
+		p.RPE != nil || p.ClearRPE ||
+		p.GIDistressScore != nil || p.ClearGIDistressScore
 }
 
 // Patch applies a partial update over the mutable subset. Returns ErrNotFound
@@ -148,6 +167,20 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	if p.TSS != nil {
 		sets = append(sets, fmt.Sprintf("tss = $%d", next))
 		args = append(args, *p.TSS)
+		next++
+	}
+	if p.ClearRPE {
+		sets = append(sets, "rpe = NULL")
+	} else if p.RPE != nil {
+		sets = append(sets, fmt.Sprintf("rpe = $%d", next))
+		args = append(args, *p.RPE)
+		next++
+	}
+	if p.ClearGIDistressScore {
+		sets = append(sets, "gi_distress_score = NULL")
+	} else if p.GIDistressScore != nil {
+		sets = append(sets, fmt.Sprintf("gi_distress_score = $%d", next))
+		args = append(args, *p.GIDistressScore)
 		next++
 	}
 	if len(sets) == 1 {
@@ -214,7 +247,9 @@ func scanWorkout(s scanner) (*Workout, error) {
 	err := s.Scan(
 		&w.ID, &w.ExternalID, &sourceStr, &sportStr, &w.Name,
 		&w.StartedAt, &w.EndedAt,
-		&w.KcalBurned, &w.AvgHR, &w.TSS, &w.Notes,
+		&w.KcalBurned, &w.AvgHR, &w.TSS,
+		&w.RPE, &w.GIDistressScore,
+		&w.Notes,
 		&w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {

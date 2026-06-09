@@ -449,3 +449,144 @@ func joinCSV(parts []string) string {
 	return buf.String()
 }
 
+
+// ============================================================================
+// RPE + GI distress score (rehearsal-outcome fields)
+// ============================================================================
+
+func TestPost_WithRPEAndGIDistressScore_Returns201AndEchoesFields(t *testing.T) {
+	f := setup(t)
+	body := `{
+        "source":"manual","sport":"bike",
+        "started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z",
+        "rpe":7,"gi_distress_score":2
+    }`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+	require.NotNil(t, w.RPE)
+	assert.Equal(t, 7, *w.RPE)
+	require.NotNil(t, w.GIDistressScore)
+	assert.Equal(t, 2, *w.GIDistressScore)
+}
+
+func TestPost_WithoutRPEOrGI_OmitsFromResponse(t *testing.T) {
+	f := setup(t)
+	body := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.NotContains(t, rec.Body.String(), `"rpe"`)
+	assert.NotContains(t, rec.Body.String(), `"gi_distress_score"`)
+}
+
+func TestPost_RPEOutOfRange_Returns400WithRangeHint(t *testing.T) {
+	f := setup(t)
+	for _, bad := range []int{0, 11, -1} {
+		body := fmt.Sprintf(`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","rpe":%d}`, bad)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusBadRequest, rec.Code, "rpe=%d", bad)
+		assert.JSONEq(t, `{"error":"rpe_invalid","range":{"min":1,"max":10}}`, rec.Body.String())
+	}
+}
+
+func TestPost_GIOutOfRange_Returns400WithRangeHint(t *testing.T) {
+	f := setup(t)
+	for _, bad := range []int{0, 6, -2, 100} {
+		body := fmt.Sprintf(`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","gi_distress_score":%d}`, bad)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusBadRequest, rec.Code, "gi=%d", bad)
+		assert.JSONEq(t, `{"error":"gi_distress_score_invalid","range":{"min":1,"max":5}}`, rec.Body.String())
+	}
+}
+
+func TestPost_NonIntegerRPE_Returns400_RpeInvalid(t *testing.T) {
+	f := setup(t)
+	// String, float — both rejected with the precise per-field code.
+	body := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","rpe":"seven"}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"rpe_invalid","range":{"min":1,"max":10}}`, rec.Body.String())
+
+	body = `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","rpe":7.5}`
+	rec = doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"rpe_invalid","range":{"min":1,"max":10}}`, rec.Body.String())
+}
+
+func TestPatch_SetRPEAndGI_OnExistingRow(t *testing.T) {
+	f := setup(t)
+	// Create a workout without rehearsal fields, then PATCH them in.
+	postBody := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"}`
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts", postBody)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	patchBody := `{"rpe":7,"gi_distress_score":2}`
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), patchBody)
+	require.Equal(t, http.StatusOK, patchRec.Code, patchRec.Body.String())
+	var got workouts.Workout
+	require.NoError(t, json.Unmarshal(patchRec.Body.Bytes(), &got))
+	require.NotNil(t, got.RPE)
+	assert.Equal(t, 7, *got.RPE)
+	require.NotNil(t, got.GIDistressScore)
+	assert.Equal(t, 2, *got.GIDistressScore)
+}
+
+func TestPatch_ClearRPEViaJSONNull(t *testing.T) {
+	f := setup(t)
+	// Create with both, then PATCH rpe to null.
+	postBody := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","rpe":7,"gi_distress_score":2}`
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts", postBody)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"rpe":null}`)
+	require.Equal(t, http.StatusOK, patchRec.Code, patchRec.Body.String())
+	// Body omits rpe, keeps gi_distress_score=2.
+	body := patchRec.Body.String()
+	assert.NotContains(t, body, `"rpe"`)
+	assert.Contains(t, body, `"gi_distress_score":2`)
+}
+
+func TestPatch_RangeViolationDoesNotPersistOtherField(t *testing.T) {
+	f := setup(t)
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts",
+		`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"}`)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	// rpe=11 invalid; gi_distress_score=3 valid — neither should be written.
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"rpe":11,"gi_distress_score":3}`)
+	require.Equal(t, http.StatusBadRequest, patchRec.Code)
+	assert.JSONEq(t, `{"error":"rpe_invalid","range":{"min":1,"max":10}}`, patchRec.Body.String())
+
+	// Verify nothing was written.
+	getRec := doReq(t, f.r, http.MethodGet, "/workouts/"+w.ID.String(), "")
+	require.Equal(t, http.StatusOK, getRec.Code)
+	body := getRec.Body.String()
+	assert.NotContains(t, body, `"rpe"`)
+	assert.NotContains(t, body, `"gi_distress_score"`)
+}
+
+func TestPatch_LeaveUnchangedWhenAbsent(t *testing.T) {
+	f := setup(t)
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts",
+		`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","rpe":7,"gi_distress_score":2}`)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	// PATCH notes only — RPE/GI absent, must remain.
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"notes":"felt strong"}`)
+	require.Equal(t, http.StatusOK, patchRec.Code, patchRec.Body.String())
+	var got workouts.Workout
+	require.NoError(t, json.Unmarshal(patchRec.Body.Bytes(), &got))
+	require.NotNil(t, got.RPE)
+	assert.Equal(t, 7, *got.RPE)
+	require.NotNil(t, got.GIDistressScore)
+	assert.Equal(t, 2, *got.GIDistressScore)
+}

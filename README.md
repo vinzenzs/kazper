@@ -81,6 +81,10 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `IDEMPOTENCY_TTL_HOURS`  | `24`                                          | How long idempotency records are retained before cleanup             |
 | `MIGRATE_ON_START`       | `true`                                        | Run schema migrations at startup                                     |
 | `SWAGGER_ENABLED`        | `false`                                       | Serve `/swagger/*` in release mode (always served in debug mode)     |
+| `ANTHROPIC_API_KEY`      | _unset_                                       | Enables `POST /meals/from_photo`; when blank the endpoint returns 503 |
+| `CLAUDE_VISION_MODEL`    | `claude-sonnet-4-6`                           | Model used by `/meals/from_photo`                                    |
+| `VISION_TIMEOUT_SECONDS` | `15`                                          | Per-request timeout for the Anthropic call                           |
+| `MEAL_FROM_PHOTO_MAX_BYTES` | `10485760`                                 | Max multipart body for `/meals/from_photo` (10 MB default)           |
 
 ## API at a glance
 
@@ -197,6 +201,34 @@ curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -d '{"workout_id":""}' \
     http://localhost:8080/meals/<uuid>
 ```
+
+#### Photo of meal
+
+`POST /meals/from_photo` accepts a JPEG or PNG of a plate and asks Claude
+Vision to estimate `name` + `nutriments_per_100g`, then logs the result the
+same way `/meals/freeform` would. Useful for "what's in this restaurant
+dish" capture from the mobile app. Requires `ANTHROPIC_API_KEY` to be set
+in the server's env; without it the endpoint returns `503
+vision_unavailable`. HEIC is rejected with `415 unsupported_media_type` —
+convert to JPEG on the client (e.g. iOS Photos export). Max body 10 MB
+(configurable via `MEAL_FROM_PHOTO_MAX_BYTES`).
+
+```bash
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    -F "image=@plate.jpg" \
+    -F "quantity_g=250" \
+    -F "meal_type=lunch" \
+    -F "logged_at=2026-06-09T12:30:00Z" \
+    http://localhost:8080/meals/from_photo
+```
+
+Response is `{"meal": {...}, "inference": {"model": "...",
+"confidence": 0.85, "claude_input_tokens": ..., "claude_output_tokens":
+..., "original_image_bytes": ..., "resized_to": {"width": ..., "height":
+...}}}` — `meal` matches the same envelope the other meal endpoints
+return. Low-confidence results (< 0.5) are still returned; the client
+should prompt the user to verify or edit before saving.
 
 ### Hydration
 
@@ -339,6 +371,22 @@ curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"tss":85,"notes":"FTP changed last month"}' \
+    http://localhost:8080/workouts/<uuid>
+
+# Rehearsal-outcome data: PATCH rpe (Borg CR-10, 1..10) and gi_distress_score
+# (1=no distress, 5=severe) after a fueling-rehearsal session. The canonical
+# post-ride flow — pair with the workout-fuel entries logged during the ride
+# to evaluate "what did I take vs how did it feel."
+curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"rpe":7,"gi_distress_score":2,"notes":"SIS gel at km 60 sat heavy"}' \
+    http://localhost:8080/workouts/<uuid>
+
+# Retract a logged rehearsal value via explicit JSON null (tri-state PATCH).
+# `clear_rpe: true` on the MCP tool is the same effect from the agent side.
+curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"rpe":null}' \
     http://localhost:8080/workouts/<uuid>
 
 # Delete

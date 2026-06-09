@@ -184,3 +184,86 @@ func TestDeleteWorkout_404IsForwardedAsError(t *testing.T) {
 	r := handleDeleteWorkout(context.Background(), c, DeleteWorkoutArgs{ID: "missing"})
 	assert.True(t, r.IsError)
 }
+
+// ----- RPE + GI distress score wrapper tests -----
+
+func TestLogWorkout_RPEAndGIForwardedInBody(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"id":"w1"}`)
+	rpe := 7
+	gi := 2
+	_ = handleLogWorkout(context.Background(), c, LogWorkoutArgs{
+		Source: "manual", Sport: "bike",
+		StartedAt: "2026-07-15T08:00:00Z", EndedAt: "2026-07-15T09:30:00Z",
+		RPE:             &rpe,
+		GIDistressScore: &gi,
+	})
+	require.Len(t, *recs, 1)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal((*recs)[0].body, &body))
+	assert.InDelta(t, 7.0, body["rpe"], 0.001)
+	assert.InDelta(t, 2.0, body["gi_distress_score"], 0.001)
+}
+
+func TestLogWorkout_OmitsRPEAndGIWhenNil(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"id":"w1"}`)
+	_ = handleLogWorkout(context.Background(), c, LogWorkoutArgs{
+		Source: "manual", Sport: "bike",
+		StartedAt: "2026-07-15T08:00:00Z", EndedAt: "2026-07-15T09:30:00Z",
+	})
+	require.Len(t, *recs, 1)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal((*recs)[0].body, &body))
+	_, hasRPE := body["rpe"]
+	assert.False(t, hasRPE)
+	_, hasGI := body["gi_distress_score"]
+	assert.False(t, hasGI)
+}
+
+func TestPatchWorkout_SetRPEAndGI(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"id":"w1","rpe":7}`)
+	rpe := 7
+	gi := 2
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID: "w1", RPE: &rpe, GIDistressScore: &gi,
+	})
+	require.Len(t, *recs, 1)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal((*recs)[0].body, &body))
+	assert.InDelta(t, 7.0, body["rpe"], 0.001)
+	assert.InDelta(t, 2.0, body["gi_distress_score"], 0.001)
+}
+
+func TestPatchWorkout_ClearRPEEncodesJSONNull(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"id":"w1"}`)
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID:       "w1",
+		ClearRPE: true,
+	})
+	require.Len(t, *recs, 1)
+	// Raw JSON contains `"rpe":null` — agent's clear semantic landed on the wire.
+	assert.Contains(t, string((*recs)[0].body), `"rpe":null`)
+}
+
+func TestPatchWorkout_ClearGIEncodesJSONNull(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{}`)
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID:                   "w1",
+		ClearGIDistressScore: true,
+	})
+	require.Len(t, *recs, 1)
+	assert.Contains(t, string((*recs)[0].body), `"gi_distress_score":null`)
+}
+
+func TestPatchWorkout_OmitsRPEAndGIWhenAbsent(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{}`)
+	notes := "felt strong"
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID:    "w1",
+		Notes: &notes,
+	})
+	require.Len(t, *recs, 1)
+	body := string((*recs)[0].body)
+	assert.NotContains(t, body, `"rpe"`)
+	assert.NotContains(t, body, `"gi_distress_score"`)
+	assert.Contains(t, body, `"notes":"felt strong"`)
+}

@@ -18,10 +18,12 @@ type LogWorkoutArgs struct {
 	Name       *string  `json:"name,omitempty" jsonschema:"optional human-readable label, e.g. 'Morning Z2 ride'"`
 	StartedAt  string   `json:"started_at" jsonschema:"RFC 3339 timestamp the workout started"`
 	EndedAt    string   `json:"ended_at" jsonschema:"RFC 3339 timestamp the workout ended; must be after started_at"`
-	KcalBurned *float64 `json:"kcal_burned,omitempty" jsonschema:"calories burned during the session; positive number"`
-	AvgHR      *int     `json:"avg_hr,omitempty" jsonschema:"average heart rate in bpm; positive integer"`
-	TSS        *float64 `json:"tss,omitempty" jsonschema:"Training Stress Score; the intensity signal. Non-negative."`
-	Notes      *string  `json:"notes,omitempty" jsonschema:"free-text notes (e.g. how the fueling went)"`
+	KcalBurned      *float64 `json:"kcal_burned,omitempty" jsonschema:"calories burned during the session; positive number"`
+	AvgHR           *int     `json:"avg_hr,omitempty" jsonschema:"average heart rate in bpm; positive integer"`
+	TSS             *float64 `json:"tss,omitempty" jsonschema:"Training Stress Score; the intensity signal. Non-negative."`
+	RPE             *int     `json:"rpe,omitempty" jsonschema:"Borg CR-10 perceived effort, integer 1..10. Per session — logged after the workout. Nullable; omit for non-rehearsal rides (Z1 spins, gym sessions, etc.)."`
+	GIDistressScore *int     `json:"gi_distress_score,omitempty" jsonschema:"GI distress severity, integer 1..5 (1 = no distress, 5 = severe / couldn't continue). Per session — the rehearsal-outcome signal that lets you iterate fueling strategy. Nullable."`
+	Notes           *string  `json:"notes,omitempty" jsonschema:"free-text notes (e.g. how the fueling went, which product caused issues at minute N)"`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args. Note: writers normally rely on external_id for dedup, not this header."`
 }
@@ -42,6 +44,13 @@ type PatchWorkoutArgs struct {
 	KcalBurned *float64 `json:"kcal_burned,omitempty" jsonschema:"corrected kcal_burned (positive)"`
 	AvgHR      *int     `json:"avg_hr,omitempty" jsonschema:"corrected average heart rate (positive)"`
 	TSS        *float64 `json:"tss,omitempty" jsonschema:"corrected TSS (non-negative)"`
+	// RPE + GI use json.RawMessage so the wrapper can encode three states:
+	// absent (leave unchanged), integer (set), JSON null (clear to NULL).
+	// Use the helper fields RPE/GIDistressScore for set, ClearRPE/ClearGI for null-clear.
+	RPE                  *int `json:"rpe,omitempty" jsonschema:"Borg CR-10 perceived effort 1..10. Per session, set after the workout. Omit to leave unchanged."`
+	ClearRPE             bool `json:"clear_rpe,omitempty" jsonschema:"set true to clear rpe to null (retract a previously logged value). Mutually exclusive with rpe."`
+	GIDistressScore      *int `json:"gi_distress_score,omitempty" jsonschema:"GI distress severity 1..5. Per session. Omit to leave unchanged."`
+	ClearGIDistressScore bool `json:"clear_gi_distress_score,omitempty" jsonschema:"set true to clear gi_distress_score to null. Mutually exclusive with gi_distress_score."`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
@@ -59,27 +68,31 @@ type WorkoutFuelingSummaryArgs struct {
 
 func handleLogWorkout(ctx context.Context, c *apiClient, args LogWorkoutArgs) *mcp.CallToolResult {
 	body, err := json.Marshal(struct {
-		ExternalID *string  `json:"external_id,omitempty"`
-		Source     string   `json:"source"`
-		Sport      string   `json:"sport"`
-		Name       *string  `json:"name,omitempty"`
-		StartedAt  string   `json:"started_at"`
-		EndedAt    string   `json:"ended_at"`
-		KcalBurned *float64 `json:"kcal_burned,omitempty"`
-		AvgHR      *int     `json:"avg_hr,omitempty"`
-		TSS        *float64 `json:"tss,omitempty"`
-		Notes      *string  `json:"notes,omitempty"`
+		ExternalID      *string  `json:"external_id,omitempty"`
+		Source          string   `json:"source"`
+		Sport           string   `json:"sport"`
+		Name            *string  `json:"name,omitempty"`
+		StartedAt       string   `json:"started_at"`
+		EndedAt         string   `json:"ended_at"`
+		KcalBurned      *float64 `json:"kcal_burned,omitempty"`
+		AvgHR           *int     `json:"avg_hr,omitempty"`
+		TSS             *float64 `json:"tss,omitempty"`
+		RPE             *int     `json:"rpe,omitempty"`
+		GIDistressScore *int     `json:"gi_distress_score,omitempty"`
+		Notes           *string  `json:"notes,omitempty"`
 	}{
-		ExternalID: args.ExternalID,
-		Source:     args.Source,
-		Sport:      args.Sport,
-		Name:       args.Name,
-		StartedAt:  args.StartedAt,
-		EndedAt:    args.EndedAt,
-		KcalBurned: args.KcalBurned,
-		AvgHR:      args.AvgHR,
-		TSS:        args.TSS,
-		Notes:      args.Notes,
+		ExternalID:      args.ExternalID,
+		Source:          args.Source,
+		Sport:           args.Sport,
+		Name:            args.Name,
+		StartedAt:       args.StartedAt,
+		EndedAt:         args.EndedAt,
+		KcalBurned:      args.KcalBurned,
+		AvgHR:           args.AvgHR,
+		TSS:             args.TSS,
+		RPE:             args.RPE,
+		GIDistressScore: args.GIDistressScore,
+		Notes:           args.Notes,
 	})
 	if err != nil {
 		return toToolResult(0, nil, &transportError{inner: err})
@@ -118,6 +131,18 @@ func handlePatchWorkout(ctx context.Context, c *apiClient, args PatchWorkoutArgs
 	}
 	if args.TSS != nil {
 		payload["tss"] = *args.TSS
+	}
+	// RPE tri-state: ClearRPE wins (encodes as JSON null → backend clears);
+	// otherwise integer if set; otherwise field absent from payload.
+	if args.ClearRPE {
+		payload["rpe"] = nil
+	} else if args.RPE != nil {
+		payload["rpe"] = *args.RPE
+	}
+	if args.ClearGIDistressScore {
+		payload["gi_distress_score"] = nil
+	} else if args.GIDistressScore != nil {
+		payload["gi_distress_score"] = *args.GIDistressScore
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -158,7 +183,11 @@ func registerWorkoutsTools(server *mcp.Server, c *apiClient) {
 			"user describes after the fact. For manual writes, leave `external_id` null — `external_id` is the " +
 			"dedup mechanism; setting it on an agent-driven entry risks colliding with a future Garmin sync. " +
 			"`tss` is the intensity signal; supply it if you know it, otherwise leave it null and downstream " +
-			"tools will handle the gap.",
+			"tools will handle the gap. " +
+			"`rpe` and `gi_distress_score` are the rehearsal-outcome signals — log them after fueling-rehearsal " +
+			"workouts (e.g. long Z2 rides in race-prep blocks). RPE is Borg CR-10 perceived effort, integer 1..10. " +
+			"GI distress is 1=no distress through 5=severe / had to stop. Both are nullable and only meaningful for " +
+			"sessions you're actively iterating fueling on; skip for everyday Z1 spins and gym work.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args LogWorkoutArgs) (*mcp.CallToolResult, any, error) {
 		return handleLogWorkout(ctx, c, args), nil, nil
 	})
@@ -181,9 +210,14 @@ func registerWorkoutsTools(server *mcp.Server, c *apiClient) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "patch_workout",
 		Description: "Adjust mutable fields on an existing workout. PATCH-able: `name`, `notes`, `kcal_burned`, " +
-			"`avg_hr`, `tss`. IMMUTABLE (delete + re-create if these are wrong): `sport`, `started_at`, " +
-			"`ended_at`, `source`, `external_id`. Typical uses: capture how the fueling went (`notes`), " +
-			"supply a missing kcal estimate, correct TSS after an FTP change.",
+			"`avg_hr`, `tss`, `rpe`, `gi_distress_score`. IMMUTABLE (delete + re-create if these are wrong): " +
+			"`sport`, `started_at`, `ended_at`, `source`, `external_id`. " +
+			"Typical post-ride flow: set `rpe` (Borg CR-10 perceived effort, 1..10) and `gi_distress_score` " +
+			"(1=no distress, 5=severe) on the workout you just rehearsed fueling on. Other typical uses: " +
+			"capture how the fueling went in `notes`, supply a missing kcal estimate, correct TSS after an FTP " +
+			"change. " +
+			"For RPE / GI: omit to leave unchanged, set an integer to overwrite, OR set `clear_rpe: true` / " +
+			"`clear_gi_distress_score: true` to retract a previously logged value (clears to null on the backend).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args PatchWorkoutArgs) (*mcp.CallToolResult, any, error) {
 		return handlePatchWorkout(ctx, c, args), nil, nil
 	})

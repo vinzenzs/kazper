@@ -72,7 +72,14 @@ type Workout struct {
 	KcalBurned *float64 `json:"kcal_burned,omitempty"`
 	AvgHR      *int     `json:"avg_hr,omitempty"`
 	TSS        *float64 `json:"tss,omitempty"`
-	Notes      *string  `json:"notes,omitempty"`
+
+	// Per-session rehearsal-outcome signals — both nullable, set by the user
+	// after a fueling-rehearsal workout. Validated 1..10 (Borg CR-10) and 1..5
+	// (1=no GI distress, 5=severe) at handler + DB CHECK layers.
+	RPE             *int `json:"rpe,omitempty"`
+	GIDistressScore *int `json:"gi_distress_score,omitempty"`
+
+	Notes *string `json:"notes,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

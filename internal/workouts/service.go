@@ -15,9 +15,20 @@ var (
 	ErrSportInvalid         = errors.New("sport_invalid")
 	ErrWindowInvalid        = errors.New("window_invalid")
 	ErrStartedAtFarFuture   = errors.New("started_at_too_far_future")
-	ErrKcalBurnedInvalid    = errors.New("kcal_burned_invalid")
-	ErrAvgHRInvalid         = errors.New("avg_hr_invalid")
-	ErrTSSInvalid           = errors.New("tss_invalid")
+	ErrKcalBurnedInvalid      = errors.New("kcal_burned_invalid")
+	ErrAvgHRInvalid           = errors.New("avg_hr_invalid")
+	ErrTSSInvalid             = errors.New("tss_invalid")
+	ErrRPEInvalid             = errors.New("rpe_invalid")
+	ErrGIDistressScoreInvalid = errors.New("gi_distress_score_invalid")
+)
+
+// RPE + GI distress score bounds. Exposed so handler error responses can echo
+// `range: {min, max}` back to clients without re-encoding the rule.
+const (
+	RPEMin             = 1
+	RPEMax             = 10
+	GIDistressScoreMin = 1
+	GIDistressScoreMax = 5
 )
 
 // Service orchestrates workout CRUD over the repo.
@@ -31,16 +42,18 @@ func NewService(repo *Repo) *Service {
 
 // CreateInput is the payload for POST /workouts.
 type CreateInput struct {
-	ExternalID *string
-	Source     string
-	Sport      string
-	Name       *string
-	StartedAt  time.Time
-	EndedAt    time.Time
-	KcalBurned *float64
-	AvgHR      *int
-	TSS        *float64
-	Notes      *string
+	ExternalID      *string
+	Source          string
+	Sport           string
+	Name            *string
+	StartedAt       time.Time
+	EndedAt         time.Time
+	KcalBurned      *float64
+	AvgHR           *int
+	TSS             *float64
+	RPE             *int
+	GIDistressScore *int
+	Notes           *string
 }
 
 // Upsert validates input and applies the UPSERT-by-external_id semantics. The
@@ -63,16 +76,25 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Workout, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-// PatchInput is the editable subset of PATCH /workouts/{id}.
+// PatchInput is the editable subset of PATCH /workouts/{id}. The two
+// rehearsal-signal fields carry tri-state via the ClearX flag: a non-nil
+// pointer sets, nil + ClearX=true clears to NULL, nil + ClearX=false leaves
+// the field unchanged. The handler decodes JSON `null` into ClearX=true.
 type PatchInput struct {
-	Name       *string
-	Notes      *string
-	KcalBurned *float64
-	AvgHR      *int
-	TSS        *float64
+	Name                 *string
+	Notes                *string
+	KcalBurned           *float64
+	AvgHR                *int
+	TSS                  *float64
+	RPE                  *int
+	ClearRPE             bool
+	GIDistressScore      *int
+	ClearGIDistressScore bool
 }
 
-// Patch validates and applies the partial update.
+// Patch validates and applies the partial update. Range validation runs
+// before any DB write — if any field is out of range, no field is written
+// (transactional validation per the spec scenario).
 func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Workout, error) {
 	if in.KcalBurned != nil {
 		if err := validateKcalBurned(*in.KcalBurned); err != nil {
@@ -89,12 +111,22 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 			return nil, err
 		}
 	}
+	if err := validateRPE(in.RPE); err != nil {
+		return nil, err
+	}
+	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
+		return nil, err
+	}
 	params := PatchParams{
-		Name:       in.Name,
-		Notes:      in.Notes,
-		KcalBurned: in.KcalBurned,
-		AvgHR:      in.AvgHR,
-		TSS:        in.TSS,
+		Name:                 in.Name,
+		Notes:                in.Notes,
+		KcalBurned:           in.KcalBurned,
+		AvgHR:                in.AvgHR,
+		TSS:                  in.TSS,
+		RPE:                  in.RPE,
+		ClearRPE:             in.ClearRPE,
+		GIDistressScore:      in.GIDistressScore,
+		ClearGIDistressScore: in.ClearGIDistressScore,
 	}
 	if err := s.repo.Patch(ctx, id, params); err != nil {
 		return nil, err
@@ -168,17 +200,25 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 			return nil, err
 		}
 	}
+	if err := validateRPE(in.RPE); err != nil {
+		return nil, err
+	}
+	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
+		return nil, err
+	}
 	return &Workout{
-		ExternalID: in.ExternalID,
-		Source:     Source(in.Source),
-		Sport:      Sport(in.Sport),
-		Name:       in.Name,
-		StartedAt:  in.StartedAt,
-		EndedAt:    in.EndedAt,
-		KcalBurned: in.KcalBurned,
-		AvgHR:      in.AvgHR,
-		TSS:        in.TSS,
-		Notes:      in.Notes,
+		ExternalID:      in.ExternalID,
+		Source:          Source(in.Source),
+		Sport:           Sport(in.Sport),
+		Name:            in.Name,
+		StartedAt:       in.StartedAt,
+		EndedAt:         in.EndedAt,
+		KcalBurned:      in.KcalBurned,
+		AvgHR:           in.AvgHR,
+		TSS:             in.TSS,
+		RPE:             in.RPE,
+		GIDistressScore: in.GIDistressScore,
+		Notes:           in.Notes,
 	}, nil
 }
 
@@ -199,6 +239,31 @@ func validateAvgHR(v int) error {
 func validateTSS(v float64) error {
 	if v < 0 {
 		return ErrTSSInvalid
+	}
+	return nil
+}
+
+// validateRPE accepts nil (not set) or an integer in [RPEMin, RPEMax].
+// Returns ErrRPEInvalid for any out-of-range integer.
+func validateRPE(v *int) error {
+	if v == nil {
+		return nil
+	}
+	if *v < RPEMin || *v > RPEMax {
+		return ErrRPEInvalid
+	}
+	return nil
+}
+
+// validateGIDistressScore accepts nil (not set) or an integer in
+// [GIDistressScoreMin, GIDistressScoreMax]. Returns ErrGIDistressScoreInvalid
+// for any out-of-range integer.
+func validateGIDistressScore(v *int) error {
+	if v == nil {
+		return nil
+	}
+	if *v < GIDistressScoreMin || *v > GIDistressScoreMax {
+		return ErrGIDistressScoreInvalid
 	}
 	return nil
 }

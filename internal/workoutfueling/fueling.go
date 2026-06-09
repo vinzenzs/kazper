@@ -73,9 +73,16 @@ type FuelingWindow struct {
 
 // WorkoutFueling is the response shape for GET /workouts/{id}/fueling.
 type WorkoutFueling struct {
-	WorkoutID   uuid.UUID     `json:"workout_id"`
-	StartedAt   time.Time     `json:"started_at"`
-	EndedAt     time.Time     `json:"ended_at"`
+	WorkoutID uuid.UUID `json:"workout_id"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
+
+	// Rehearsal-outcome signals echoed from the underlying workout row when
+	// set. Lets the agent read "perceived effort + GI + fueling totals" in
+	// one call — the natural rehearsal-evaluation shape.
+	RPE             *int `json:"rpe,omitempty"`
+	GIDistressScore *int `json:"gi_distress_score,omitempty"`
+
 	PreWindow   FuelingWindow `json:"pre_window"`
 	IntraWindow FuelingWindow `json:"intra_window"`
 	PostWindow  FuelingWindow `json:"post_window"`
@@ -121,12 +128,14 @@ func (s *Service) FueledFor(ctx context.Context, id uuid.UUID, preMin, postMin i
 	}
 
 	out := &WorkoutFueling{
-		WorkoutID:   w.ID,
-		StartedAt:   w.StartedAt,
-		EndedAt:     w.EndedAt,
-		PreWindow:   buildWindow(preStart, w.StartedAt, preMin, mealsAll, hydAll, fuelAll),
-		IntraWindow: buildWindow(w.StartedAt, w.EndedAt, intraMinutes(w.StartedAt, w.EndedAt), mealsAll, hydAll, fuelAll),
-		PostWindow:  buildWindow(w.EndedAt, postEnd, postMin, mealsAll, hydAll, fuelAll),
+		WorkoutID:       w.ID,
+		StartedAt:       w.StartedAt,
+		EndedAt:         w.EndedAt,
+		RPE:             w.RPE,
+		GIDistressScore: w.GIDistressScore,
+		PreWindow:       buildWindow(preStart, w.StartedAt, preMin, mealsAll, hydAll, fuelAll),
+		IntraWindow:     buildWindow(w.StartedAt, w.EndedAt, intraMinutes(w.StartedAt, w.EndedAt), mealsAll, hydAll, fuelAll),
+		PostWindow:      buildWindow(w.EndedAt, postEnd, postMin, mealsAll, hydAll, fuelAll),
 	}
 	return out, nil
 }

@@ -107,12 +107,16 @@ If you want to know what's happening under the hood:
    NUTRITION_API_URL=http://localhost:8080
    MCP_REQUEST_TIMEOUT_SECONDS=10
    SWAGGER_ENABLED=true
+   # Uncomment to enable POST /meals/from_photo (Claude Vision plate analysis).
+   # Without this, the endpoint returns 503 vision_unavailable.
+   # ANTHROPIC_API_KEY=sk-ant-...
    ```
 
    These dev tokens are not secret — the auth middleware exists so the API
    doesn't accidentally trust unauthenticated clients, not to defend against
    anyone who can already read your filesystem. For production, generate real
-   tokens with `openssl rand -hex 32`.
+   tokens with `openssl rand -hex 32`. `ANTHROPIC_API_KEY` is genuinely
+   secret — keep it out of git.
 
 3. **A banner prints** with the URL, both tokens, and an example curl.
 
@@ -520,6 +524,45 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 
 For a Garmin-shaped re-sync example (POST same `external_id` twice → second call returns 200, not 201)
 see the Workouts section of the main README.
+
+### Fueling-rehearsal round-trip (RPE + GI distress)
+
+After a long ride you'd typically have logged several `workout_fuel` entries
+during the session. To capture *how it felt*, PATCH the workout itself with
+`rpe` (Borg CR-10, 1..10) and `gi_distress_score` (1=no distress, 5=severe).
+Then `GET /workouts/{id}/fueling` reads "perceived effort + GI + carbs/sodium/
+caffeine totals" in one call — the natural shape for evaluating whether the
+fueling strategy worked.
+
+```bash
+# 1. Log a long Z2 ride (manually, or land it via the Garmin importer).
+RIDE_ID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+         \"source\":\"manual\",\"sport\":\"bike\",
+         \"name\":\"Z2 long ride — fueling rehearsal\",
+         \"started_at\":\"$(date -u +%Y-%m-%dT07:00:00Z)\",
+         \"ended_at\":\"$(date -u +%Y-%m-%dT10:00:00Z)\",
+         \"kcal_burned\":1800,\"tss\":110
+       }" \
+    http://localhost:8080/workouts | jq -r .id)
+
+# 2. Log a few workout_fuel entries during the ride (skipped here — see the
+#    Workout fuel section). Each carries carbs/sodium/caffeine/notes.
+
+# 3. After the ride: PATCH rpe + gi_distress_score onto the workout.
+curl -s -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"rpe":7,"gi_distress_score":2,"notes":"third gel sat heavy at km 60"}' \
+    http://localhost:8080/workouts/$RIDE_ID | jq '{rpe, gi_distress_score, notes}'
+
+# 4. /workouts/{id}/fueling now surfaces both fields at the top level alongside
+#    the pre/intra/post window totals — one call for the rehearsal evaluation.
+curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/workouts/$RIDE_ID/fueling" | \
+    jq '{rpe, gi_distress_score, intra_carbs: .intra_window.workout_fuel.totals.carbs_g}'
+# Expected: { "rpe": 7, "gi_distress_score": 2, "intra_carbs": 75 }
+```
 
 ---
 

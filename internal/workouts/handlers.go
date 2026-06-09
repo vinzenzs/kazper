@@ -47,7 +47,13 @@ type createRequest struct {
 	KcalBurned *float64 `json:"kcal_burned,omitempty"`
 	AvgHR      *int     `json:"avg_hr,omitempty"`
 	TSS        *float64 `json:"tss,omitempty"`
-	Notes      *string  `json:"notes,omitempty"`
+	// RPE + GI use RawMessage so non-integer payloads (`"seven"`, `7.5`) can
+	// be rejected with the precise `rpe_invalid` / `gi_distress_score_invalid`
+	// error codes the spec requires — a plain *int would surface `invalid_json`
+	// and lose the field-specific diagnostic.
+	RPE             json.RawMessage `json:"rpe,omitempty"`
+	GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
+	Notes           *string         `json:"notes,omitempty"`
 }
 
 // create godoc
@@ -71,11 +77,27 @@ func (h *Handlers) create(c *gin.Context) {
 	}
 	in, errCode := buildCreateInput(req)
 	if errCode != "" {
-		respondError(c, http.StatusBadRequest, errCode)
+		switch errCode {
+		case "rpe_invalid":
+			respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
+		case "gi_distress_score_invalid":
+			respondRangeError(c, "gi_distress_score_invalid", GIDistressScoreMin, GIDistressScoreMax)
+		default:
+			respondError(c, http.StatusBadRequest, errCode)
+		}
 		return
 	}
 	w, created, err := h.svc.Upsert(c.Request.Context(), in)
 	if err != nil {
+		// rpe / gi_distress_score validation errors carry a `range` hint.
+		if errors.Is(err, ErrRPEInvalid) {
+			respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
+			return
+		}
+		if errors.Is(err, ErrGIDistressScoreInvalid) {
+			respondRangeError(c, "gi_distress_score_invalid", GIDistressScoreMin, GIDistressScoreMax)
+			return
+		}
 		respondServiceError(c, err)
 		return
 	}
@@ -290,11 +312,13 @@ func (h *Handlers) patch(c *gin.Context) {
 			"ended_at":    true,
 		}
 		mutable := map[string]bool{
-			"name":        true,
-			"notes":       true,
-			"kcal_burned": true,
-			"avg_hr":      true,
-			"tss":         true,
+			"name":              true,
+			"notes":             true,
+			"kcal_burned":       true,
+			"avg_hr":            true,
+			"tss":               true,
+			"rpe":               true,
+			"gi_distress_score": true,
 		}
 		for field := range probe {
 			if immutable[field] {
@@ -309,11 +333,13 @@ func (h *Handlers) patch(c *gin.Context) {
 	}
 
 	var body struct {
-		Name       *string  `json:"name,omitempty"`
-		Notes      *string  `json:"notes,omitempty"`
-		KcalBurned *float64 `json:"kcal_burned,omitempty"`
-		AvgHR      *int     `json:"avg_hr,omitempty"`
-		TSS        *float64 `json:"tss,omitempty"`
+		Name            *string         `json:"name,omitempty"`
+		Notes           *string         `json:"notes,omitempty"`
+		KcalBurned      *float64        `json:"kcal_burned,omitempty"`
+		AvgHR           *int            `json:"avg_hr,omitempty"`
+		TSS             *float64        `json:"tss,omitempty"`
+		RPE             json.RawMessage `json:"rpe,omitempty"`
+		GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &body); err != nil {
@@ -328,10 +354,44 @@ func (h *Handlers) patch(c *gin.Context) {
 		AvgHR:      body.AvgHR,
 		TSS:        body.TSS,
 	}
+	// Tri-state decode for rpe: raw == nil → absent (leave unchanged);
+	// raw == "null" → ClearRPE=true; otherwise unmarshal to *int.
+	if body.RPE != nil {
+		if string(body.RPE) == "null" {
+			in.ClearRPE = true
+		} else {
+			var v int
+			if err := json.Unmarshal(body.RPE, &v); err != nil {
+				respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
+				return
+			}
+			in.RPE = &v
+		}
+	}
+	if body.GIDistressScore != nil {
+		if string(body.GIDistressScore) == "null" {
+			in.ClearGIDistressScore = true
+		} else {
+			var v int
+			if err := json.Unmarshal(body.GIDistressScore, &v); err != nil {
+				respondRangeError(c, "gi_distress_score_invalid", GIDistressScoreMin, GIDistressScoreMax)
+				return
+			}
+			in.GIDistressScore = &v
+		}
+	}
 	w, err := h.svc.Patch(c.Request.Context(), id, in)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			respondError(c, http.StatusNotFound, "workout_not_found")
+			return
+		}
+		if errors.Is(err, ErrRPEInvalid) {
+			respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
+			return
+		}
+		if errors.Is(err, ErrGIDistressScoreInvalid) {
+			respondRangeError(c, "gi_distress_score_invalid", GIDistressScoreMin, GIDistressScoreMax)
 			return
 		}
 		respondServiceError(c, err)
@@ -385,7 +445,7 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 	if req.Sport == "" {
 		return CreateInput{}, "sport_invalid"
 	}
-	return CreateInput{
+	in := CreateInput{
 		ExternalID: req.ExternalID,
 		Source:     req.Source,
 		Sport:      req.Sport,
@@ -396,7 +456,24 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 		AvgHR:      req.AvgHR,
 		TSS:        req.TSS,
 		Notes:      req.Notes,
-	}, ""
+	}
+	// Parse RPE / GI as strict integers; non-integer payloads surface the
+	// precise per-field error code rather than `invalid_json`.
+	if req.RPE != nil {
+		var v int
+		if err := json.Unmarshal(req.RPE, &v); err != nil {
+			return CreateInput{}, "rpe_invalid"
+		}
+		in.RPE = &v
+	}
+	if req.GIDistressScore != nil {
+		var v int
+		if err := json.Unmarshal(req.GIDistressScore, &v); err != nil {
+			return CreateInput{}, "gi_distress_score_invalid"
+		}
+		in.GIDistressScore = &v
+	}
+	return in, ""
 }
 
 func respondError(c *gin.Context, status int, code string) {
@@ -425,9 +502,23 @@ func errCodeFor(err error) string {
 		return "avg_hr_invalid"
 	case errors.Is(err, ErrTSSInvalid):
 		return "tss_invalid"
+	case errors.Is(err, ErrRPEInvalid):
+		return "rpe_invalid"
+	case errors.Is(err, ErrGIDistressScoreInvalid):
+		return "gi_distress_score_invalid"
 	}
 	if strings.Contains(err.Error(), "upsert") {
 		return "write_failed"
 	}
 	return "write_failed"
+}
+
+// respondRangeError surfaces a 400 with the error code AND a `range: {min, max}`
+// body so clients can render the rule without re-encoding it. Used for the
+// rpe and gi_distress_score validation failures.
+func respondRangeError(c *gin.Context, code string, min, max int) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": code,
+		"range": gin.H{"min": min, "max": max},
+	})
 }
