@@ -790,6 +790,77 @@ definitions:
       race_day_carbs_per_kg:
         type: number
     type: object
+  raceprep.FuelRecommendation:
+    properties:
+      inputs:
+        $ref: '#/definitions/raceprep.RecommendInputs'
+      intra_workout:
+        $ref: '#/definitions/raceprep.IntraWorkout'
+      notes:
+        items:
+          type: string
+        type: array
+      post_workout:
+        $ref: '#/definitions/raceprep.PostWorkout'
+      pre_workout:
+        $ref: '#/definitions/raceprep.PreWorkout'
+    type: object
+  raceprep.IntraWorkout:
+    properties:
+      applicable:
+        type: boolean
+      carbs_g_per_hour:
+        type: number
+      carbs_g_total:
+        type: number
+      fluid_ml_per_hour:
+        type: number
+      rationale:
+        type: string
+      sodium_mg_per_hour:
+        type: number
+    type: object
+  raceprep.PostWorkout:
+    properties:
+      carbs_g:
+        type: number
+      protein_g:
+        type: number
+      rationale:
+        type: string
+      window_minutes_after:
+        items:
+          type: integer
+        type: array
+    type: object
+  raceprep.PreWorkout:
+    properties:
+      carbs_g:
+        type: number
+      carbs_g_per_kg:
+        type: number
+      rationale:
+        type: string
+      window_minutes_before:
+        items:
+          type: integer
+        type: array
+    type: object
+  raceprep.RecommendInputs:
+    properties:
+      body_weight_kg:
+        type: number
+      body_weight_source:
+        type: string
+      duration_min:
+        type: integer
+      intensity_zone:
+        type: integer
+      sport:
+        type: string
+      workout_id:
+        type: string
+    type: object
   raceprep.applyRequestBody:
     properties:
       body_weight_kg:
@@ -2527,6 +2598,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Compute AND apply a carb-load schedule into per-date goal overrides
+      tags:
+      - race-prep
+  /race-prep/recommend-workout-fuel:
+    get:
+      description: Stateless literature-grounded fueling recommendation for one training
+        or race session. Accepts EITHER `workout_id` (pulls sport/duration/intensity
+        from the row, deriving intensity zone from `tss` when present) OR the explicit
+        triplet `sport`+`duration_min`+`intensity_zone`. Body weight resolved via
+        the four-tier rule (explicit override > rolling 7d stored mean > most-recent
+        stored entry > 400). Reuses the 0.3 g/kg MPS threshold from `protein_distribution`
+        for the post-workout protein recommendation.
+      parameters:
+      - description: Workout UUID — pulls sport/duration/intensity from the row
+        in: query
+        name: workout_id
+        type: string
+      - description: Sport (bike|run|swim|strength|other). Required in explicit mode.
+        in: query
+        name: sport
+        type: string
+      - description: Duration in minutes (>0). Required in explicit mode.
+        in: query
+        name: duration_min
+        type: integer
+      - description: Zone 1–5. Required in explicit mode.
+        in: query
+        name: intensity_zone
+        type: integer
+      - description: Explicit body-weight override (>0). Otherwise resolved from stored
+          entries.
+        in: query
+        name: body_weight_kg
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/raceprep.FuelRecommendation'
+        "400":
+          description: input_required | input_conflict | sport_required | duration_min_required
+            | intensity_zone_required | sport_invalid | duration_min_invalid | intensity_zone_invalid
+            | body_weight_kg_invalid | weight_data_missing | workout_id_invalid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: workout_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Pre/intra/post fueling recommendation for a single session
       tags:
       - race-prep
   /summary/daily:

@@ -754,6 +754,67 @@ template stayed intact while only the carbs bound was updated).
 }
 ```
 
+#### Per-session fueling recommendation
+
+`plan_carb_load` covers the 1–4 days before the race. `daily_summary` +
+phases cover today's macro targets. Neither answers the *forward-looking*
+per-session question: "what should I eat before, during, and after
+tomorrow's 90-min Z2 ride?" That's what
+`GET /race-prep/recommend-workout-fuel` is for. Stateless; literature-grounded
+(Jeukendrup / Burke / ISSN consensus); reuses the same 0.3 g/kg MPS threshold
+the `protein_distribution` endpoint uses, so a user who hits the post-workout
+protein number automatically hits the per-meal MPS bar.
+
+Two input modes, exactly one required:
+
+1. **Workout-mode** — `workout_id=<uuid>` pulls sport, duration (from
+   `ended_at - started_at`), and intensity zone (from `tss` via the Coggan IF
+   mapping; defaults to Z2 with a disclosure note when TSS is absent).
+2. **Explicit-mode** — `sport=bike&duration_min=90&intensity_zone=3` for
+   planned-tomorrow sessions that don't have a workout row yet.
+
+Body weight resolution: explicit `body_weight_kg` query param wins; otherwise
+the rolling-7d-mean of stored entries; otherwise the most-recent stored
+entry before today; otherwise `400 weight_data_missing`.
+
+```bash
+# Workout-mode (pulls sport/duration/intensity from the workout row).
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/race-prep/recommend-workout-fuel?workout_id=<uuid>"
+
+# Explicit-mode for a planned-tomorrow session.
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/race-prep/recommend-workout-fuel?sport=bike&duration_min=90&intensity_zone=3&body_weight_kg=72"
+```
+
+Response shape:
+
+```json
+{
+  "inputs": {
+    "sport": "bike", "duration_min": 90, "intensity_zone": 3,
+    "body_weight_kg": 72.0, "body_weight_source": "rolling_7d_avg"
+  },
+  "pre_workout":  { "window_minutes_before": [60, 120], "carbs_g": 108, "carbs_g_per_kg": 1.5, "rationale": "..." },
+  "intra_workout": { "applicable": true, "carbs_g_per_hour": 60, "carbs_g_total": 90,
+                     "fluid_ml_per_hour": 700, "sodium_mg_per_hour": 600, "rationale": "..." },
+  "post_workout": { "window_minutes_after": [0, 60], "carbs_g": 72, "protein_g": 21.6,
+                    "rationale": "Recovery window: 1 g/kg CHO inside 60 min … 0.3 g/kg protein hits the per-meal MPS threshold." },
+  "notes": [
+    "Intra-session sodium target is a midpoint; the validated range is 300-800 mg/hr ...",
+    "CHO/hr buckets: < 45 min none required; 45-90 min 30 g/hr; ...",
+    "For races > 90 min, also run `plan_carb_load` for the 24-72h pre-loading schedule."
+  ]
+}
+```
+
+Notable behaviours: `intra_workout.applicable: false` for sessions under
+45 min, all strength sessions, and swims ≤ 120 min (no realistic in-session
+intake during a swim set). `sport=run` caps `carbs_g_per_hour` at 60 even on
+long runs where bike/row would suggest 90 — running's impact loading limits
+GI tolerance. Run cap behaviour surfaces in both the rationale string and an
+extra entry in `notes[]` so agents that summarise notes separately see it too.
+
 ## API documentation (Swagger / OpenAPI)
 
 Annotated handlers generate an OpenAPI 2.0 spec, committed to `docs/`. When
@@ -848,6 +909,7 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `delete_hydration`            | `DELETE /hydration/{id}`               | Remove a hydration entry.                                     |
 | `daily_hydration_summary`     | `GET /summary/hydration/daily?date=…&tz=…` | Volume-only daily summary, separate from `daily_summary`. |
 | `plan_carb_load`              | `GET /race-prep/carb-load?…` or `POST /race-prep/carb-load/apply` | Stateless carb-load schedule for a race. Pass `apply: true` to ALSO write the carb_g goal min-bound for each schedule day (merging into existing overrides — non-carb fields preserved). |
+| `recommend_workout_fuel`      | `GET /race-prep/recommend-workout-fuel?workout_id=…` OR `?sport=…&duration_min=…&intensity_zone=…` | Pre/intra/post fueling recommendation for ONE session. Workout-mode pulls from a workouts row; explicit-mode for planned-tomorrow sessions. Reuses the 0.3 g/kg MPS threshold from `protein_distribution` for the post-protein number. |
 | `log_workout`                 | `POST /workouts`                       | Record a workout (manual entries, sweat-rate windows). Garmin sessions come via `garmin.py`, not this tool. |
 | `list_workouts`               | `GET /workouts?from=…&to=…`            | List workouts in a 92-day window.                             |
 | `get_workout`                 | `GET /workouts/{id}`                   | Fetch a workout by id.                                        |

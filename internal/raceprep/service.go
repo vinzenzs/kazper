@@ -13,6 +13,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/vinzenzs/nutrition-api/internal/bodyweight"
+	"github.com/vinzenzs/nutrition-api/internal/workouts"
+
 	"github.com/vinzenzs/nutrition-api/internal/numfmt"
 )
 
@@ -162,6 +165,13 @@ type Service struct {
 	now  func() time.Time
 	tz   *time.Location
 	pool *pgxpool.Pool
+
+	// workoutsRepo + bodyWeightRepo are wired via SetWorkoutsRepo /
+	// SetBodyWeightRepo for the recommend-workout-fuel endpoint
+	// (add-recommend-workout-fuel). Optional setters to keep the
+	// existing constructor signature stable.
+	workoutsRepo   *workouts.Repo
+	bodyWeightRepo *bodyweight.Repo
 }
 
 func NewService(now func() time.Time, tz *time.Location, pool *pgxpool.Pool) *Service {

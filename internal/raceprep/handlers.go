@@ -9,6 +9,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/vinzenzs/nutrition-api/internal/bodyweight"
+	"github.com/vinzenzs/nutrition-api/internal/workouts"
 )
 
 // Handlers wires the race-prep endpoints onto a Gin router group.
@@ -32,6 +36,7 @@ func (h *Handlers) SetLogger(l *slog.Logger) {
 func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/race-prep/carb-load", h.carbLoad)
 	rg.POST("/race-prep/carb-load/apply", h.carbLoadApply)
+	rg.GET("/race-prep/recommend-workout-fuel", h.recommendWorkoutFuel)
 }
 
 // carbLoad godoc
@@ -249,4 +254,101 @@ func respondServiceError(c *gin.Context, err error) {
 
 func rangeHint(min, max float64) gin.H {
 	return gin.H{"min": min, "max": max}
+}
+
+// recommendWorkoutFuel godoc
+// @Summary      Pre/intra/post fueling recommendation for a single session
+// @Description  Stateless literature-grounded fueling recommendation for one training or race session. Accepts EITHER `workout_id` (pulls sport/duration/intensity from the row, deriving intensity zone from `tss` when present) OR the explicit triplet `sport`+`duration_min`+`intensity_zone`. Body weight resolved via the four-tier rule (explicit override > rolling 7d stored mean > most-recent stored entry > 400). Reuses the 0.3 g/kg MPS threshold from `protein_distribution` for the post-workout protein recommendation.
+// @Tags         race-prep
+// @Produce      json
+// @Param        workout_id      query  string   false  "Workout UUID — pulls sport/duration/intensity from the row"
+// @Param        sport           query  string   false  "Sport (bike|run|swim|strength|other). Required in explicit mode."
+// @Param        duration_min    query  integer  false  "Duration in minutes (>0). Required in explicit mode."
+// @Param        intensity_zone  query  integer  false  "Zone 1–5. Required in explicit mode."
+// @Param        body_weight_kg  query  number   false  "Explicit body-weight override (>0). Otherwise resolved from stored entries."
+// @Success      200  {object}  FuelRecommendation
+// @Failure      400  {object}  map[string]interface{}  "input_required | input_conflict | sport_required | duration_min_required | intensity_zone_required | sport_invalid | duration_min_invalid | intensity_zone_invalid | body_weight_kg_invalid | weight_data_missing | workout_id_invalid"
+// @Failure      404  {object}  map[string]string       "workout_not_found"
+// @Security     BearerAuth
+// @Router       /race-prep/recommend-workout-fuel [get]
+func (h *Handlers) recommendWorkoutFuel(c *gin.Context) {
+	params := RecommendParams{
+		Today: time.Now(),
+		Loc:   time.UTC,
+	}
+
+	if s := c.Query("workout_id"); s != "" {
+		wid, err := uuid.Parse(s)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "workout_id_invalid", nil)
+			return
+		}
+		params.WorkoutID = &wid
+	}
+	if s := c.Query("sport"); s != "" {
+		params.Sport = &s
+	}
+	if s := c.Query("duration_min"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "duration_min_invalid", nil)
+			return
+		}
+		params.DurationMin = &v
+	}
+	if s := c.Query("intensity_zone"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "intensity_zone_invalid", gin.H{"min": 1, "max": 5})
+			return
+		}
+		params.IntensityZone = &v
+	}
+	if s := c.Query("body_weight_kg"); s != "" {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "body_weight_kg_invalid", nil)
+			return
+		}
+		params.BodyWeightKgOverride = &v
+	}
+
+	out, err := h.svc.RecommendFor(c.Request.Context(), params)
+	if err != nil {
+		h.respondRecommendError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// respondRecommendError maps service errors to the documented response codes.
+// Each ErrXxx sentinel maps 1:1 to a per-endpoint error name; the bodyweight
+// resolver's ErrWeightDataMissing is shared with protein-distribution and EA.
+func (h *Handlers) respondRecommendError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrInputRequired):
+		respondError(c, http.StatusBadRequest, "input_required", nil)
+	case errors.Is(err, ErrInputConflict):
+		respondError(c, http.StatusBadRequest, "input_conflict", nil)
+	case errors.Is(err, ErrSportRequired):
+		respondError(c, http.StatusBadRequest, "sport_required", nil)
+	case errors.Is(err, ErrDurationMinRequired):
+		respondError(c, http.StatusBadRequest, "duration_min_required", nil)
+	case errors.Is(err, ErrIntensityZoneRequired):
+		respondError(c, http.StatusBadRequest, "intensity_zone_required", nil)
+	case errors.Is(err, ErrSportInvalid):
+		respondError(c, http.StatusBadRequest, "sport_invalid", nil)
+	case errors.Is(err, ErrDurationMinInvalid):
+		respondError(c, http.StatusBadRequest, "duration_min_invalid", nil)
+	case errors.Is(err, ErrIntensityZoneInvalid):
+		respondError(c, http.StatusBadRequest, "intensity_zone_invalid", gin.H{"min": 1, "max": 5})
+	case errors.Is(err, ErrBodyWeightInvalid):
+		respondError(c, http.StatusBadRequest, "body_weight_kg_invalid", nil)
+	case errors.Is(err, bodyweight.ErrWeightDataMissing):
+		respondError(c, http.StatusBadRequest, "weight_data_missing", nil)
+	case errors.Is(err, workouts.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "recommend_failed"})
+	}
 }

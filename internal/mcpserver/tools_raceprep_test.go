@@ -248,3 +248,69 @@ func TestPlanCarbLoad_DerivedKeyIgnoresApplyAndIdempotencyKey(t *testing.T) {
 	assert.Equal(t, (*recs)[0].idemKey, (*recs)[1].idemKey,
 		"identical args must produce identical derived keys")
 }
+
+// ----- recommend_workout_fuel -----
+
+func TestRecommendWorkoutFuel_WorkoutModeForwardsOnlyWorkoutID(t *testing.T) {
+	c, recs := newRacePrepRecorder(t, 200, `{}`)
+	wid := "11111111-1111-1111-1111-111111111111"
+	_ = handleRecommendWorkoutFuel(context.Background(), c, RecommendWorkoutFuelArgs{
+		WorkoutID: &wid,
+	})
+	require.Len(t, *recs, 1)
+	rec := (*recs)[0]
+	assert.Equal(t, http.MethodGet, rec.method)
+	assert.Equal(t, "/race-prep/recommend-workout-fuel", rec.path)
+	q, err := url.ParseQuery(rec.rawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, wid, q.Get("workout_id"))
+	assert.Empty(t, q.Get("sport"))
+	assert.Empty(t, q.Get("duration_min"))
+	assert.Empty(t, q.Get("intensity_zone"))
+	assert.Empty(t, q.Get("body_weight_kg"))
+	assert.Empty(t, rec.idemKey, "read-only; no idempotency-key")
+}
+
+func TestRecommendWorkoutFuel_ExplicitModeForwardsTriplet(t *testing.T) {
+	c, recs := newRacePrepRecorder(t, 200, `{}`)
+	sport := "bike"
+	dur := 90
+	zone := 3
+	_ = handleRecommendWorkoutFuel(context.Background(), c, RecommendWorkoutFuelArgs{
+		Sport: &sport, DurationMin: &dur, IntensityZone: &zone,
+	})
+	require.Len(t, *recs, 1)
+	q, err := url.ParseQuery((*recs)[0].rawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "bike", q.Get("sport"))
+	assert.Equal(t, "90", q.Get("duration_min"))
+	assert.Equal(t, "3", q.Get("intensity_zone"))
+	assert.Empty(t, q.Get("workout_id"))
+}
+
+func TestRecommendWorkoutFuel_BodyWeightKgForwardedWhenSupplied(t *testing.T) {
+	c, recs := newRacePrepRecorder(t, 200, `{}`)
+	sport := "bike"
+	dur := 60
+	zone := 2
+	bw := 72.5
+	_ = handleRecommendWorkoutFuel(context.Background(), c, RecommendWorkoutFuelArgs{
+		Sport: &sport, DurationMin: &dur, IntensityZone: &zone, BodyWeightKg: &bw,
+	})
+	require.Len(t, *recs, 1)
+	q, err := url.ParseQuery((*recs)[0].rawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "72.5", q.Get("body_weight_kg"))
+}
+
+func TestRecommendWorkoutFuel_400Forwarded(t *testing.T) {
+	c, _ := newRacePrepRecorder(t, 400, `{"error":"input_conflict"}`)
+	wid := "11111111-1111-1111-1111-111111111111"
+	sport := "bike"
+	r := handleRecommendWorkoutFuel(context.Background(), c, RecommendWorkoutFuelArgs{
+		WorkoutID: &wid, Sport: &sport,
+	})
+	assert.True(t, r.IsError)
+	// Body is forwarded verbatim — check it surfaces in the result content.
+	require.Len(t, r.Content, 1)
+}

@@ -193,6 +193,13 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
            score: "\(.mps_effective_meal_count)/\(.meal_count) meals over threshold",
            body_weight_source}'
 
+# Per-session fueling recommendation for a planned 90-min Z3 bike. Body
+# weight passed explicitly so no stored weight is needed first.
+curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/race-prep/recommend-workout-fuel?sport=bike&duration_min=90&intensity_zone=3&body_weight_kg=72" \
+    | jq '{pre: .pre_workout.carbs_g, intra_g_per_hour: .intra_workout.carbs_g_per_hour,
+           post_carbs: .post_workout.carbs_g, post_protein: .post_workout.protein_g}'
+
 # Log a glass of water and check today's hydration total.
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \

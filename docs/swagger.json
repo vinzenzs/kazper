@@ -1904,6 +1904,79 @@
                 }
             }
         },
+        "/race-prep/recommend-workout-fuel": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stateless literature-grounded fueling recommendation for one training or race session. Accepts EITHER `workout_id` (pulls sport/duration/intensity from the row, deriving intensity zone from `tss` when present) OR the explicit triplet `sport`+`duration_min`+`intensity_zone`. Body weight resolved via the four-tier rule (explicit override \u003e rolling 7d stored mean \u003e most-recent stored entry \u003e 400). Reuses the 0.3 g/kg MPS threshold from `protein_distribution` for the post-workout protein recommendation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-prep"
+                ],
+                "summary": "Pre/intra/post fueling recommendation for a single session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID — pulls sport/duration/intensity from the row",
+                        "name": "workout_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sport (bike|run|swim|strength|other). Required in explicit mode.",
+                        "name": "sport",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Duration in minutes (\u003e0). Required in explicit mode.",
+                        "name": "duration_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Zone 1–5. Required in explicit mode.",
+                        "name": "intensity_zone",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Explicit body-weight override (\u003e0). Otherwise resolved from stored entries.",
+                        "name": "body_weight_kg",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/raceprep.FuelRecommendation"
+                        }
+                    },
+                    "400": {
+                        "description": "input_required | input_conflict | sport_required | duration_min_required | intensity_zone_required | sport_invalid | duration_min_invalid | intensity_zone_invalid | body_weight_kg_invalid | weight_data_missing | workout_id_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/summary/daily": {
             "get": {
                 "security": [
@@ -4135,6 +4208,115 @@
                 },
                 "race_day_carbs_per_kg": {
                     "type": "number"
+                }
+            }
+        },
+        "raceprep.FuelRecommendation": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "$ref": "#/definitions/raceprep.RecommendInputs"
+                },
+                "intra_workout": {
+                    "$ref": "#/definitions/raceprep.IntraWorkout"
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "post_workout": {
+                    "$ref": "#/definitions/raceprep.PostWorkout"
+                },
+                "pre_workout": {
+                    "$ref": "#/definitions/raceprep.PreWorkout"
+                }
+            }
+        },
+        "raceprep.IntraWorkout": {
+            "type": "object",
+            "properties": {
+                "applicable": {
+                    "type": "boolean"
+                },
+                "carbs_g_per_hour": {
+                    "type": "number"
+                },
+                "carbs_g_total": {
+                    "type": "number"
+                },
+                "fluid_ml_per_hour": {
+                    "type": "number"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "sodium_mg_per_hour": {
+                    "type": "number"
+                }
+            }
+        },
+        "raceprep.PostWorkout": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "window_minutes_after": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "raceprep.PreWorkout": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "carbs_g_per_kg": {
+                    "type": "number"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "window_minutes_before": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "raceprep.RecommendInputs": {
+            "type": "object",
+            "properties": {
+                "body_weight_kg": {
+                    "type": "number"
+                },
+                "body_weight_source": {
+                    "type": "string"
+                },
+                "duration_min": {
+                    "type": "integer"
+                },
+                "intensity_zone": {
+                    "type": "integer"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "workout_id": {
+                    "type": "string"
                 }
             }
         },

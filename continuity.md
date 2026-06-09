@@ -2,23 +2,22 @@
 
 _Forward plan for OpenSpec changes. Tracks **what's next**, **what's in flight**, and **what's queued**._
 _Companion to `openspec/priorities.md` (tier/triage framing) — this file is the operational queue._
-_Last refreshed: 2026-06-09 by the `continuity` skill (re-verified — queue reprioritized: `add-recommend-workout-fuel` + `add-rolling-window-summaries` promoted to Up next; `add-meal-from-photo` + `add-flutter-companion-app` demoted to Backlog)._
+_Last refreshed: 2026-06-09 by the `continuity` skill (started work on `add-recommend-workout-fuel` — first per-change branch in this repo: `feat/add-recommend-workout-fuel` off `main`)._
 
 ## In progress
 
-This repo currently commits implementation work directly to `main` (single-user
-project, no feature-branch flow yet). The Branch column reflects that — switch
-to per-change branches when the cadence makes it worth it.
+First per-change branch in this repo — previous work all committed directly
+to `main`. Default base going forward: `main`. Branch convention: `feat/<slug>`.
 
-_Nothing in flight — pick from Up next._
+| Change | Branch | Started | Owner | Notes |
+|---|---|---|---|---|
+| add-recommend-workout-fuel | `feat/add-recommend-workout-fuel` | 2026-06-09 | Vinzenz Stadtmueller | Pre/intra/post fueling recommendation (T2 #10). 15 task sections; first one hoists the body-weight resolver into `internal/bodyweight/`. |
 
 ## Up next
 
 Ordered queue — top is next to pick up.
 
-1. **add-recommend-workout-fuel** _(new 2026-06-09)_ — `plan_carb_load` answers "how should I eat in the 1–4 days *before* my race." `daily_summary` + the phase template answer "what's my macro target for *today's training block*." `workout_fueling_summary` answers "what *did* I take during this ride." None of them answer the *forward-looking* question for everyday training: "what should I eat before/during/after tomorrow's 90-min Z2 ride?" Closes T2 #10.
-
-2. **add-rolling-window-summaries** — `GET /summary/rolling?anchor_date=…&window_days=N`. Multi-day averages for the metrics that are actually multi-day phenomena: protein for MPS (~1.6–2.2 g/kg/day across a week), Energy Availability (5–14 day Loucks bands), 72-hour carb-load window, weekly sodium baseline. One bad day is noise; the rolling view is the signal. _Implemented + committed (8612f56) but not yet archived — pending `/opsx:archive add-rolling-window-summaries` and the §11.3 manual e2e._
+1. **add-rolling-window-summaries** — `GET /summary/rolling?anchor_date=…&window_days=N`. Multi-day averages for the metrics that are actually multi-day phenomena: protein for MPS (~1.6–2.2 g/kg/day across a week), Energy Availability (5–14 day Loucks bands), 72-hour carb-load window, weekly sodium baseline. One bad day is noise; the rolling view is the signal. _Implemented + committed (8612f56) but not yet archived — pending `/opsx:archive add-rolling-window-summaries` and the §11.3 manual e2e._
 
 ## Backlog
 

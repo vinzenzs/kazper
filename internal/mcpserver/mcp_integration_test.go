@@ -127,6 +127,7 @@ func TestMCPServer_AnnouncesEightTools(t *testing.T) {
 		"delete_daily_goal_override",
 		"list_daily_goal_overrides",
 		"plan_carb_load",
+		"recommend_workout_fuel",
 		"log_workout",
 		"list_workouts",
 		"get_workout",

@@ -126,6 +126,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 	racePrepSvc := raceprep.NewService(time.Now, userTZ, pool)
+	// recommend-workout-fuel needs the workouts row + body-weight resolver.
+	// Optional setters so the existing constructor signature stays stable
+	// (same convention meals/hydration use for SetWorkoutsRepo from
+	// add-meal-workout-link).
+	racePrepSvc.SetWorkoutsRepo(workoutsRepo)
+	racePrepSvc.SetBodyWeightRepo(bodyWeightRepo)
 	idempRepo := idempotency.NewRepo(pool)
 
 	cleanupCtx, cleanupCancel := context.WithCancel(ctx)

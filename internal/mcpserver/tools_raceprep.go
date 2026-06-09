@@ -100,4 +100,63 @@ func registerRacePrepTools(server *mcp.Server, c *apiClient) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args PlanCarbLoadArgs) (*mcp.CallToolResult, any, error) {
 		return handlePlanCarbLoad(ctx, c, args), nil, nil
 	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "recommend_workout_fuel",
+		Description: "Compute a pre/intra/post fueling recommendation for ONE training or race session. " +
+			"Two input modes; exactly one must be used:\n\n" +
+			"  1. workout_id — pulls sport/duration/intensity_zone from the workouts row (intensity " +
+			"derived from `tss` via the Coggan IF mapping; defaults to Z2 with a disclosure note when " +
+			"TSS is absent).\n" +
+			"  2. Explicit triplet — `sport` + `duration_min` + `intensity_zone` — for planned-tomorrow " +
+			"sessions that don't have a workout row yet.\n\n" +
+			"Body weight resolution: explicit `body_weight_kg` arg > rolling 7-day mean of stored weight " +
+			"entries ending at today (inclusive) > most-recent stored entry strictly before today. With " +
+			"no stored data and no override → 400 weight_data_missing.\n\n" +
+			"Headline literature ratios (returned verbatim with rationale strings):\n" +
+			"  pre:   1.0–2.0 g/kg by zone, [60, 120] min before (strength 0.5 g/kg [30, 90] min);\n" +
+			"  intra: 30 g/hr for short Z1–2, 60 g/hr for tempo/threshold or 90–180 min, 90 g/hr for >180 " +
+			"min — except sport=run which caps at 60 g/hr (GI tolerance); strength + swim ≤ 120 min " +
+			"return `applicable: false`;\n" +
+			"  post:  1.0 g/kg CHO + 0.3 g/kg protein in [0, 60] min after — the protein factor is the " +
+			"SAME MPS threshold `protein_distribution` uses to flag `mps_effective: true` (single " +
+			"literature constant across endpoints).\n\n" +
+			"For race-week 24–72h pre-loading, use `plan_carb_load` (this tool answers per-session, not " +
+			"per-block). To commit a recommendation as a real fueling entry, use `log_workout_fuel`. " +
+			"Read-only; no idempotency-key.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args RecommendWorkoutFuelArgs) (*mcp.CallToolResult, any, error) {
+		return handleRecommendWorkoutFuel(ctx, c, args), nil, nil
+	})
+}
+
+// RecommendWorkoutFuelArgs is the MCP input shape. All pointers because the
+// two input modes are at the args level (workout_id vs explicit triplet) and
+// the REST endpoint validates exclusivity.
+type RecommendWorkoutFuelArgs struct {
+	WorkoutID     *string  `json:"workout_id,omitempty" jsonschema:"workout UUID. Pulls sport/duration/intensity from the row. Mutually exclusive with sport/duration_min/intensity_zone."`
+	Sport         *string  `json:"sport,omitempty" jsonschema:"sport (bike|run|swim|strength|other). Required in explicit mode."`
+	DurationMin   *int     `json:"duration_min,omitempty" jsonschema:"duration in minutes; > 0. Required in explicit mode."`
+	IntensityZone *int     `json:"intensity_zone,omitempty" jsonschema:"intensity zone 1–5. Required in explicit mode."`
+	BodyWeightKg  *float64 `json:"body_weight_kg,omitempty" jsonschema:"explicit body-weight override (kg); > 0. Otherwise the resolver picks from stored body-weight entries."`
+}
+
+func handleRecommendWorkoutFuel(ctx context.Context, c *apiClient, args RecommendWorkoutFuelArgs) *mcp.CallToolResult {
+	q := url.Values{}
+	if args.WorkoutID != nil {
+		q.Set("workout_id", *args.WorkoutID)
+	}
+	if args.Sport != nil {
+		q.Set("sport", *args.Sport)
+	}
+	if args.DurationMin != nil {
+		q.Set("duration_min", strconv.Itoa(*args.DurationMin))
+	}
+	if args.IntensityZone != nil {
+		q.Set("intensity_zone", strconv.Itoa(*args.IntensityZone))
+	}
+	if args.BodyWeightKg != nil {
+		q.Set("body_weight_kg", strconv.FormatFloat(*args.BodyWeightKg, 'f', -1, 64))
+	}
+	status, body, err := c.Get(ctx, "/race-prep/recommend-workout-fuel", q)
+	return toToolResult(status, body, err)
 }

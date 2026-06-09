@@ -19,18 +19,23 @@ import (
 // real use shows the friction.
 const mpsThresholdGPerKg = 0.3
 
-// Body-weight resolution constants — exported so the response and the spec
-// can refer to the same canonical strings.
+// Body-weight resolution constants — re-exported from the bodyweight package
+// for API stability. Tests and external callers can keep importing summary's
+// aliases; the canonical source moved when add-recommend-workout-fuel hoisted
+// the resolver into internal/bodyweight/.
 const (
-	BodyWeightSourceExplicit       = "explicit"
-	BodyWeightSourceRolling7dAvg   = "rolling_7d_avg"
-	BodyWeightSourceLastBeforeDate = "last_before_date"
+	BodyWeightSourceExplicit       = bodyweight.SourceExplicit
+	BodyWeightSourceRolling7dAvg   = bodyweight.SourceRolling7dAvg
+	BodyWeightSourceLastBeforeDate = bodyweight.SourceLastBeforeDate
 )
 
-// Validation errors for the protein-distribution path.
+// Validation errors for the protein-distribution path. ErrWeightDataMissing
+// aliases bodyweight.ErrWeightDataMissing so errors.Is(err, summary.ErrWeightDataMissing)
+// still works for existing callers, but the underlying sentinel is now shared
+// across packages that depend on the date-anchored resolver.
 var (
-	ErrWeightDataMissing  = errors.New("weight_data_missing")
-	ErrBodyWeightInvalid  = errors.New("body_weight_kg_invalid")
+	ErrWeightDataMissing = bodyweight.ErrWeightDataMissing
+	ErrBodyWeightInvalid = errors.New("body_weight_kg_invalid")
 )
 
 // ProteinMeal is one row in the response — one per `meal_entries` row on the
@@ -89,7 +94,7 @@ func (s *Service) ProteinDistributionFor(ctx context.Context, p ProteinDistribut
 		}
 	}
 
-	bwKg, bwSource, err := s.resolveBodyWeightAtDate(ctx, p.Date, p.Loc, p.BodyWeightKgOverride)
+	bwKg, bwSource, err := bodyweight.ResolveAtDate(ctx, s.bodyWeightRepo, p.Date, p.Loc, p.BodyWeightKgOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -154,57 +159,7 @@ func proteinForEntry(e *meals.MealEntry) float64 {
 	return *per100g * (e.QuantityG / 100.0)
 }
 
-// resolveBodyWeightAtDate implements the four-tier resolution rule:
-//
-//  1. Explicit override → "explicit"
-//  2. Rolling 7-day mean of entries in [localMidnight(date-6d), localMidnight(date+1d)) → "rolling_7d_avg"
-//  3. Most-recent entry strictly before localMidnight(date) → "last_before_date"
-//  4. No data at all → ErrWeightDataMissing
-//
-// Mirrors the energy package's resolveBodyWeight in spirit but operates on a
-// single date rather than a [from, to) window — different semantics, written
-// inline rather than hoisted (decision documented in
-// openspec/changes/add-protein-distribution/design.md §3).
-func (s *Service) resolveBodyWeightAtDate(ctx context.Context, date time.Time, loc *time.Location, override *float64) (float64, string, error) {
-	if override != nil {
-		return *override, BodyWeightSourceExplicit, nil
-	}
-	if s.bodyWeightRepo == nil {
-		// Defensive: no override, no repo wired → cannot resolve.
-		return 0, "", ErrWeightDataMissing
-	}
-
-	startMidnight := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
-	endMidnight := startMidnight.Add(24 * time.Hour)
-	// Rolling window: 7 local days ending at `date` inclusive →
-	// [localMidnight(date - 6d), localMidnight(date + 1d)).
-	rollingStart := startMidnight.AddDate(0, 0, -6)
-
-	rolling, err := s.bodyWeightRepo.List(ctx, rollingStart.UTC(), endMidnight.UTC())
-	if err != nil {
-		return 0, "", err
-	}
-	if len(rolling) > 0 {
-		return meanWeight(rolling), BodyWeightSourceRolling7dAvg, nil
-	}
-
-	latest, err := s.bodyWeightRepo.LatestBefore(ctx, startMidnight.UTC())
-	if err != nil {
-		if errors.Is(err, bodyweight.ErrNotFound) {
-			return 0, "", ErrWeightDataMissing
-		}
-		return 0, "", err
-	}
-	return latest.WeightKg, BodyWeightSourceLastBeforeDate, nil
-}
-
-func meanWeight(entries []*bodyweight.Entry) float64 {
-	if len(entries) == 0 {
-		return 0
-	}
-	var sum float64
-	for _, e := range entries {
-		sum += e.WeightKg
-	}
-	return sum / float64(len(entries))
-}
+// Body-weight resolution moved to bodyweight.ResolveAtDate (canonical home);
+// add-recommend-workout-fuel hoisted it once two more callers wanted the same
+// single-date-anchored shape. The summary handler still calls it via
+// `bodyweight.ResolveAtDate(ctx, s.bodyWeightRepo, ...)`.
