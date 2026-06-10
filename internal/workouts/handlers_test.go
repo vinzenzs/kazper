@@ -424,7 +424,7 @@ func TestBulk_DuplicateExternalIDInBatchLastWriteWins(t *testing.T) {
 	// Verify only one row exists with that external_id, and its kcal is 600.
 	from, _ := time.Parse(time.RFC3339, "2026-06-07T07:00:00Z")
 	to, _ := time.Parse(time.RFC3339, "2026-06-07T10:00:00Z")
-	rows, err := f.repo.List(context.Background(), from, to, nil)
+	rows, err := f.repo.List(context.Background(), from, to, nil, nil)
 	require.NoError(t, err)
 	var dup []*workouts.Workout
 	for _, r := range rows {
@@ -448,7 +448,6 @@ func joinCSV(parts []string) string {
 	}
 	return buf.String()
 }
-
 
 // ============================================================================
 // RPE + GI distress score (rehearsal-outcome fields)
@@ -795,4 +794,107 @@ func decodeErr(t *testing.T, rec *httptest.ResponseRecorder) string {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	s, _ := got["error"].(string)
 	return s
+}
+
+// ============================================================================
+// Planned/completed status lifecycle
+// ============================================================================
+
+func TestPost_PlannedFutureWorkoutAccepted(t *testing.T) {
+	f := setup(t)
+	// 3 weeks out — would be rejected for a completed workout, allowed for planned.
+	start := time.Now().Add(21 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	end := time.Now().Add(21*24*time.Hour + 2*time.Hour).UTC().Format(time.RFC3339)
+	body := fmt.Sprintf(`{"source":"garmin","sport":"bike","status":"planned","started_at":%q,"ended_at":%q}`, start, end)
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+	assert.Equal(t, workouts.StatusPlanned, w.Status)
+}
+
+func TestPost_CompletedFutureStillRejected(t *testing.T) {
+	f := setup(t)
+	start := time.Now().Add(21 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	end := time.Now().Add(21*24*time.Hour + 2*time.Hour).UTC().Format(time.RFC3339)
+	// status omitted → defaults to completed → far-future guard fires.
+	body := fmt.Sprintf(`{"source":"garmin","sport":"bike","started_at":%q,"ended_at":%q}`, start, end)
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"started_at_too_far_future"}`, rec.Body.String())
+}
+
+func TestPost_PlannedMoreThanAYearOutRejected(t *testing.T) {
+	f := setup(t)
+	start := time.Now().AddDate(2, 0, 0).UTC().Format(time.RFC3339)
+	end := time.Now().AddDate(2, 0, 0).Add(2 * time.Hour).UTC().Format(time.RFC3339)
+	body := fmt.Sprintf(`{"source":"garmin","sport":"bike","status":"planned","started_at":%q,"ended_at":%q}`, start, end)
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"started_at_too_far_future"}`, rec.Body.String())
+}
+
+func TestPost_InvalidStatusRejected(t *testing.T) {
+	f := setup(t)
+	body := `{"source":"manual","sport":"run","status":"scheduled","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:00:00Z"}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"status_invalid"}`, rec.Body.String())
+}
+
+func TestPost_DefaultStatusCompleted(t *testing.T) {
+	f := setup(t)
+	body := `{"source":"manual","sport":"run","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:00:00Z"}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+	assert.Equal(t, workouts.StatusCompleted, w.Status)
+}
+
+func TestList_FilterByStatus(t *testing.T) {
+	f := setup(t)
+	planStart := time.Now().Add(14 * 24 * time.Hour).UTC()
+	post := func(extID, status, started, ended string) {
+		t.Helper()
+		body := fmt.Sprintf(`{"external_id":%q,"source":"garmin","sport":"bike","status":%q,"started_at":%q,"ended_at":%q}`, extID, status, started, ended)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	post("g:done", "completed", "2026-06-07T08:00:00Z", "2026-06-07T09:00:00Z")
+	post("g:plan", "planned", planStart.Format(time.RFC3339), planStart.Add(time.Hour).Format(time.RFC3339))
+
+	// Wide window covering both.
+	from := "2026-06-01T00:00:00Z"
+	to := planStart.Add(48 * time.Hour).UTC().Format(time.RFC3339)
+	url := "/workouts?from=" + from + "&to=" + to + "&status=planned"
+	rec := doReq(t, f.r, http.MethodGet, url, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out struct {
+		Workouts []workouts.Workout `json:"workouts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.Workouts, 1)
+	assert.Equal(t, "g:plan", *out.Workouts[0].ExternalID)
+}
+
+func TestPatch_PromotePlannedToCompleted(t *testing.T) {
+	f := setup(t)
+	planStart := time.Now().Add(7 * 24 * time.Hour).UTC()
+	body := fmt.Sprintf(`{"source":"garmin","sport":"run","status":"planned","started_at":%q,"ended_at":%q}`, planStart.Format(time.RFC3339), planStart.Add(time.Hour).Format(time.RFC3339))
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+
+	rec = doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"status":"completed"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var got workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, workouts.StatusCompleted, got.Status)
+
+	// Invalid status on patch → 400.
+	rec = doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"status":"bogus"}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"status_invalid"}`, rec.Body.String())
 }

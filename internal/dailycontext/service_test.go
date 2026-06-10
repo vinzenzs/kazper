@@ -11,9 +11,11 @@ import (
 
 	"github.com/vinzenzs/nutrition-api/internal/bodyweight"
 	"github.com/vinzenzs/nutrition-api/internal/dailycontext"
+	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
 	"github.com/vinzenzs/nutrition-api/internal/meals"
+	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/store/storetest"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
@@ -34,6 +36,8 @@ type fix struct {
 	goalsOverrides *goals.OverridesRepo
 	templates      *trainingphases.TemplatesRepo
 	phases         *trainingphases.PhasesRepo
+	recovery       *recoverymetrics.Repo
+	fitness        *fitnessmetrics.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -54,12 +58,17 @@ func setup(t *testing.T) *fix {
 		trainingphases.NewTemplateLookupAdapter(tplRepo),
 	)
 	summarySvc := summary.NewService(pool, mealsRepo, resolver)
+	recoveryRepo := recoverymetrics.NewRepo(pool)
+	fitnessRepo := fitnessmetrics.NewRepo(pool)
 	svc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, overridesRepo, phRepo,
+		recoveryRepo, fitnessRepo,
 	)
 	return &fix{
 		svc:            svc,
+		recovery:       recoveryRepo,
+		fitness:        fitnessRepo,
 		meals:          mealsRepo,
 		hydration:      hydrationRepo,
 		workouts:       workoutsRepo,
@@ -342,4 +351,61 @@ func TestBuildFor_NoGoroutineLeak_UnderRace(t *testing.T) {
 		_, err := f.svc.BuildFor(ctx, date, loc)
 		require.NoError(t, err)
 	}
+}
+
+// TestBuildFor_RecoveryAndFitnessAndWeightBiometrics covers the
+// add-garmin-daily-metrics additions: same-day recovery + fitness snapshots
+// surface, absence yields null (no carryover), and the weight block echoes the
+// new smart-scale biometrics.
+func TestBuildFor_RecoveryAndFitnessPresent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	_, err := f.recovery.Upsert(ctx, &recoverymetrics.Snapshot{
+		Date: "2026-07-15", SleepSeconds: ptr(27000), RestingHR: ptr(48),
+	})
+	require.NoError(t, err)
+	_, err = f.fitness.Upsert(ctx, &fitnessmetrics.Snapshot{
+		Date: "2026-07-15", VO2MaxRunning: ptr(54.0),
+	})
+	require.NoError(t, err)
+	// Weight entry on the day with smart-scale biometrics.
+	require.NoError(t, f.bodyWeight.Insert(ctx, &bodyweight.Entry{
+		LoggedAt: time.Date(2026, 7, 15, 7, 0, 0, 0, loc), WeightKg: 72.5,
+		MuscleMassKg: ptr(58.4), BMI: ptr(22.4),
+	}))
+
+	out, err := f.svc.BuildFor(ctx, date, loc)
+	require.NoError(t, err)
+
+	require.NotNil(t, out.Recovery)
+	require.NotNil(t, out.Recovery.RestingHR)
+	assert.Equal(t, 48, *out.Recovery.RestingHR)
+	require.NotNil(t, out.Fitness)
+	require.NotNil(t, out.Fitness.VO2MaxRunning)
+	assert.InDelta(t, 54.0, *out.Fitness.VO2MaxRunning, 0.05)
+	require.NotNil(t, out.Weight)
+	require.NotNil(t, out.Weight.MuscleMassKg)
+	assert.InDelta(t, 58.4, *out.Weight.MuscleMassKg, 0.05)
+	require.NotNil(t, out.Weight.BMI)
+	assert.InDelta(t, 22.4, *out.Weight.BMI, 0.05)
+}
+
+func TestBuildFor_RecoveryAndFitnessNullWhenAbsentNoCarryover(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+
+	// Snapshot exists for the PRIOR day only — must NOT carry over.
+	_, err := f.recovery.Upsert(ctx, &recoverymetrics.Snapshot{Date: "2026-07-14", RestingHR: ptr(50)})
+	require.NoError(t, err)
+	_, err = f.fitness.Upsert(ctx, &fitnessmetrics.Snapshot{Date: "2026-07-14", VO2MaxRunning: ptr(53.0)})
+	require.NoError(t, err)
+
+	out, err := f.svc.BuildFor(ctx, time.Date(2026, 7, 15, 0, 0, 0, 0, loc), loc)
+	require.NoError(t, err)
+	assert.Nil(t, out.Recovery, "recovery is same-day-or-null, never carried over")
+	assert.Nil(t, out.Fitness, "fitness is same-day-or-null, never carried over")
 }

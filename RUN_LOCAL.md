@@ -483,6 +483,37 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 For per-entry detail (full meal list, individual hydration entries, etc.),
 use the dedicated endpoints — the aggregator deliberately omits them.
 
+### A daily Garmin push (recovery + fitness + planned workout)
+
+The recovery/fitness snapshots are date-keyed: a writer (e.g. a `garmin.py`
+sync) POSTs one row per day and re-pushes the same date to update in place.
+`daily_context` then surfaces them as same-day-or-null `recovery` / `fitness`
+blocks. Here's the shape an importer's daily push takes:
+
+```bash
+DAY=$(date -u +%Y-%m-%d)
+
+# Recovery snapshot (sleep / HRV / RHR / stress / body battery / readiness)
+curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d "{\"date\":\"$DAY\",\"sleep_seconds\":27000,\"sleep_score\":82,\"hrv_ms\":61,\"resting_hr\":48,\"stress_avg\":28,\"training_readiness\":74}" \
+    http://localhost:8080/recovery-metrics > /dev/null
+
+# Fitness snapshot (VO2max / race predictions in seconds / acute+chronic load)
+curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d "{\"date\":\"$DAY\",\"vo2max_running\":54,\"race_predictor_5k_seconds\":1230,\"acute_load\":420.5,\"chronic_load\":380}" \
+    http://localhost:8080/fitness-metrics > /dev/null
+
+# Tomorrow's planned ride from the training calendar (status=planned allows the future date)
+curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d "{\"source\":\"garmin\",\"sport\":\"bike\",\"status\":\"planned\",\"name\":\"Z2 endurance\",\"started_at\":\"$(date -u -v+1d +%Y-%m-%dT07:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT07:00:00Z)\",\"ended_at\":\"$(date -u -v+1d +%Y-%m-%dT09:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT09:00:00Z)\"}" \
+    http://localhost:8080/workouts > /dev/null
+
+# daily_context now carries recovery + fitness for today
+curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/context/daily?date=$DAY" | jq '{recovery: .recovery.resting_hr, fitness: .fitness.vo2max_running}'
+# → { "recovery": 48, "fitness": 54 }
+```
+
 ### Cleaning up leftover products
 
 Test sessions leave products in the cache. List and delete them:

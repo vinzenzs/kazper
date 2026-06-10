@@ -11,11 +11,16 @@ import (
 
 // Entry mirrors a body_weight_entries row.
 type Entry struct {
-	ID          uuid.UUID `json:"id"`
-	LoggedAt    time.Time `json:"logged_at"`
-	WeightKg    float64   `json:"weight_kg"`
-	BodyFatPct  *float64  `json:"body_fat_pct,omitempty"`
-	Note        *string   `json:"note,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID         uuid.UUID `json:"id"`
+	LoggedAt   time.Time `json:"logged_at"`
+	WeightKg   float64   `json:"weight_kg"`
+	BodyFatPct *float64  `json:"body_fat_pct,omitempty"`
+	// Smart-scale biometrics (Garmin full weigh-in). All nullable.
+	MuscleMassKg *float64  `json:"muscle_mass_kg,omitempty"`
+	BodyWaterPct *float64  `json:"body_water_pct,omitempty"`
+	BoneMassKg   *float64  `json:"bone_mass_kg,omitempty"`
+	BMI          *float64  `json:"bmi,omitempty"`
+	Note         *string   `json:"note,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

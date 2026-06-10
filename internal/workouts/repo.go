@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, notes, created_at, updated_at`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, notes, created_at, updated_at`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -44,6 +44,11 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 		w.CreatedAt = now
 	}
 	w.UpdatedAt = now
+	// Default status so direct repo callers (and the DB CHECK) never see an
+	// empty string; the service already defaults it, this protects the rest.
+	if w.Status == "" {
+		w.Status = StatusCompleted
+	}
 
 	const q = `
         INSERT INTO workouts (
@@ -52,7 +57,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             kcal_burned, avg_hr, tss,
             rpe, gi_distress_score,
             distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group,
-            notes,
+            notes, status,
             created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5,
@@ -60,8 +65,8 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             $8, $9, $10,
             $11, $12,
             $13, $14, $15, $16, $17,
-            $18,
-            $19, $20
+            $18, $19,
+            $20, $21
         )
         ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET
             source            = EXCLUDED.source,
@@ -80,8 +85,9 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             sweat_loss_ml     = EXCLUDED.sweat_loss_ml,
             session_group     = EXCLUDED.session_group,
             notes             = EXCLUDED.notes,
+            status            = EXCLUDED.status,
             updated_at        = EXCLUDED.updated_at
-        RETURNING id, created_at = $19 AS inserted
+        RETURNING id, created_at = $20 AS inserted
     `
 	row := r.q.QueryRow(ctx, q,
 		w.ID, w.ExternalID, string(w.Source), string(w.Sport), w.Name,
@@ -89,7 +95,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 		w.KcalBurned, w.AvgHR, w.TSS,
 		w.RPE, w.GIDistressScore,
 		w.DistanceM, w.AvgPowerW, w.TemperatureC, w.SweatLossML, w.SessionGroup,
-		w.Notes,
+		w.Notes, string(w.Status),
 		w.CreatedAt, w.UpdatedAt,
 	)
 	var (
@@ -151,6 +157,9 @@ type PatchParams struct {
 	ClearSweatLossML  bool
 	SessionGroup      *string
 	ClearSessionGroup bool
+
+	// Status is NOT NULL, so it has no clear flag — a non-nil pointer sets it.
+	Status *string
 }
 
 // HasUpdates reports whether at least one mutable field is being changed.
@@ -162,7 +171,8 @@ func (p PatchParams) HasUpdates() bool {
 		p.AvgPowerW != nil || p.ClearAvgPowerW ||
 		p.TemperatureC != nil || p.ClearTemperatureC ||
 		p.SweatLossML != nil || p.ClearSweatLossML ||
-		p.SessionGroup != nil || p.ClearSessionGroup
+		p.SessionGroup != nil || p.ClearSessionGroup ||
+		p.Status != nil
 }
 
 // Patch applies a partial update over the mutable subset. Returns ErrNotFound
@@ -245,6 +255,11 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 		args = append(args, *p.SessionGroup)
 		next++
 	}
+	if p.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", next))
+		args = append(args, *p.Status)
+		next++
+	}
 	if len(sets) == 1 {
 		// Nothing to update — just confirm the row exists so the caller can
 		// distinguish "noop on existing" from "404 on missing".
@@ -279,13 +294,21 @@ func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 // List returns workouts whose started_at falls within [from, to] inclusive,
 // ordered by started_at ascending. When sessionGroup is non-nil it further
 // narrows the result to rows whose session_group equals that key exactly —
-// used to fetch the legs of one brick/multisport session together.
-func (r *Repo) List(ctx context.Context, from, to time.Time, sessionGroup *string) ([]*Workout, error) {
+// used to fetch the legs of one brick/multisport session together. When status
+// is non-nil it narrows to rows with that lifecycle status (planned|completed).
+func (r *Repo) List(ctx context.Context, from, to time.Time, sessionGroup, status *string) ([]*Workout, error) {
 	q := `SELECT ` + selectCols + ` FROM workouts WHERE started_at >= $1 AND started_at <= $2`
 	args := []any{from, to}
+	next := 3
 	if sessionGroup != nil {
-		q += ` AND session_group = $3`
+		q += fmt.Sprintf(` AND session_group = $%d`, next)
 		args = append(args, *sessionGroup)
+		next++
+	}
+	if status != nil {
+		q += fmt.Sprintf(` AND status = $%d`, next)
+		args = append(args, *status)
+		next++
 	}
 	q += ` ORDER BY started_at ASC`
 	rows, err := r.q.Query(ctx, q, args...)
@@ -310,12 +333,13 @@ type scanner interface {
 
 func scanWorkout(s scanner) (*Workout, error) {
 	var (
-		w           Workout
-		sourceStr   string
-		sportStr    string
+		w         Workout
+		sourceStr string
+		sportStr  string
+		statusStr string
 	)
 	err := s.Scan(
-		&w.ID, &w.ExternalID, &sourceStr, &sportStr, &w.Name,
+		&w.ID, &w.ExternalID, &sourceStr, &sportStr, &statusStr, &w.Name,
 		&w.StartedAt, &w.EndedAt,
 		&w.KcalBurned, &w.AvgHR, &w.TSS,
 		&w.RPE, &w.GIDistressScore,
@@ -331,5 +355,6 @@ func scanWorkout(s scanner) (*Workout, error) {
 	}
 	w.Source = Source(sourceStr)
 	w.Sport = Sport(sportStr)
+	w.Status = Status(statusStr)
 	return &w, nil
 }

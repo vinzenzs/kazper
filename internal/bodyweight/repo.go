@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, logged_at, weight_kg, body_fat_pct, note, created_at, updated_at`
+const selectCols = `id, logged_at, weight_kg, body_fat_pct, muscle_mass_kg, body_water_pct, bone_mass_kg, bmi, note, created_at, updated_at`
 
 // Insert creates a body_weight_entries row.
 func (r *Repo) Insert(ctx context.Context, e *Entry) error {
@@ -35,10 +35,14 @@ func (r *Repo) Insert(ctx context.Context, e *Entry) error {
 	now := time.Now().UTC()
 	const q = `
         INSERT INTO body_weight_entries
-            (id, logged_at, weight_kg, body_fat_pct, note, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $6)
+            (id, logged_at, weight_kg, body_fat_pct, muscle_mass_kg, body_water_pct, bone_mass_kg, bmi, note, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
     `
-	if _, err := r.q.Exec(ctx, q, e.ID, e.LoggedAt, e.WeightKg, e.BodyFatPct, e.Note, now); err != nil {
+	if _, err := r.q.Exec(ctx, q,
+		e.ID, e.LoggedAt, e.WeightKg, e.BodyFatPct,
+		e.MuscleMassKg, e.BodyWaterPct, e.BoneMassKg, e.BMI,
+		e.Note, now,
+	); err != nil {
 		return fmt.Errorf("insert body weight entry: %w", err)
 	}
 	e.CreatedAt = now
@@ -55,15 +59,21 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Entry, error) {
 
 // PatchParams holds the optional editable fields on PATCH /weight/{id}.
 type PatchParams struct {
-	WeightKg   *float64
-	BodyFatPct *float64
-	LoggedAt   *time.Time
-	Note       *string
+	WeightKg     *float64
+	BodyFatPct   *float64
+	MuscleMassKg *float64
+	BodyWaterPct *float64
+	BoneMassKg   *float64
+	BMI          *float64
+	LoggedAt     *time.Time
+	Note         *string
 }
 
 // HasUpdates reports whether at least one field is set.
 func (p PatchParams) HasUpdates() bool {
-	return p.WeightKg != nil || p.BodyFatPct != nil || p.LoggedAt != nil || p.Note != nil
+	return p.WeightKg != nil || p.BodyFatPct != nil || p.MuscleMassKg != nil ||
+		p.BodyWaterPct != nil || p.BoneMassKg != nil || p.BMI != nil ||
+		p.LoggedAt != nil || p.Note != nil
 }
 
 // Patch applies a partial update.
@@ -79,6 +89,26 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	if p.BodyFatPct != nil {
 		sets = append(sets, fmt.Sprintf("body_fat_pct = $%d", next))
 		args = append(args, *p.BodyFatPct)
+		next++
+	}
+	if p.MuscleMassKg != nil {
+		sets = append(sets, fmt.Sprintf("muscle_mass_kg = $%d", next))
+		args = append(args, *p.MuscleMassKg)
+		next++
+	}
+	if p.BodyWaterPct != nil {
+		sets = append(sets, fmt.Sprintf("body_water_pct = $%d", next))
+		args = append(args, *p.BodyWaterPct)
+		next++
+	}
+	if p.BoneMassKg != nil {
+		sets = append(sets, fmt.Sprintf("bone_mass_kg = $%d", next))
+		args = append(args, *p.BoneMassKg)
+		next++
+	}
+	if p.BMI != nil {
+		sets = append(sets, fmt.Sprintf("bmi = $%d", next))
+		args = append(args, *p.BMI)
 		next++
 	}
 	if p.LoggedAt != nil {
@@ -167,7 +197,9 @@ type scanner interface {
 
 func scanEntry(s scanner) (*Entry, error) {
 	var e Entry
-	err := s.Scan(&e.ID, &e.LoggedAt, &e.WeightKg, &e.BodyFatPct, &e.Note, &e.CreatedAt, &e.UpdatedAt)
+	err := s.Scan(&e.ID, &e.LoggedAt, &e.WeightKg, &e.BodyFatPct,
+		&e.MuscleMassKg, &e.BodyWaterPct, &e.BoneMassKg, &e.BMI,
+		&e.Note, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

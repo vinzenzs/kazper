@@ -13,6 +13,10 @@ type LogWeightArgs struct {
 	WeightKg       float64  `json:"weight_kg" jsonschema:"body weight in kilograms; must be greater than zero"`
 	LoggedAt       string   `json:"logged_at" jsonschema:"when the measurement was taken, RFC 3339 timestamp"`
 	BodyFatPct     *float64 `json:"body_fat_pct,omitempty" jsonschema:"optional body-fat percentage, 0..100"`
+	MuscleMassKg   *float64 `json:"muscle_mass_kg,omitempty" jsonschema:"optional smart-scale muscle mass in kg (> 0)"`
+	BodyWaterPct   *float64 `json:"body_water_pct,omitempty" jsonschema:"optional smart-scale body water percentage, 0..100"`
+	BoneMassKg     *float64 `json:"bone_mass_kg,omitempty" jsonschema:"optional smart-scale bone mass in kg (> 0)"`
+	BMI            *float64 `json:"bmi,omitempty" jsonschema:"optional body mass index (> 0)"`
 	Note           string   `json:"note,omitempty" jsonschema:"optional free-text context (e.g. 'morning, fasted', 'hotel scale', 'post-workout')"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args"`
 }
@@ -26,6 +30,10 @@ type PatchWeightArgs struct {
 	ID             string   `json:"id" jsonschema:"the id of the body-weight entry to update"`
 	WeightKg       *float64 `json:"weight_kg,omitempty" jsonschema:"new weight in kg; must be greater than zero if supplied"`
 	BodyFatPct     *float64 `json:"body_fat_pct,omitempty" jsonschema:"new body-fat % (0..100) if supplied"`
+	MuscleMassKg   *float64 `json:"muscle_mass_kg,omitempty" jsonschema:"new muscle mass in kg (> 0)"`
+	BodyWaterPct   *float64 `json:"body_water_pct,omitempty" jsonschema:"new body water % (0..100)"`
+	BoneMassKg     *float64 `json:"bone_mass_kg,omitempty" jsonschema:"new bone mass in kg (> 0)"`
+	BMI            *float64 `json:"bmi,omitempty" jsonschema:"new BMI (> 0)"`
 	LoggedAt       *string  `json:"logged_at,omitempty" jsonschema:"new RFC 3339 timestamp"`
 	Note           *string  `json:"note,omitempty" jsonschema:"new note"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
@@ -45,15 +53,23 @@ type WeightTrendArgs struct {
 
 func handleLogWeight(ctx context.Context, c *apiClient, args LogWeightArgs) *mcp.CallToolResult {
 	payload := struct {
-		WeightKg   float64  `json:"weight_kg"`
-		LoggedAt   string   `json:"logged_at"`
-		BodyFatPct *float64 `json:"body_fat_pct,omitempty"`
-		Note       string   `json:"note,omitempty"`
+		WeightKg     float64  `json:"weight_kg"`
+		LoggedAt     string   `json:"logged_at"`
+		BodyFatPct   *float64 `json:"body_fat_pct,omitempty"`
+		MuscleMassKg *float64 `json:"muscle_mass_kg,omitempty"`
+		BodyWaterPct *float64 `json:"body_water_pct,omitempty"`
+		BoneMassKg   *float64 `json:"bone_mass_kg,omitempty"`
+		BMI          *float64 `json:"bmi,omitempty"`
+		Note         string   `json:"note,omitempty"`
 	}{
-		WeightKg:   args.WeightKg,
-		LoggedAt:   args.LoggedAt,
-		BodyFatPct: args.BodyFatPct,
-		Note:       args.Note,
+		WeightKg:     args.WeightKg,
+		LoggedAt:     args.LoggedAt,
+		BodyFatPct:   args.BodyFatPct,
+		MuscleMassKg: args.MuscleMassKg,
+		BodyWaterPct: args.BodyWaterPct,
+		BoneMassKg:   args.BoneMassKg,
+		BMI:          args.BMI,
+		Note:         args.Note,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -79,6 +95,18 @@ func handlePatchWeight(ctx context.Context, c *apiClient, args PatchWeightArgs) 
 	}
 	if args.BodyFatPct != nil {
 		payload["body_fat_pct"] = *args.BodyFatPct
+	}
+	if args.MuscleMassKg != nil {
+		payload["muscle_mass_kg"] = *args.MuscleMassKg
+	}
+	if args.BodyWaterPct != nil {
+		payload["body_water_pct"] = *args.BodyWaterPct
+	}
+	if args.BoneMassKg != nil {
+		payload["bone_mass_kg"] = *args.BoneMassKg
+	}
+	if args.BMI != nil {
+		payload["bmi"] = *args.BMI
 	}
 	if args.LoggedAt != nil {
 		payload["logged_at"] = *args.LoggedAt

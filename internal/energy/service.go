@@ -13,20 +13,20 @@ import (
 
 // Validation errors map 1:1 to API error codes.
 var (
-	ErrLeanMassInvalid    = errors.New("lean_mass_kg_invalid")
-	ErrBodyFatInvalid     = errors.New("body_fat_pct_invalid")
-	ErrWeightDataMissing  = errors.New("weight_data_missing")
-	ErrWindowInvalid      = errors.New("window_invalid")
-	ErrRangeTooLarge      = errors.New("range_too_large")
+	ErrLeanMassInvalid   = errors.New("lean_mass_kg_invalid")
+	ErrBodyFatInvalid    = errors.New("body_fat_pct_invalid")
+	ErrWeightDataMissing = errors.New("weight_data_missing")
+	ErrWindowInvalid     = errors.New("window_invalid")
+	ErrRangeTooLarge     = errors.New("range_too_large")
 )
 
 const maxWindowDays = 92
 
 // Service composes meals + workouts + body-weight into per-day EA values.
 type Service struct {
-	meals       *meals.Repo
-	workouts    *workouts.Repo
-	bodyWeight  *bodyweight.Repo
+	meals      *meals.Repo
+	workouts   *workouts.Repo
+	bodyWeight *bodyweight.Repo
 }
 
 func NewService(mealsRepo *meals.Repo, workoutsRepo *workouts.Repo, bwRepo *bodyweight.Repo) *Service {
@@ -47,12 +47,16 @@ func (s *Service) Compute(ctx context.Context, params AvailabilityParams) (*Avai
 		return nil, err
 	}
 
-	// Pull every meal + workout in [from, to) once, bucket in-memory.
+	// Pull every meal + workout in [from, to) once, bucket in-memory. Only
+	// COMPLETED workouts count toward energy expenditure — a planned session
+	// has no kcal_burned and would otherwise be flagged missing-burn and
+	// exclude its day from the window aggregate (add-garmin-daily-metrics).
 	mealsAll, err := s.meals.List(ctx, meals.ListParams{From: params.From, To: params.To})
 	if err != nil {
 		return nil, err
 	}
-	workoutsAll, err := s.workouts.List(ctx, params.From, params.To, nil)
+	completed := string(workouts.StatusCompleted)
+	workoutsAll, err := s.workouts.List(ctx, params.From, params.To, nil, &completed)
 	if err != nil {
 		return nil, err
 	}

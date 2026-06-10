@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	maxWindowDays  = 92  // for /weight list (matches /meals, /hydration)
-	maxTrendDays   = 366 // for /weight/trend (matches /goals/overrides list)
-	defaultWindowDays = 7
-	minWindowDays  = 1
+	maxWindowDays      = 92  // for /weight list (matches /meals, /hydration)
+	maxTrendDays       = 366 // for /weight/trend (matches /goals/overrides list)
+	defaultWindowDays  = 7
+	minWindowDays      = 1
 	maxWindowDaysParam = 30
 )
 
@@ -44,10 +44,14 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 // ----- POST /weight -----
 
 type createRequest struct {
-	WeightKg   *float64 `json:"weight_kg"`
-	LoggedAt   string   `json:"logged_at"`
-	BodyFatPct *float64 `json:"body_fat_pct,omitempty"`
-	Note       *string  `json:"note,omitempty"`
+	WeightKg     *float64 `json:"weight_kg"`
+	LoggedAt     string   `json:"logged_at"`
+	BodyFatPct   *float64 `json:"body_fat_pct,omitempty"`
+	MuscleMassKg *float64 `json:"muscle_mass_kg,omitempty"`
+	BodyWaterPct *float64 `json:"body_water_pct,omitempty"`
+	BoneMassKg   *float64 `json:"bone_mass_kg,omitempty"`
+	BMI          *float64 `json:"bmi,omitempty"`
+	Note         *string  `json:"note,omitempty"`
 }
 
 // create godoc
@@ -59,7 +63,7 @@ type createRequest struct {
 // @Param        Idempotency-Key  header  string         false  "Optional client-supplied idempotency key"
 // @Param        body             body    createRequest  true   "Body-weight entry"
 // @Success      201  {object}  Entry
-// @Failure      400  {object}  map[string]string  "weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid | logged_at_too_far_future | note_too_long"
+// @Failure      400  {object}  map[string]string  "weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid | logged_at_too_far_future | note_too_long"
 // @Security     BearerAuth
 // @Router       /weight [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -78,10 +82,14 @@ func (h *Handlers) create(c *gin.Context) {
 		return
 	}
 	e, err := h.svc.Create(c.Request.Context(), CreateInput{
-		WeightKg:   *req.WeightKg,
-		LoggedAt:   ts,
-		BodyFatPct: req.BodyFatPct,
-		Note:       req.Note,
+		WeightKg:     *req.WeightKg,
+		LoggedAt:     ts,
+		BodyFatPct:   req.BodyFatPct,
+		MuscleMassKg: req.MuscleMassKg,
+		BodyWaterPct: req.BodyWaterPct,
+		BoneMassKg:   req.BoneMassKg,
+		BMI:          req.BMI,
+		Note:         req.Note,
 	})
 	if err != nil {
 		respondServiceError(c, err)
@@ -142,10 +150,14 @@ func (h *Handlers) list(c *gin.Context) {
 // ----- PATCH /weight/:id -----
 
 type patchRequest struct {
-	WeightKg   *float64 `json:"weight_kg,omitempty"`
-	BodyFatPct *float64 `json:"body_fat_pct,omitempty"`
-	LoggedAt   *string  `json:"logged_at,omitempty"`
-	Note       *string  `json:"note,omitempty"`
+	WeightKg     *float64 `json:"weight_kg,omitempty"`
+	BodyFatPct   *float64 `json:"body_fat_pct,omitempty"`
+	MuscleMassKg *float64 `json:"muscle_mass_kg,omitempty"`
+	BodyWaterPct *float64 `json:"body_water_pct,omitempty"`
+	BoneMassKg   *float64 `json:"bone_mass_kg,omitempty"`
+	BMI          *float64 `json:"bmi,omitempty"`
+	LoggedAt     *string  `json:"logged_at,omitempty"`
+	Note         *string  `json:"note,omitempty"`
 }
 
 // patch godoc
@@ -156,7 +168,7 @@ type patchRequest struct {
 // @Param        id    path  string        true  "Body-weight entry UUID"
 // @Param        body  body  patchRequest  true  "Fields to update"
 // @Success      200  {object}  Entry
-// @Failure      400  {object}  map[string]string  "weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid | note_too_long"
+// @Failure      400  {object}  map[string]string  "weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid | note_too_long"
 // @Failure      404  {object}  map[string]string  "weight_not_found"
 // @Security     BearerAuth
 // @Router       /weight/{id} [patch]
@@ -179,9 +191,13 @@ func (h *Handlers) patch(c *gin.Context) {
 		}
 	}
 	in := PatchInput{
-		WeightKg:   req.WeightKg,
-		BodyFatPct: req.BodyFatPct,
-		Note:       req.Note,
+		WeightKg:     req.WeightKg,
+		BodyFatPct:   req.BodyFatPct,
+		MuscleMassKg: req.MuscleMassKg,
+		BodyWaterPct: req.BodyWaterPct,
+		BoneMassKg:   req.BoneMassKg,
+		BMI:          req.BMI,
+		Note:         req.Note,
 	}
 	if req.LoggedAt != nil {
 		ts, err := time.Parse(time.RFC3339, *req.LoggedAt)
@@ -315,6 +331,14 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "weight_kg_invalid")
 	case errors.Is(err, ErrBodyFatPctInvalid):
 		respondError(c, http.StatusBadRequest, "body_fat_pct_invalid")
+	case errors.Is(err, ErrMuscleMassInvalid):
+		respondError(c, http.StatusBadRequest, "muscle_mass_kg_invalid")
+	case errors.Is(err, ErrBodyWaterPctInvalid):
+		respondError(c, http.StatusBadRequest, "body_water_pct_invalid")
+	case errors.Is(err, ErrBoneMassInvalid):
+		respondError(c, http.StatusBadRequest, "bone_mass_kg_invalid")
+	case errors.Is(err, ErrBMIInvalid):
+		respondError(c, http.StatusBadRequest, "bmi_invalid")
 	case errors.Is(err, ErrLoggedAtFuture):
 		respondError(c, http.StatusBadRequest, "logged_at_too_far_future")
 	case errors.Is(err, ErrNoteTooLong):
@@ -348,5 +372,9 @@ func roundEntry(e *Entry) *Entry {
 	out := *e
 	out.WeightKg = numfmt.Round1(e.WeightKg)
 	out.BodyFatPct = numfmt.Round1Ptr(e.BodyFatPct)
+	out.MuscleMassKg = numfmt.Round1Ptr(e.MuscleMassKg)
+	out.BodyWaterPct = numfmt.Round1Ptr(e.BodyWaterPct)
+	out.BoneMassKg = numfmt.Round1Ptr(e.BoneMassKg)
+	out.BMI = numfmt.Round1Ptr(e.BMI)
 	return &out
 }

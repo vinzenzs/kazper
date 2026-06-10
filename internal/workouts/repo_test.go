@@ -13,9 +13,9 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/workouts"
 )
 
-func ptrStr(s string) *string  { return &s }
-func ptrF(v float64) *float64  { return &v }
-func ptrI(v int) *int          { return &v }
+func ptrStr(s string) *string { return &s }
+func ptrF(v float64) *float64 { return &v }
+func ptrI(v int) *int         { return &v }
 
 func sample(extID *string, kcal float64) *workouts.Workout {
 	return &workouts.Workout{
@@ -156,7 +156,7 @@ func TestList_WindowFilterAndOrdering(t *testing.T) {
 	rows, err := repo.List(ctx,
 		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC),
-		nil,
+		nil, nil,
 	)
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
@@ -261,7 +261,7 @@ func TestList_EmptyWindowReturnsEmpty(t *testing.T) {
 	rows, err := repo.List(context.Background(),
 		time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC),
-		nil,
+		nil, nil,
 	)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
@@ -410,7 +410,7 @@ func TestList_FilteredBySessionGroup(t *testing.T) {
 
 	// Filtered: exactly the two legs, in started_at (leg) order.
 	group := "garmin:9876543"
-	legs, err := repo.List(ctx, from, to, &group)
+	legs, err := repo.List(ctx, from, to, &group, nil)
 	require.NoError(t, err)
 	require.Len(t, legs, 2)
 	assert.Equal(t, "g:bike", *legs[0].ExternalID)
@@ -418,12 +418,12 @@ func TestList_FilteredBySessionGroup(t *testing.T) {
 
 	// Unmatched group → empty.
 	none := "garmin:nope"
-	empty, err := repo.List(ctx, from, to, &none)
+	empty, err := repo.List(ctx, from, to, &none, nil)
 	require.NoError(t, err)
 	assert.Empty(t, empty)
 
 	// No filter → all three.
-	all, err := repo.List(ctx, from, to, nil)
+	all, err := repo.List(ctx, from, to, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, all, 3)
 }

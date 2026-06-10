@@ -52,9 +52,9 @@ const (
 	SourceStoredBodyFat    = "stored_body_fat"
 	SourceEstimated85pct   = "estimated_85pct"
 
-	BodyWeightSourceRolling7d   = "rolling_7d_avg"
-	BodyWeightSourceInWindow    = "in_window_mean"
-	BodyWeightSourceLastBefore  = "last_before_window"
+	BodyWeightSourceRolling7d  = "rolling_7d_avg"
+	BodyWeightSourceInWindow   = "in_window_mean"
+	BodyWeightSourceLastBefore = "last_before_window"
 )
 
 // Day is one calendar-day row.

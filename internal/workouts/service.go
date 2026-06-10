@@ -12,10 +12,10 @@ import (
 // Validation errors map 1:1 to the API error codes documented in the
 // workouts capability spec.
 var (
-	ErrSourceInvalid        = errors.New("source_invalid")
-	ErrSportInvalid         = errors.New("sport_invalid")
-	ErrWindowInvalid        = errors.New("window_invalid")
-	ErrStartedAtFarFuture   = errors.New("started_at_too_far_future")
+	ErrSourceInvalid          = errors.New("source_invalid")
+	ErrSportInvalid           = errors.New("sport_invalid")
+	ErrWindowInvalid          = errors.New("window_invalid")
+	ErrStartedAtFarFuture     = errors.New("started_at_too_far_future")
 	ErrKcalBurnedInvalid      = errors.New("kcal_burned_invalid")
 	ErrAvgHRInvalid           = errors.New("avg_hr_invalid")
 	ErrTSSInvalid             = errors.New("tss_invalid")
@@ -26,7 +26,12 @@ var (
 	ErrTemperatureCInvalid    = errors.New("temperature_c_invalid")
 	ErrSweatLossMLInvalid     = errors.New("sweat_loss_ml_invalid")
 	ErrSessionGroupInvalid    = errors.New("session_group_invalid")
+	ErrStatusInvalid          = errors.New("status_invalid")
 )
+
+// plannedMaxFuture bounds how far ahead a planned workout's started_at may be.
+// Completed workouts keep the tighter 24h guard.
+const plannedMaxFuture = 365 * 24 * time.Hour
 
 // RPE + GI distress score bounds. Exposed so handler error responses can echo
 // `range: {min, max}` back to clients without re-encoding the rule.
@@ -59,6 +64,7 @@ type CreateInput struct {
 	ExternalID      *string
 	Source          string
 	Sport           string
+	Status          string
 	Name            *string
 	StartedAt       time.Time
 	EndedAt         time.Time
@@ -120,6 +126,9 @@ type PatchInput struct {
 	ClearSweatLossML  bool
 	SessionGroup      *string
 	ClearSessionGroup bool
+
+	// Status is never cleared (NOT NULL); a non-nil pointer sets it.
+	Status *string
 }
 
 // Patch validates and applies the partial update. Range validation runs
@@ -150,6 +159,9 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
 		return nil, err
 	}
+	if in.Status != nil && !ValidStatus(*in.Status) {
+		return nil, ErrStatusInvalid
+	}
 	params := PatchParams{
 		Name:                 in.Name,
 		Notes:                in.Notes,
@@ -170,6 +182,7 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 		ClearSweatLossML:     in.ClearSweatLossML,
 		SessionGroup:         in.SessionGroup,
 		ClearSessionGroup:    in.ClearSessionGroup,
+		Status:               in.Status,
 	}
 	if err := s.repo.Patch(ctx, id, params); err != nil {
 		return nil, err
@@ -183,10 +196,11 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 // ListWindow returns workouts whose started_at falls within [from, to]. When
-// sessionGroup is non-nil the result is further narrowed to workouts whose
-// session_group equals that key (the legs of one brick/multisport session).
-func (s *Service) ListWindow(ctx context.Context, from, to time.Time, sessionGroup *string) ([]*Workout, error) {
-	return s.repo.List(ctx, from, to, sessionGroup)
+// sessionGroup is non-nil the result is narrowed to workouts whose session_group
+// equals that key (the legs of one brick/multisport session). When status is
+// non-nil it narrows to that lifecycle status (planned|completed).
+func (s *Service) ListWindow(ctx context.Context, from, to time.Time, sessionGroup, status *string) ([]*Workout, error) {
+	return s.repo.List(ctx, from, to, sessionGroup, status)
 }
 
 // BulkItemResult carries the per-item outcome of a BulkUpsert call.
@@ -227,8 +241,25 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 	if in.StartedAt.IsZero() || in.EndedAt.IsZero() || !in.EndedAt.After(in.StartedAt) {
 		return nil, ErrWindowInvalid
 	}
-	if in.StartedAt.After(time.Now().Add(24 * time.Hour)) {
-		return nil, ErrStartedAtFarFuture
+	// Status defaults to completed when omitted; validate when supplied.
+	status := in.Status
+	if status == "" {
+		status = string(StatusCompleted)
+	}
+	if !ValidStatus(status) {
+		return nil, ErrStatusInvalid
+	}
+	// Future-date guard is conditioned on status: a completed activity can't be
+	// more than 24h ahead, but a planned session may be scheduled up to a year
+	// out. Planned sessions in the past are allowed (a plan already underway).
+	if Status(status) == StatusCompleted {
+		if in.StartedAt.After(time.Now().Add(24 * time.Hour)) {
+			return nil, ErrStartedAtFarFuture
+		}
+	} else {
+		if in.StartedAt.After(time.Now().Add(plannedMaxFuture)) {
+			return nil, ErrStartedAtFarFuture
+		}
 	}
 	if in.KcalBurned != nil {
 		if err := validateKcalBurned(*in.KcalBurned); err != nil {
@@ -258,6 +289,7 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 		ExternalID:      in.ExternalID,
 		Source:          Source(in.Source),
 		Sport:           Sport(in.Sport),
+		Status:          Status(status),
 		Name:            in.Name,
 		StartedAt:       in.StartedAt,
 		EndedAt:         in.EndedAt,

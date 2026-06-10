@@ -16,6 +16,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/config"
 	"github.com/vinzenzs/nutrition-api/internal/dailycontext"
 	"github.com/vinzenzs/nutrition-api/internal/energy"
+	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
 	"github.com/vinzenzs/nutrition-api/internal/idempotency"
@@ -23,12 +24,13 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/off"
 	"github.com/vinzenzs/nutrition-api/internal/products"
 	"github.com/vinzenzs/nutrition-api/internal/raceprep"
+	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/store"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
+	"github.com/vinzenzs/nutrition-api/internal/vision"
 	"github.com/vinzenzs/nutrition-api/internal/workoutfuel"
 	"github.com/vinzenzs/nutrition-api/internal/workoutfueling"
-	"github.com/vinzenzs/nutrition-api/internal/vision"
 	"github.com/vinzenzs/nutrition-api/internal/workouts"
 )
 
@@ -133,6 +135,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	fuelingSvc := workoutfueling.NewService(workoutsRepo, mealsRepo, hydrationRepo, workoutFuelRepo)
 	bodyWeightRepo := bodyweight.NewRepo(pool)
 	bodyWeightSvc := bodyweight.NewService(bodyWeightRepo)
+	recoveryMetricsRepo := recoverymetrics.NewRepo(pool)
+	recoveryMetricsSvc := recoverymetrics.NewService(recoveryMetricsRepo)
+	fitnessMetricsRepo := fitnessmetrics.NewRepo(pool)
+	fitnessMetricsSvc := fitnessmetrics.NewService(fitnessMetricsRepo)
 	energySvc := energy.NewService(mealsRepo, workoutsRepo, bodyWeightRepo)
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
@@ -193,10 +199,13 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
+	recoverymetrics.NewHandlers(recoveryMetricsSvc).Register(api)
+	fitnessmetrics.NewHandlers(fitnessMetricsSvc).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
+		recoveryMetricsRepo, fitnessMetricsRepo,
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 

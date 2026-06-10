@@ -12,12 +12,13 @@ import (
 // LogWorkoutArgs is the input for the log_workout tool. Every nullable column
 // is a pointer so absent → null in the POST body.
 type LogWorkoutArgs struct {
-	ExternalID *string  `json:"external_id,omitempty" jsonschema:"writer-supplied dedup key, e.g. 'garmin:1234567'. Garmin and other sourced writers SHOULD set this. For agent-driven manual entries, leave it unset."`
-	Source     string   `json:"source" jsonschema:"provenance: 'garmin' | 'manual' | 'other'. Use 'manual' for agent-driven entries."`
-	Sport      string   `json:"sport" jsonschema:"'run' | 'bike' | 'swim' | 'strength' | 'other'"`
-	Name       *string  `json:"name,omitempty" jsonschema:"optional human-readable label, e.g. 'Morning Z2 ride'"`
-	StartedAt  string   `json:"started_at" jsonschema:"RFC 3339 timestamp the workout started"`
-	EndedAt    string   `json:"ended_at" jsonschema:"RFC 3339 timestamp the workout ended; must be after started_at"`
+	ExternalID      *string  `json:"external_id,omitempty" jsonschema:"writer-supplied dedup key, e.g. 'garmin:1234567'. Garmin and other sourced writers SHOULD set this. For agent-driven manual entries, leave it unset."`
+	Source          string   `json:"source" jsonschema:"provenance: 'garmin' | 'manual' | 'other'. Use 'manual' for agent-driven entries."`
+	Sport           string   `json:"sport" jsonschema:"'run' | 'bike' | 'swim' | 'strength' | 'other'"`
+	Status          string   `json:"status,omitempty" jsonschema:"'completed' (default) for a session that happened, or 'planned' for a scheduled future session. Planned workouts may be future-dated (up to 1 year); completed ones cannot be more than 24h ahead."`
+	Name            *string  `json:"name,omitempty" jsonschema:"optional human-readable label, e.g. 'Morning Z2 ride'"`
+	StartedAt       string   `json:"started_at" jsonschema:"RFC 3339 timestamp the workout started"`
+	EndedAt         string   `json:"ended_at" jsonschema:"RFC 3339 timestamp the workout ended; must be after started_at"`
 	KcalBurned      *float64 `json:"kcal_burned,omitempty" jsonschema:"calories burned during the session; positive number"`
 	AvgHR           *int     `json:"avg_hr,omitempty" jsonschema:"average heart rate in bpm; positive integer"`
 	TSS             *float64 `json:"tss,omitempty" jsonschema:"Training Stress Score; the intensity signal. Non-negative."`
@@ -37,6 +38,7 @@ type ListWorkoutsArgs struct {
 	From         string  `json:"from" jsonschema:"inclusive RFC 3339 lower bound on started_at"`
 	To           string  `json:"to" jsonschema:"inclusive RFC 3339 upper bound on started_at; max 92 days from 'from'"`
 	SessionGroup *string `json:"session_group,omitempty" jsonschema:"optional: narrow to the legs of one brick/multisport session (exact-match on the session_group key). The from/to window is still required."`
+	Status       *string `json:"status,omitempty" jsonschema:"optional: filter by lifecycle status 'planned' or 'completed'. The from/to window is still required."`
 }
 
 type GetWorkoutArgs struct {
@@ -69,6 +71,7 @@ type PatchWorkoutArgs struct {
 	ClearSweatLossML  bool     `json:"clear_sweat_loss_ml,omitempty" jsonschema:"set true to clear sweat_loss_ml to null."`
 	SessionGroup      *string  `json:"session_group,omitempty" jsonschema:"set the brick/multisport group key. Omit to leave unchanged."`
 	ClearSessionGroup bool     `json:"clear_session_group,omitempty" jsonschema:"set true to un-group this leg (clear session_group to null)."`
+	Status            *string  `json:"status,omitempty" jsonschema:"set the lifecycle status: 'planned' or 'completed'. Typical use: promote a planned session to completed once it happens. Omit to leave unchanged."`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
@@ -89,6 +92,7 @@ func handleLogWorkout(ctx context.Context, c *apiClient, args LogWorkoutArgs) *m
 		ExternalID      *string  `json:"external_id,omitempty"`
 		Source          string   `json:"source"`
 		Sport           string   `json:"sport"`
+		Status          string   `json:"status,omitempty"`
 		Name            *string  `json:"name,omitempty"`
 		StartedAt       string   `json:"started_at"`
 		EndedAt         string   `json:"ended_at"`
@@ -107,6 +111,7 @@ func handleLogWorkout(ctx context.Context, c *apiClient, args LogWorkoutArgs) *m
 		ExternalID:      args.ExternalID,
 		Source:          args.Source,
 		Sport:           args.Sport,
+		Status:          args.Status,
 		Name:            args.Name,
 		StartedAt:       args.StartedAt,
 		EndedAt:         args.EndedAt,
@@ -137,8 +142,11 @@ func handleListWorkouts(ctx context.Context, c *apiClient, args ListWorkoutsArgs
 	if args.SessionGroup != nil {
 		q.Set("session_group", *args.SessionGroup)
 	}
-	status, body, err := c.Get(ctx, "/workouts", q)
-	return toToolResult(status, body, err)
+	if args.Status != nil {
+		q.Set("status", *args.Status)
+	}
+	statusCode, body, err := c.Get(ctx, "/workouts", q)
+	return toToolResult(statusCode, body, err)
 }
 
 func handleGetWorkout(ctx context.Context, c *apiClient, args GetWorkoutArgs) *mcp.CallToolResult {
@@ -201,6 +209,9 @@ func handlePatchWorkout(ctx context.Context, c *apiClient, args PatchWorkoutArgs
 		payload["session_group"] = nil
 	} else if args.SessionGroup != nil {
 		payload["session_group"] = *args.SessionGroup
+	}
+	if args.Status != nil {
+		payload["status"] = *args.Status
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

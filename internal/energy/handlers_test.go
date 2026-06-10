@@ -27,7 +27,7 @@ func init() {
 }
 
 type fixture struct {
-	r        *gin.Engine
+	r            *gin.Engine
 	mealsRepo    *meals.Repo
 	workoutsRepo *workouts.Repo
 	bwRepo       *bodyweight.Repo
@@ -53,8 +53,8 @@ func makeProduct(t *testing.T, repo *products.Repo, kcalPer100g float64) uuid.UU
 	t.Helper()
 	k := kcalPer100g
 	p := &products.Product{
-		Name:   "test-product",
-		Source: products.SourceManual,
+		Name:       "test-product",
+		Source:     products.SourceManual,
 		Nutriments: products.Nutriments{KcalPer100g: &k},
 	}
 	require.NoError(t, repo.Insert(context.Background(), p))
@@ -79,6 +79,22 @@ func insertWorkout(t *testing.T, repo *workouts.Repo, startedAt, endedAt time.Ti
 		StartedAt:  startedAt,
 		EndedAt:    endedAt,
 		KcalBurned: kcal,
+	}
+	_, err := repo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+	return w.ID
+}
+
+// insertPlannedWorkout inserts a status=planned workout (no kcal_burned). Used to
+// assert planned sessions never distort energy-availability aggregates.
+func insertPlannedWorkout(t *testing.T, repo *workouts.Repo, startedAt, endedAt time.Time) uuid.UUID {
+	t.Helper()
+	w := &workouts.Workout{
+		Source:    workouts.SourceManual,
+		Sport:     workouts.SportBike,
+		Status:    workouts.StatusPlanned,
+		StartedAt: startedAt,
+		EndedAt:   endedAt,
 	}
 	_, err := repo.Upsert(context.Background(), w)
 	require.NoError(t, err)
@@ -190,6 +206,34 @@ func TestMissingBurn_DayFlaggedAndExcludedFromWindow(t *testing.T) {
 	require.NotNil(t, out.Window.AvgEA)
 	// Day 1 EA = (3000-600)/60 = 40.0. Day 3 EA = 3000/60 = 50.0. Mean = 45.0.
 	assert.InDelta(t, 45.0, *out.Window.AvgEA, 0.05)
+}
+
+// A planned workout that overlaps the EA window must NOT mark its day
+// incomplete — EA only counts completed sessions (add-garmin-daily-metrics).
+func TestPlannedWorkout_ExcludedFromEnergyAvailability(t *testing.T) {
+	f := setupHandlers(t)
+	from := "2026-06-01T00:00:00Z"
+	to := "2026-06-02T00:00:00Z" // single day
+
+	pid := makeProduct(t, f.productsRepo, 100)
+	insertMeal(t, f.mealsRepo, pid, time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC), 3000)
+	// A planned session on the same day, no kcal_burned. Past-dated planned is allowed.
+	insertPlannedWorkout(t, f.workoutsRepo,
+		time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC))
+
+	rec := doGet(t, f.r,
+		fmt.Sprintf("/energy/availability?from=%s&to=%s&lean_mass_kg=60", from, to))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out energy.Availability
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.Days, 1)
+	assert.True(t, out.Days[0].CompleteData, "planned workout must not flag the day incomplete")
+	assert.Empty(t, out.Days[0].MissingBurnWorkoutIDs, "planned workout is not a missing-burn workout")
+	assert.Equal(t, 0.0, out.Days[0].ExerciseEnergyKcal)
+	require.NotNil(t, out.Window.AvgEA)
+	// EA = 3000/60 = 50.0 (no exercise energy from the planned session).
+	assert.InDelta(t, 50.0, *out.Window.AvgEA, 0.05)
 }
 
 func TestMissingBurn_WindowAggregateNullWhenAllDaysIncomplete(t *testing.T) {

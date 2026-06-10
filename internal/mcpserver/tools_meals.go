@@ -51,14 +51,14 @@ type LogMealFreeformArgs struct {
 }
 
 type PatchMealArgs struct {
-	MealID         string   `json:"meal_id" jsonschema:"the id of the meal entry to update"`
-	QuantityG      *float64 `json:"quantity_g,omitempty" jsonschema:"new amount in grams; must be greater than zero if supplied"`
-	LoggedAt       *string  `json:"logged_at,omitempty" jsonschema:"new RFC 3339 timestamp"`
-	MealType       *string  `json:"meal_type,omitempty" jsonschema:"new meal type: breakfast | lunch | dinner | snack"`
-	Note           *string  `json:"note,omitempty" jsonschema:"new note"`
+	MealID    string   `json:"meal_id" jsonschema:"the id of the meal entry to update"`
+	QuantityG *float64 `json:"quantity_g,omitempty" jsonschema:"new amount in grams; must be greater than zero if supplied"`
+	LoggedAt  *string  `json:"logged_at,omitempty" jsonschema:"new RFC 3339 timestamp"`
+	MealType  *string  `json:"meal_type,omitempty" jsonschema:"new meal type: breakfast | lunch | dinner | snack"`
+	Note      *string  `json:"note,omitempty" jsonschema:"new note"`
 	// WorkoutID supports the empty-string sentinel: \"<uuid>\" sets the link, \"\" clears it, missing leaves it unchanged.
-	WorkoutID      *string  `json:"workout_id,omitempty" jsonschema:"new workout link: \"<uuid>\" sets, \"\" clears, omit to leave unchanged"`
-	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
+	WorkoutID      *string `json:"workout_id,omitempty" jsonschema:"new workout link: \"<uuid>\" sets, \"\" clears, omit to leave unchanged"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
 
 type DeleteMealArgs struct {
@@ -178,7 +178,7 @@ func registerMealsTools(server *mcp.Server, c *apiClient) {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "patch_meal",
+		Name:        "patch_meal",
 		Description: "Partially update an existing meal entry. Only supplied fields are changed.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args PatchMealArgs) (*mcp.CallToolResult, any, error) {
 		return handlePatchMeal(ctx, c, args), nil, nil

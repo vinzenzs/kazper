@@ -58,12 +58,31 @@ func ParseSport(s string) (Sport, error) {
 	return Sport(s), nil
 }
 
+// Status is the workout lifecycle: a completed activity (the default, what every
+// Garmin-synced activity is) or a planned/scheduled session that has not happened
+// yet. Planned workouts may be future-dated; completed ones keep the 24h guard.
+type Status string
+
+const (
+	StatusPlanned   Status = "planned"
+	StatusCompleted Status = "completed"
+)
+
+func ValidStatus(s string) bool {
+	switch Status(s) {
+	case StatusPlanned, StatusCompleted:
+		return true
+	}
+	return false
+}
+
 // Workout mirrors a workouts row.
 type Workout struct {
 	ID         uuid.UUID `json:"id"`
 	ExternalID *string   `json:"external_id,omitempty"`
 	Source     Source    `json:"source"`
 	Sport      Sport     `json:"sport"`
+	Status     Status    `json:"status"`
 	Name       *string   `json:"name,omitempty"`
 
 	StartedAt time.Time `json:"started_at"`

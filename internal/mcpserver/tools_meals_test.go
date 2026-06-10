@@ -17,10 +17,10 @@ import (
 )
 
 type mealRecord struct {
-	method    string
-	path      string
-	body      []byte
-	idemKey   string
+	method  string
+	path    string
+	body    []byte
+	idemKey string
 }
 
 func newMealRecorder(t *testing.T, status int, respBody string) (*apiClient, *[]mealRecord) {

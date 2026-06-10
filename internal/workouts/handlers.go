@@ -41,6 +41,7 @@ type createRequest struct {
 	ExternalID *string  `json:"external_id,omitempty"`
 	Source     string   `json:"source"`
 	Sport      string   `json:"sport"`
+	Status     string   `json:"status,omitempty"`
 	Name       *string  `json:"name,omitempty"`
 	StartedAt  string   `json:"started_at"`
 	EndedAt    string   `json:"ended_at"`
@@ -56,12 +57,12 @@ type createRequest struct {
 	// Ingestion metrics. avg_power_w uses RawMessage for the same reason as
 	// rpe/gi: a non-integer payload must surface `avg_power_w_invalid`, not
 	// `invalid_json`. The float fields tolerate integer JSON natively.
-	DistanceM     *float64        `json:"distance_m,omitempty"`
-	AvgPowerW     json.RawMessage `json:"avg_power_w,omitempty"`
-	TemperatureC  *float64        `json:"temperature_c,omitempty"`
-	SweatLossML   *float64        `json:"sweat_loss_ml,omitempty"`
-	SessionGroup  *string         `json:"session_group,omitempty"`
-	Notes         *string         `json:"notes,omitempty"`
+	DistanceM    *float64        `json:"distance_m,omitempty"`
+	AvgPowerW    json.RawMessage `json:"avg_power_w,omitempty"`
+	TemperatureC *float64        `json:"temperature_c,omitempty"`
+	SweatLossML  *float64        `json:"sweat_loss_ml,omitempty"`
+	SessionGroup *string         `json:"session_group,omitempty"`
+	Notes        *string         `json:"notes,omitempty"`
 }
 
 // create godoc
@@ -74,7 +75,7 @@ type createRequest struct {
 // @Param        body             body    createRequest  true   "Workout"
 // @Success      201  {object}  Workout  "INSERT"
 // @Success      200  {object}  Workout  "UPDATE (external_id collision)"
-// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid"
+// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid"
 // @Security     BearerAuth
 // @Router       /workouts [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -217,6 +218,7 @@ func (h *Handlers) bulkCreate(c *gin.Context) {
 // @Param        from           query  string  true   "Inclusive RFC3339 lower bound"
 // @Param        to             query  string  true   "Inclusive RFC3339 upper bound"
 // @Param        session_group  query  string  false  "Narrow to the legs of one brick/multisport session (exact-match on session_group)"
+// @Param        status         query  string  false  "Filter by lifecycle status: planned | completed"
 // @Success      200  {object}  map[string]interface{}  "{ workouts: [...] }"
 // @Failure      400  {object}  map[string]interface{}  "window_required | window_invalid | range_too_large"
 // @Security     BearerAuth
@@ -228,11 +230,19 @@ func (h *Handlers) list(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "window_required")
 		return
 	}
-	// Optional exact-match filter — the window stays mandatory, this composes
-	// as an additional AND-predicate. Empty string means "no filter".
+	// Optional exact-match filters — the window stays mandatory, these compose
+	// as additional AND-predicates. Empty string means "no filter".
 	var sessionGroup *string
 	if sg := c.Query("session_group"); sg != "" {
 		sessionGroup = &sg
+	}
+	var status *string
+	if st := c.Query("status"); st != "" {
+		if !ValidStatus(st) {
+			respondError(c, http.StatusBadRequest, "status_invalid")
+			return
+		}
+		status = &st
 	}
 	from, err := time.Parse(time.RFC3339, fromStr)
 	if err != nil {
@@ -252,7 +262,7 @@ func (h *Handlers) list(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "range_too_large", "max_days": maxWindowDays})
 		return
 	}
-	rows, err := h.svc.ListWindow(c.Request.Context(), from, to, sessionGroup)
+	rows, err := h.svc.ListWindow(c.Request.Context(), from, to, sessionGroup, status)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "list_failed")
 		return
@@ -344,6 +354,7 @@ func (h *Handlers) patch(c *gin.Context) {
 			"temperature_c":     true,
 			"sweat_loss_ml":     true,
 			"session_group":     true,
+			"status":            true,
 		}
 		for field := range probe {
 			if immutable[field] {
@@ -370,6 +381,7 @@ func (h *Handlers) patch(c *gin.Context) {
 		TemperatureC    json.RawMessage `json:"temperature_c,omitempty"`
 		SweatLossML     json.RawMessage `json:"sweat_loss_ml,omitempty"`
 		SessionGroup    json.RawMessage `json:"session_group,omitempty"`
+		Status          *string         `json:"status,omitempty"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &body); err != nil {
@@ -383,6 +395,7 @@ func (h *Handlers) patch(c *gin.Context) {
 		KcalBurned: body.KcalBurned,
 		AvgHR:      body.AvgHR,
 		TSS:        body.TSS,
+		Status:     body.Status,
 	}
 	// Tri-state decode for rpe: raw == nil → absent (leave unchanged);
 	// raw == "null" → ClearRPE=true; otherwise unmarshal to *int.
@@ -546,6 +559,7 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 		ExternalID:   req.ExternalID,
 		Source:       req.Source,
 		Sport:        req.Sport,
+		Status:       req.Status,
 		Name:         req.Name,
 		StartedAt:    startedAt,
 		EndedAt:      endedAt,
@@ -625,6 +639,8 @@ func errCodeFor(err error) string {
 		return "sweat_loss_ml_invalid"
 	case errors.Is(err, ErrSessionGroupInvalid):
 		return "session_group_invalid"
+	case errors.Is(err, ErrStatusInvalid):
+		return "status_invalid"
 	}
 	if strings.Contains(err.Error(), "upsert") {
 		return "write_failed"

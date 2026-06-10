@@ -9,9 +9,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vinzenzs/nutrition-api/internal/bodyweight"
+	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
 	"github.com/vinzenzs/nutrition-api/internal/numfmt"
+	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
 	"github.com/vinzenzs/nutrition-api/internal/workoutfuel"
@@ -28,6 +30,8 @@ type Service struct {
 	bodyWeightRepo    *bodyweight.Repo
 	goalOverridesRepo *goals.OverridesRepo
 	phasesRepo        *trainingphases.PhasesRepo
+	recoveryRepo      *recoverymetrics.Repo
+	fitnessRepo       *fitnessmetrics.Repo
 	summarySvc        *summary.Service
 }
 
@@ -41,6 +45,8 @@ func NewService(
 	bodyWeightRepo *bodyweight.Repo,
 	goalOverridesRepo *goals.OverridesRepo,
 	phasesRepo *trainingphases.PhasesRepo,
+	recoveryRepo *recoverymetrics.Repo,
+	fitnessRepo *fitnessmetrics.Repo,
 ) *Service {
 	return &Service{
 		summarySvc:        summarySvc,
@@ -50,6 +56,8 @@ func NewService(
 		bodyWeightRepo:    bodyWeightRepo,
 		goalOverridesRepo: goalOverridesRepo,
 		phasesRepo:        phasesRepo,
+		recoveryRepo:      recoveryRepo,
+		fitnessRepo:       fitnessRepo,
 	}
 }
 
@@ -109,7 +117,7 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 
 	// Workouts whose started_at falls in the day's window.
 	g.Go(func() error {
-		ws, err := s.workoutsRepo.List(gctx, dayStart.UTC(), dayEnd.UTC(), nil)
+		ws, err := s.workoutsRepo.List(gctx, dayStart.UTC(), dayEnd.UTC(), nil, nil)
 		if err != nil {
 			return fmt.Errorf("workouts list: %w", err)
 		}
@@ -160,13 +168,7 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		}
 		if len(todays) > 0 {
 			// Most-recent same-day entry (List returns ASC, so last = latest).
-			e := todays[len(todays)-1]
-			out.Weight = &WeightBlock{
-				LoggedAt:    e.LoggedAt,
-				WeightKg:    numfmt.Round1(e.WeightKg),
-				BodyFatPct:  numfmt.Round1Ptr(e.BodyFatPct),
-				IsCarryover: false,
-			}
+			out.Weight = weightBlock(todays[len(todays)-1], false)
 			return nil
 		}
 		prior, err := s.bodyWeightRepo.LatestBefore(gctx, dayStart.UTC())
@@ -176,12 +178,7 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 			}
 			return fmt.Errorf("bodyweight latest-before: %w", err)
 		}
-		out.Weight = &WeightBlock{
-			LoggedAt:    prior.LoggedAt,
-			WeightKg:    numfmt.Round1(prior.WeightKg),
-			BodyFatPct:  numfmt.Round1Ptr(prior.BodyFatPct),
-			IsCarryover: true,
-		}
+		out.Weight = weightBlock(prior, true)
 		return nil
 	})
 
@@ -207,6 +204,33 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		return nil
 	})
 
+	// Recovery snapshot for the date (same-day-or-null, no carryover).
+	dateStr := date.Format("2006-01-02")
+	g.Go(func() error {
+		snap, err := s.recoveryRepo.GetByDate(gctx, dateStr)
+		if err != nil {
+			if errors.Is(err, recoverymetrics.ErrNotFound) {
+				return nil // out.Recovery stays nil
+			}
+			return fmt.Errorf("recovery metrics: %w", err)
+		}
+		out.Recovery = snap
+		return nil
+	})
+
+	// Fitness snapshot for the date (same-day-or-null, no carryover).
+	g.Go(func() error {
+		snap, err := s.fitnessRepo.GetByDate(gctx, dateStr)
+		if err != nil {
+			if errors.Is(err, fitnessmetrics.ErrNotFound) {
+				return nil // out.Fitness stays nil
+			}
+			return fmt.Errorf("fitness metrics: %w", err)
+		}
+		out.Fitness = snap
+		return nil
+	})
+
 	// Goal override on the date.
 	g.Go(func() error {
 		ov, err := s.goalOverridesRepo.GetOverride(gctx, date)
@@ -225,6 +249,22 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		return nil, err
 	}
 	return out, nil
+}
+
+// weightBlock builds a WeightBlock from a body-weight entry, rounding every
+// numeric at the response boundary and echoing the smart-scale biometrics when
+// present (omitempty drops the absent ones).
+func weightBlock(e *bodyweight.Entry, carryover bool) *WeightBlock {
+	return &WeightBlock{
+		LoggedAt:     e.LoggedAt,
+		WeightKg:     numfmt.Round1(e.WeightKg),
+		BodyFatPct:   numfmt.Round1Ptr(e.BodyFatPct),
+		MuscleMassKg: numfmt.Round1Ptr(e.MuscleMassKg),
+		BodyWaterPct: numfmt.Round1Ptr(e.BodyWaterPct),
+		BoneMassKg:   numfmt.Round1Ptr(e.BoneMassKg),
+		BMI:          numfmt.Round1Ptr(e.BMI),
+		IsCarryover:  carryover,
+	}
 }
 
 // roundGoals duplicates internal/goals.roundGoals so we don't have to export

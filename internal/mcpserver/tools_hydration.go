@@ -22,13 +22,13 @@ type ListHydrationArgs struct {
 }
 
 type PatchHydrationArgs struct {
-	ID             string   `json:"id" jsonschema:"the id of the hydration entry to update"`
-	QuantityMl     *float64 `json:"quantity_ml,omitempty" jsonschema:"new volume in millilitres; must be greater than zero if supplied"`
-	LoggedAt       *string  `json:"logged_at,omitempty" jsonschema:"new RFC 3339 timestamp"`
-	Note           *string  `json:"note,omitempty" jsonschema:"new beverage note"`
+	ID         string   `json:"id" jsonschema:"the id of the hydration entry to update"`
+	QuantityMl *float64 `json:"quantity_ml,omitempty" jsonschema:"new volume in millilitres; must be greater than zero if supplied"`
+	LoggedAt   *string  `json:"logged_at,omitempty" jsonschema:"new RFC 3339 timestamp"`
+	Note       *string  `json:"note,omitempty" jsonschema:"new beverage note"`
 	// WorkoutID supports the empty-string sentinel: \"<uuid>\" sets, \"\" clears, missing leaves unchanged.
-	WorkoutID      *string  `json:"workout_id,omitempty" jsonschema:"new workout link: \"<uuid>\" sets, \"\" clears, omit to leave unchanged"`
-	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
+	WorkoutID      *string `json:"workout_id,omitempty" jsonschema:"new workout link: \"<uuid>\" sets, \"\" clears, omit to leave unchanged"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
 
 type DeleteHydrationArgs struct {

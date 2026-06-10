@@ -2,7 +2,13 @@ basePath: /
 definitions:
   bodyweight.Entry:
     properties:
+      bmi:
+        type: number
       body_fat_pct:
+        type: number
+      body_water_pct:
+        type: number
+      bone_mass_kg:
         type: number
       created_at:
         type: string
@@ -10,6 +16,9 @@ definitions:
         type: string
       logged_at:
         type: string
+      muscle_mass_kg:
+        description: Smart-scale biometrics (Garmin full weigh-in). All nullable.
+        type: number
       note:
         type: string
       updated_at:
@@ -43,10 +52,18 @@ definitions:
     type: object
   bodyweight.createRequest:
     properties:
+      bmi:
+        type: number
       body_fat_pct:
+        type: number
+      body_water_pct:
+        type: number
+      bone_mass_kg:
         type: number
       logged_at:
         type: string
+      muscle_mass_kg:
+        type: number
       note:
         type: string
       weight_kg:
@@ -54,10 +71,18 @@ definitions:
     type: object
   bodyweight.patchRequest:
     properties:
+      bmi:
+        type: number
       body_fat_pct:
+        type: number
+      body_water_pct:
+        type: number
+      bone_mass_kg:
         type: number
       logged_at:
         type: string
+      muscle_mass_kg:
+        type: number
       note:
         type: string
       weight_kg:
@@ -78,6 +103,8 @@ definitions:
         $ref: '#/definitions/dailycontext.AdherenceBlock'
       date:
         type: string
+      fitness:
+        $ref: '#/definitions/fitnessmetrics.Snapshot'
       goal_override:
         $ref: '#/definitions/dailycontext.GoalOverrideBlock'
       hydration:
@@ -88,6 +115,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/dailycontext.PhaseBlock'
         description: nil when no phase covers the date
+      recovery:
+        allOf:
+        - $ref: '#/definitions/recoverymetrics.Snapshot'
+        description: |-
+          Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
+          reading is misleading). nil when no snapshot exists for the date.
       tz:
         type: string
       weight:
@@ -147,12 +180,20 @@ definitions:
     type: object
   dailycontext.WeightBlock:
     properties:
+      bmi:
+        type: number
       body_fat_pct:
+        type: number
+      body_water_pct:
+        type: number
+      bone_mass_kg:
         type: number
       is_carryover:
         type: boolean
       logged_at:
         type: string
+      muscle_mass_kg:
+        type: number
       weight_kg:
         type: number
     type: object
@@ -253,6 +294,31 @@ definitions:
         type: integer
       total_days:
         type: integer
+    type: object
+  fitnessmetrics.Snapshot:
+    properties:
+      acute_load:
+        type: number
+      chronic_load:
+        type: number
+      created_at:
+        type: string
+      date:
+        type: string
+      race_predictor_5k_seconds:
+        type: integer
+      race_predictor_10k_seconds:
+        type: integer
+      race_predictor_full_seconds:
+        type: integer
+      race_predictor_half_seconds:
+        type: integer
+      updated_at:
+        type: string
+      vo2max_cycling:
+        type: number
+      vo2max_running:
+        type: number
     type: object
   goals.Goals:
     properties:
@@ -900,6 +966,31 @@ definitions:
       race_day_carbs_per_kg:
         type: number
     type: object
+  recoverymetrics.Snapshot:
+    properties:
+      body_battery_charged:
+        type: integer
+      body_battery_drained:
+        type: integer
+      created_at:
+        type: string
+      date:
+        type: string
+      hrv_ms:
+        type: number
+      resting_hr:
+        type: integer
+      sleep_score:
+        type: integer
+      sleep_seconds:
+        type: integer
+      stress_avg:
+        type: integer
+      training_readiness:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   summary.Adherence:
     additionalProperties:
       $ref: '#/definitions/summary.AdherenceEntry'
@@ -1310,6 +1401,14 @@ definitions:
     - SportSwim
     - SportStrength
     - SportOther
+  workouts.Status:
+    enum:
+    - planned
+    - completed
+    type: string
+    x-enum-varnames:
+    - StatusPlanned
+    - StatusCompleted
   workouts.Workout:
     properties:
       avg_hr:
@@ -1354,6 +1453,8 @@ definitions:
         $ref: '#/definitions/workouts.Sport'
       started_at:
         type: string
+      status:
+        $ref: '#/definitions/workouts.Status'
       sweat_loss_ml:
         type: number
       temperature_c:
@@ -1466,6 +1567,126 @@ paths:
       summary: Energy Availability over a window
       tags:
       - energy
+  /fitness-metrics:
+    get:
+      parameters:
+      - description: Inclusive lower bound YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive upper bound YYYY-MM-DD; max 92-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ fitness_metrics: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: window_required | window_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List fitness snapshots in a date window
+      tags:
+      - fitness-metrics
+    post:
+      consumes:
+      - application/json
+      description: Creates or full-replaces the fitness snapshot for a calendar date.
+        Re-pushing the same date updates in place. Race predictions are seconds. Standard
+        `Idempotency-Key` header supported.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Fitness snapshot (date required; metrics optional)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/fitnessmetrics.Snapshot'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (date already present)
+          schema:
+            $ref: '#/definitions/fitnessmetrics.Snapshot'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/fitnessmetrics.Snapshot'
+        "400":
+          description: date_invalid | vo2max_running_invalid | vo2max_cycling_invalid
+            | race_predictor_5k_seconds_invalid | race_predictor_10k_seconds_invalid
+            | race_predictor_half_seconds_invalid | race_predictor_full_seconds_invalid
+            | acute_load_invalid | chronic_load_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a daily fitness snapshot (by date)
+      tags:
+      - fitness-metrics
+  /fitness-metrics/{date}:
+    delete:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: fitness_metrics_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete the fitness snapshot for a date
+      tags:
+      - fitness-metrics
+    get:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fitnessmetrics.Snapshot'
+        "404":
+          description: fitness_metrics_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the fitness snapshot for a date
+      tags:
+      - fitness-metrics
   /goal-templates:
     get:
       produces:
@@ -2793,6 +3014,125 @@ paths:
       summary: Pre/intra/post fueling recommendation for a single session
       tags:
       - race-prep
+  /recovery-metrics:
+    get:
+      parameters:
+      - description: Inclusive lower bound YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive upper bound YYYY-MM-DD; max 92-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ recovery_metrics: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: window_required | window_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List recovery snapshots in a date window
+      tags:
+      - recovery-metrics
+    post:
+      consumes:
+      - application/json
+      description: Creates or full-replaces the recovery snapshot for a calendar date.
+        "POST every day you see" — re-pushing the same date updates in place. Standard
+        `Idempotency-Key` header supported.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Recovery snapshot (date required; metrics optional)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/recoverymetrics.Snapshot'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (date already present)
+          schema:
+            $ref: '#/definitions/recoverymetrics.Snapshot'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/recoverymetrics.Snapshot'
+        "400":
+          description: date_invalid | sleep_seconds_invalid | sleep_score_invalid
+            | hrv_ms_invalid | resting_hr_invalid | stress_avg_invalid | body_battery_charged_invalid
+            | body_battery_drained_invalid | training_readiness_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a daily recovery snapshot (by date)
+      tags:
+      - recovery-metrics
+  /recovery-metrics/{date}:
+    delete:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: recovery_metrics_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete the recovery snapshot for a date
+      tags:
+      - recovery-metrics
+    get:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/recoverymetrics.Snapshot'
+        "404":
+          description: recovery_metrics_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the recovery snapshot for a date
+      tags:
+      - recovery-metrics
   /summary/daily:
     get:
       description: Returns aggregated totals for a single calendar date in the supplied
@@ -3042,7 +3382,8 @@ paths:
           schema:
             $ref: '#/definitions/bodyweight.Entry'
         "400":
-          description: weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid
+          description: weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid
+            | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid
             | logged_at_too_far_future | note_too_long
           schema:
             additionalProperties:
@@ -3098,7 +3439,8 @@ paths:
           schema:
             $ref: '#/definitions/bodyweight.Entry'
         "400":
-          description: weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid
+          description: weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid
+            | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid
             | note_too_long
           schema:
             additionalProperties:
@@ -3314,6 +3656,10 @@ paths:
         in: query
         name: session_group
         type: string
+      - description: 'Filter by lifecycle status: planned | completed'
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -3365,7 +3711,7 @@ paths:
           description: source_invalid | sport_invalid | window_invalid | started_at_too_far_future
             | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid
             | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
-            | session_group_invalid
+            | session_group_invalid | status_invalid
           schema:
             additionalProperties:
               type: string

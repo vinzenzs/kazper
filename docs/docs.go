@@ -139,6 +139,188 @@ const docTemplate = `{
                 }
             }
         },
+        "/fitness-metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "fitness-metrics"
+                ],
+                "summary": "List fitness snapshots in a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound YYYY-MM-DD; max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ fitness_metrics: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | window_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or full-replaces the fitness snapshot for a calendar date. Re-pushing the same date updates in place. Race predictions are seconds. Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "fitness-metrics"
+                ],
+                "summary": "Upsert a daily fitness snapshot (by date)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Fitness snapshot (date required; metrics optional)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (date already present)",
+                        "schema": {
+                            "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | vo2max_running_invalid | vo2max_cycling_invalid | race_predictor_5k_seconds_invalid | race_predictor_10k_seconds_invalid | race_predictor_half_seconds_invalid | race_predictor_full_seconds_invalid | acute_load_invalid | chronic_load_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fitness-metrics/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "fitness-metrics"
+                ],
+                "summary": "Get the fitness snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                        }
+                    },
+                    "404": {
+                        "description": "fitness_metrics_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "fitness-metrics"
+                ],
+                "summary": "Delete the fitness snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "fitness_metrics_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/goal-templates": {
             "get": {
                 "security": [
@@ -2106,6 +2288,188 @@ const docTemplate = `{
                 }
             }
         },
+        "/recovery-metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "recovery-metrics"
+                ],
+                "summary": "List recovery snapshots in a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound YYYY-MM-DD; max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ recovery_metrics: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | window_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or full-replaces the recovery snapshot for a calendar date. \"POST every day you see\" — re-pushing the same date updates in place. Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "recovery-metrics"
+                ],
+                "summary": "Upsert a daily recovery snapshot (by date)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Recovery snapshot (date required; metrics optional)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/recoverymetrics.Snapshot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (date already present)",
+                        "schema": {
+                            "$ref": "#/definitions/recoverymetrics.Snapshot"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/recoverymetrics.Snapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | sleep_seconds_invalid | sleep_score_invalid | hrv_ms_invalid | resting_hr_invalid | stress_avg_invalid | body_battery_charged_invalid | body_battery_drained_invalid | training_readiness_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/recovery-metrics/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "recovery-metrics"
+                ],
+                "summary": "Get the recovery snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/recoverymetrics.Snapshot"
+                        }
+                    },
+                    "404": {
+                        "description": "recovery_metrics_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "recovery-metrics"
+                ],
+                "summary": "Delete the recovery snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "recovery_metrics_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/summary/daily": {
             "get": {
                 "security": [
@@ -2462,7 +2826,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid | logged_at_too_far_future | note_too_long",
+                        "description": "weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid | logged_at_too_far_future | note_too_long",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2610,7 +2974,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "weight_kg_invalid | body_fat_pct_invalid | logged_at_invalid | note_too_long",
+                        "description": "weight_kg_invalid | body_fat_pct_invalid | muscle_mass_kg_invalid | body_water_pct_invalid | bone_mass_kg_invalid | bmi_invalid | logged_at_invalid | note_too_long",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2862,6 +3226,12 @@ const docTemplate = `{
                         "description": "Narrow to the legs of one brick/multisport session (exact-match on session_group)",
                         "name": "session_group",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by lifecycle status: planned | completed",
+                        "name": "status",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2929,7 +3299,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
+                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3193,7 +3563,16 @@ const docTemplate = `{
         "bodyweight.Entry": {
             "type": "object",
             "properties": {
+                "bmi": {
+                    "type": "number"
+                },
                 "body_fat_pct": {
+                    "type": "number"
+                },
+                "body_water_pct": {
+                    "type": "number"
+                },
+                "bone_mass_kg": {
                     "type": "number"
                 },
                 "created_at": {
@@ -3204,6 +3583,10 @@ const docTemplate = `{
                 },
                 "logged_at": {
                     "type": "string"
+                },
+                "muscle_mass_kg": {
+                    "description": "Smart-scale biometrics (Garmin full weigh-in). All nullable.",
+                    "type": "number"
                 },
                 "note": {
                     "type": "string"
@@ -3256,11 +3639,23 @@ const docTemplate = `{
         "bodyweight.createRequest": {
             "type": "object",
             "properties": {
+                "bmi": {
+                    "type": "number"
+                },
                 "body_fat_pct": {
+                    "type": "number"
+                },
+                "body_water_pct": {
+                    "type": "number"
+                },
+                "bone_mass_kg": {
                     "type": "number"
                 },
                 "logged_at": {
                     "type": "string"
+                },
+                "muscle_mass_kg": {
+                    "type": "number"
                 },
                 "note": {
                     "type": "string"
@@ -3273,11 +3668,23 @@ const docTemplate = `{
         "bodyweight.patchRequest": {
             "type": "object",
             "properties": {
+                "bmi": {
+                    "type": "number"
+                },
                 "body_fat_pct": {
+                    "type": "number"
+                },
+                "body_water_pct": {
+                    "type": "number"
+                },
+                "bone_mass_kg": {
                     "type": "number"
                 },
                 "logged_at": {
                     "type": "string"
+                },
+                "muscle_mass_kg": {
+                    "type": "number"
                 },
                 "note": {
                     "type": "string"
@@ -3310,6 +3717,9 @@ const docTemplate = `{
                 "date": {
                     "type": "string"
                 },
+                "fitness": {
+                    "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                },
                 "goal_override": {
                     "$ref": "#/definitions/dailycontext.GoalOverrideBlock"
                 },
@@ -3324,6 +3734,14 @@ const docTemplate = `{
                     "allOf": [
                         {
                             "$ref": "#/definitions/dailycontext.PhaseBlock"
+                        }
+                    ]
+                },
+                "recovery": {
+                    "description": "Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness\nreading is misleading). nil when no snapshot exists for the date.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/recoverymetrics.Snapshot"
                         }
                     ]
                 },
@@ -3419,7 +3837,16 @@ const docTemplate = `{
         "dailycontext.WeightBlock": {
             "type": "object",
             "properties": {
+                "bmi": {
+                    "type": "number"
+                },
                 "body_fat_pct": {
+                    "type": "number"
+                },
+                "body_water_pct": {
+                    "type": "number"
+                },
+                "bone_mass_kg": {
                     "type": "number"
                 },
                 "is_carryover": {
@@ -3427,6 +3854,9 @@ const docTemplate = `{
                 },
                 "logged_at": {
                     "type": "string"
+                },
+                "muscle_mass_kg": {
+                    "type": "number"
                 },
                 "weight_kg": {
                     "type": "number"
@@ -3580,6 +4010,44 @@ const docTemplate = `{
                 },
                 "total_days": {
                     "type": "integer"
+                }
+            }
+        },
+        "fitnessmetrics.Snapshot": {
+            "type": "object",
+            "properties": {
+                "acute_load": {
+                    "type": "number"
+                },
+                "chronic_load": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "race_predictor_10k_seconds": {
+                    "type": "integer"
+                },
+                "race_predictor_5k_seconds": {
+                    "type": "integer"
+                },
+                "race_predictor_full_seconds": {
+                    "type": "integer"
+                },
+                "race_predictor_half_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vo2max_cycling": {
+                    "type": "number"
+                },
+                "vo2max_running": {
+                    "type": "number"
                 }
             }
         },
@@ -4515,6 +4983,44 @@ const docTemplate = `{
                 }
             }
         },
+        "recoverymetrics.Snapshot": {
+            "type": "object",
+            "properties": {
+                "body_battery_charged": {
+                    "type": "integer"
+                },
+                "body_battery_drained": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "hrv_ms": {
+                    "type": "number"
+                },
+                "resting_hr": {
+                    "type": "integer"
+                },
+                "sleep_score": {
+                    "type": "integer"
+                },
+                "sleep_seconds": {
+                    "type": "integer"
+                },
+                "stress_avg": {
+                    "type": "integer"
+                },
+                "training_readiness": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "summary.Adherence": {
             "type": "object",
             "additionalProperties": {
@@ -5116,6 +5622,17 @@ const docTemplate = `{
                 "SportOther"
             ]
         },
+        "workouts.Status": {
+            "type": "string",
+            "enum": [
+                "planned",
+                "completed"
+            ],
+            "x-enum-varnames": [
+                "StatusPlanned",
+                "StatusCompleted"
+            ]
+        },
         "workouts.Workout": {
             "type": "object",
             "properties": {
@@ -5168,6 +5685,9 @@ const docTemplate = `{
                 },
                 "started_at": {
                     "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/workouts.Status"
                 },
                 "sweat_loss_ml": {
                     "type": "number"

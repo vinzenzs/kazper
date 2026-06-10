@@ -9,7 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
+	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
 )
@@ -29,6 +31,10 @@ type DailyContext struct {
 	Weight       *WeightBlock       `json:"weight"`       // nil when no entry ever logged
 	Phase        *PhaseBlock        `json:"phase"`        // nil when no phase covers the date
 	GoalOverride GoalOverrideBlock  `json:"goal_override"`
+	// Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
+	// reading is misleading). nil when no snapshot exists for the date.
+	Recovery *recoverymetrics.Snapshot `json:"recovery"`
+	Fitness  *fitnessmetrics.Snapshot  `json:"fitness"`
 }
 
 // AdherenceBlock mirrors the summary.Daily adherence + source fields.
@@ -82,10 +88,14 @@ type WorkoutFuelLite struct {
 // requested day. IsCarryover discriminates "fresh entry today" from
 // "last seen N days ago" — the agent uses it to decide whether to nudge.
 type WeightBlock struct {
-	LoggedAt    time.Time `json:"logged_at"`
-	WeightKg    float64   `json:"weight_kg"`
-	BodyFatPct  *float64  `json:"body_fat_pct,omitempty"`
-	IsCarryover bool      `json:"is_carryover"`
+	LoggedAt     time.Time `json:"logged_at"`
+	WeightKg     float64   `json:"weight_kg"`
+	BodyFatPct   *float64  `json:"body_fat_pct,omitempty"`
+	MuscleMassKg *float64  `json:"muscle_mass_kg,omitempty"`
+	BodyWaterPct *float64  `json:"body_water_pct,omitempty"`
+	BoneMassKg   *float64  `json:"bone_mass_kg,omitempty"`
+	BMI          *float64  `json:"bmi,omitempty"`
+	IsCarryover  bool      `json:"is_carryover"`
 }
 
 // PhaseBlock is the full phase row covering the date (resolver-picked when

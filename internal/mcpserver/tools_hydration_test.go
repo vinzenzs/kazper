@@ -17,11 +17,11 @@ import (
 )
 
 type hydrationRecord struct {
-	method  string
-	path    string
+	method   string
+	path     string
 	rawQuery string
-	body    []byte
-	idemKey string
+	body     []byte
+	idemKey  string
 }
 
 func newHydrationRecorder(t *testing.T, status int, respBody string) (*apiClient, *[]hydrationRecord) {

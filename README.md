@@ -392,7 +392,14 @@ curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     "http://localhost:8080/workouts?from=2026-06-01T00:00:00Z&to=2026-06-08T00:00:00Z"
 
-# Patch TSS / notes (immutable: source, external_id, sport, started_at, ended_at)
+# Planned (scheduled) workout — status defaults to "completed"; "planned" allows a
+# future started_at (up to 1 year). Promote it to completed via PATCH when it happens.
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"source":"garmin","sport":"bike","status":"planned","name":"Sat long ride","started_at":"2026-07-04T07:00:00Z","ended_at":"2026-07-04T10:00:00Z"}' \
+    http://localhost:8080/workouts
+# Fetch just the plan: GET /workouts?...&status=planned
+
+# Patch TSS / notes / status (immutable: source, external_id, sport, started_at, ended_at)
 curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"tss":85,"notes":"FTP changed last month"}' \
@@ -447,18 +454,19 @@ curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 
 ### Body weight
 
-A measurement event — kg, optionally body-fat %, with a `note` for context that affects
-readings (post-workout, hotel scale, non-morning timing). Multiple measurements per day are
-allowed; the trend endpoint smooths them with a rolling average. Each trend point carries
-`sample_count` so callers can tell a real trend from a sparse-data mirage (a `rolling_avg_kg`
-from `sample_count: 1` is just that one sample).
+A measurement event — kg, optionally body-fat % and the smart-scale biometrics a full Garmin
+weigh-in reports (`muscle_mass_kg`, `body_water_pct`, `bone_mass_kg`, `bmi`), with a `note` for
+context that affects readings (post-workout, hotel scale, non-morning timing). Multiple
+measurements per day are allowed; the trend endpoint smooths them with a rolling average. Each
+trend point carries `sample_count` so callers can tell a real trend from a sparse-data mirage (a
+`rolling_avg_kg` from `sample_count: 1` is just that one sample).
 
 ```bash
-# Log a morning weighing, optionally with body-fat %
+# Log a morning weighing — body-fat % and smart-scale biometrics are all optional
 curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
-    -d '{"weight_kg":72.5,"body_fat_pct":14.2,"logged_at":"2026-06-07T07:00:00Z","note":"morning, fasted"}' \
+    -d '{"weight_kg":72.5,"body_fat_pct":14.2,"muscle_mass_kg":58.4,"body_water_pct":55.1,"bone_mass_kg":3.2,"bmi":22.4,"logged_at":"2026-06-07T07:00:00Z","note":"morning, fasted"}' \
     http://localhost:8080/weight
 
 # List entries in a window (half-open [from, to), 92-day cap)
@@ -481,6 +489,46 @@ curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     http://localhost:8080/weight/<uuid>
 curl -X DELETE -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     http://localhost:8080/weight/<uuid>
+```
+
+### Recovery metrics
+
+One daily snapshot per calendar date of the recovery signals a wellness device reports — sleep
+(`sleep_seconds`, `sleep_score`), `hrv_ms`, `resting_hr`, `stress_avg`, body battery
+(`body_battery_charged`/`drained`), `training_readiness`. Identified by `date`; "POST every day
+you see" and re-pushing the same date full-replaces it (no surrogate id, no duplicate-day rows).
+Every metric is optional — NULL means the device didn't report it. This is the recovery context
+for deciding whether today's deficit / training load is tolerable.
+
+```bash
+# Upsert a day's recovery snapshot (re-POST same date → 200 update, full-replace)
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"date":"2026-06-09","sleep_seconds":27000,"sleep_score":82,"hrv_ms":61,"resting_hr":48,"stress_avg":28,"training_readiness":74}' \
+    http://localhost:8080/recovery-metrics
+
+# List a window (inclusive YYYY-MM-DD, 92-day cap), get / delete one day
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/recovery-metrics?from=2026-06-01&to=2026-06-30"
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" http://localhost:8080/recovery-metrics/2026-06-09
+curl -X DELETE -H "Authorization: Bearer $MOBILE_API_TOKEN" http://localhost:8080/recovery-metrics/2026-06-09
+```
+
+### Fitness metrics
+
+Sister capability to recovery — one daily snapshot of `vo2max_running`/`vo2max_cycling`, race
+predictions (`race_predictor_{5k,10k,half,full}_seconds`, stored as **seconds** — format
+`h:mm:ss` yourself), and `acute_load`/`chronic_load`. The acute:chronic ratio is
+`acute_load / chronic_load`, derived at read time (not stored). Same date-keyed upsert + list /
+get / delete shape as recovery-metrics.
+
+```bash
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"date":"2026-06-09","vo2max_running":54,"race_predictor_5k_seconds":1230,"acute_load":420.5,"chronic_load":380}' \
+    http://localhost:8080/fitness-metrics
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/fitness-metrics?from=2026-06-01&to=2026-06-30"
 ```
 
 ### Energy availability

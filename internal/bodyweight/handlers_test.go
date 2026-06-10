@@ -338,3 +338,66 @@ func mustCreate(t *testing.T, r *gin.Engine, body string) *bodyweight.Entry {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &e))
 	return &e
 }
+
+// ============================================================================
+// Smart-scale biometrics (muscle_mass_kg / body_water_pct / bone_mass_kg / bmi)
+// ============================================================================
+
+func TestCreate_WithBiometrics(t *testing.T) {
+	f := setup(t, "UTC")
+	rec := doReq(t, f.r, http.MethodPost, "/weight",
+		`{"weight_kg":72.5,"logged_at":"2026-06-07T07:00:00Z","muscle_mass_kg":58.4,"body_water_pct":55.1,"bone_mass_kg":3.2,"bmi":22.4}`, nil)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var e bodyweight.Entry
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &e))
+	require.NotNil(t, e.MuscleMassKg)
+	assert.InDelta(t, 58.4, *e.MuscleMassKg, 0.05)
+	require.NotNil(t, e.BodyWaterPct)
+	assert.InDelta(t, 55.1, *e.BodyWaterPct, 0.05)
+	require.NotNil(t, e.BoneMassKg)
+	assert.InDelta(t, 3.2, *e.BoneMassKg, 0.05)
+	require.NotNil(t, e.BMI)
+	assert.InDelta(t, 22.4, *e.BMI, 0.05)
+}
+
+func TestCreate_WithoutBiometricsOmitsThem(t *testing.T) {
+	f := setup(t, "UTC")
+	rec := doReq(t, f.r, http.MethodPost, "/weight",
+		`{"weight_kg":72.5,"logged_at":"2026-06-07T07:00:00Z"}`, nil)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	body := rec.Body.String()
+	for _, k := range []string{`"muscle_mass_kg"`, `"body_water_pct"`, `"bone_mass_kg"`, `"bmi"`} {
+		assert.NotContains(t, body, k)
+	}
+}
+
+func TestCreate_InvalidBiometricsRejected(t *testing.T) {
+	f := setup(t, "UTC")
+	base := `"weight_kg":72.5,"logged_at":"2026-06-07T07:00:00Z"`
+	cases := map[string]string{
+		`{` + base + `,"muscle_mass_kg":0}`:   "muscle_mass_kg_invalid",
+		`{` + base + `,"body_water_pct":120}`: "body_water_pct_invalid",
+		`{` + base + `,"body_water_pct":-1}`:  "body_water_pct_invalid",
+		`{` + base + `,"bone_mass_kg":-2}`:    "bone_mass_kg_invalid",
+		`{` + base + `,"bmi":0}`:              "bmi_invalid",
+	}
+	for body, want := range cases {
+		rec := doReq(t, f.r, http.MethodPost, "/weight", body, nil)
+		require.Equal(t, http.StatusBadRequest, rec.Code, body)
+		var got map[string]string
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		assert.Equal(t, want, got["error"], body)
+	}
+}
+
+func TestPatch_Biometric(t *testing.T) {
+	f := setup(t, "UTC")
+	e := mustCreate(t, f.r, `{"weight_kg":72.5,"logged_at":"2026-06-07T07:00:00Z"}`)
+	rec := doReq(t, f.r, http.MethodPatch, "/weight/"+e.ID.String(), `{"muscle_mass_kg":59.0}`, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var got bodyweight.Entry
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.NotNil(t, got.MuscleMassKg)
+	assert.InDelta(t, 59.0, *got.MuscleMassKg, 0.05)
+	assert.Equal(t, 72.5, got.WeightKg, "weight unchanged")
+}

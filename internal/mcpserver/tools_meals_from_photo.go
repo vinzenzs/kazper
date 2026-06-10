@@ -17,12 +17,12 @@ import (
 // fields mirror the freeform path so the agent can set quantity / meal_type /
 // note in the same call.
 type LogMealFromPhotoArgs struct {
-	ImageBase64    string  `json:"image_base64" jsonschema:"image bytes, base64-encoded (JPEG or PNG; HEIC is rejected with 415 in v1)"`
+	ImageBase64    string   `json:"image_base64" jsonschema:"image bytes, base64-encoded (JPEG or PNG; HEIC is rejected with 415 in v1)"`
 	QuantityG      *float64 `json:"quantity_g,omitempty" jsonschema:"meal quantity in grams, default 100"`
-	LoggedAt       string  `json:"logged_at,omitempty" jsonschema:"RFC 3339 timestamp; default now()"`
-	MealType       string  `json:"meal_type,omitempty" jsonschema:"breakfast | lunch | dinner | snack"`
-	Note           string  `json:"note,omitempty" jsonschema:"optional free-text note"`
-	IdempotencyKey string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key. If omitted, a stable key is derived from the (decoded image bytes + metadata) — byte-identical replays return the original meal without a second Claude call."`
+	LoggedAt       string   `json:"logged_at,omitempty" jsonschema:"RFC 3339 timestamp; default now()"`
+	MealType       string   `json:"meal_type,omitempty" jsonschema:"breakfast | lunch | dinner | snack"`
+	Note           string   `json:"note,omitempty" jsonschema:"optional free-text note"`
+	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key. If omitted, a stable key is derived from the (decoded image bytes + metadata) — byte-identical replays return the original meal without a second Claude call."`
 }
 
 func handleLogMealFromPhoto(ctx context.Context, c *apiClient, args LogMealFromPhotoArgs) *mcp.CallToolResult {
