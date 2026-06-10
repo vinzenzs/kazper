@@ -75,15 +75,15 @@
 
 ## 8. Smoke verification (manual / local)
 
-- [ ] 8.1 Run the PR workflow's job locally via `act -j validate` (if `act` is installed) to catch obvious typos before push.
-- [ ] 8.2 Build the image locally with `--build-arg VERSION=v0.0.0-test`, push to a kind cluster, and confirm `kubectl logs` shows the API starting and `nutrition-api migrate` applying migrations.
-- [ ] 8.3 `helm install nutrition-api ./deploy/helm/nutrition-api/ --set secrets.databaseUrl=... --set image.repository=local/nutrition-api --set image.tag=v0.0.0-test --set image.pullPolicy=Never` against a kind cluster with a side-car Postgres deployment; `kubectl wait` for ready, `kubectl port-forward svc/nutrition-api 8080:80`, `curl localhost:8080/healthz` → `{"status":"ok"}`.
-- [ ] 8.4 `helm upgrade nutrition-api ./deploy/helm/nutrition-api/ ...` with a changed image tag and confirm the Recreate strategy + readiness probe sequencing works (pod removed from endpoints before being deleted).
+- [x] 8.1 Run the PR workflow's job locally via `act -j validate` (if `act` is installed) to catch obvious typos before push.
+- [x] 8.2 Build the image locally with `--build-arg VERSION=v0.0.0-test`, push to a kind cluster, and confirm `kubectl logs` shows the API starting and `nutrition-api migrate` applying migrations.
+- [x] 8.3 `helm install nutrition-api ./deploy/helm/nutrition-api/ --set secrets.databaseUrl=... --set image.repository=local/nutrition-api --set image.tag=v0.0.0-test --set image.pullPolicy=Never` against a kind cluster with a side-car Postgres deployment; `kubectl wait` for ready, `kubectl port-forward svc/nutrition-api 8080:80`, `curl localhost:8080/healthz` → `{"status":"ok"}`.
+- [x] 8.4 `helm upgrade nutrition-api ./deploy/helm/nutrition-api/ ...` with a changed image tag and confirm the Recreate strategy + readiness probe sequencing works (pod removed from endpoints before being deleted).
 
 ## 9. Pre-merge
 
 - [x] 9.1 `task vet` clean (Go side untouched but verify nothing broke).
 - [x] 9.2 `task test` green.
 - [x] 9.3 `openspec validate add-deployment-pipeline --strict` passes.
-- [ ] 9.4 Manual: confirm `gh repo view --json` shows the repo has `packages: write` for the default GITHUB_TOKEN (it does on personal repos by default; just sanity-check).
-- [ ] 9.5 Manual: cut a test tag `v0.0.1-rc1` on a throwaway branch, watch the release workflow, confirm both the image and the chart land in GHCR, then delete the test tag and the GHCR artifacts.
+- [x] 9.4 Manual: confirm `gh repo view --json` shows the repo has `packages: write` for the default GITHUB_TOKEN (it does on personal repos by default; just sanity-check).
+- [x] 9.5 Manual: cut a test tag `v0.0.1-rc1` on a throwaway branch, watch the release workflow, confirm both the image and the chart land in GHCR, then delete the test tag and the GHCR artifacts.

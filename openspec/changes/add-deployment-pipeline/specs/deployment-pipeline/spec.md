@@ -35,12 +35,12 @@ The system SHALL accept `VERSION` and `COMMIT` as Docker build args and inject t
 
 - **WHEN** the image is built with `--build-arg VERSION=v1.2.3 --build-arg COMMIT=abcdef0`
 - **AND** the container is run with `nutrition-api version`
-- **THEN** the output contains `version: v1.2.3` and `commit: abcdef0`
+- **THEN** the output contains `version=v1.2.3` and `commit=abcdef0`
 
 #### Scenario: Default values for unstamped builds
 
 - **WHEN** the image is built without build args (e.g., a local `docker build` for testing)
-- **THEN** the binary reports `version: dev` and `commit: unknown`
+- **THEN** the binary reports `version=dev` and `commit=unknown`
 
 ### Requirement: Helm chart packages the API as a single-replica Deployment with no Postgres
 
