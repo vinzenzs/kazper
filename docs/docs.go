@@ -856,6 +856,188 @@ const docTemplate = `{
                 }
             }
         },
+        "/hydration-balance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "hydration-balance"
+                ],
+                "summary": "List hydration-balance snapshots in a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound YYYY-MM-DD; max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ hydration_balance: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | window_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or full-replaces the daily water-balance snapshot for a calendar date — estimated sweat loss, fluid taken during activity, daily goal. Re-pushing the same date updates in place. Distinct from /hydration (per-entry logged intake). Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "hydration-balance"
+                ],
+                "summary": "Upsert a daily hydration-balance snapshot (by date)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Hydration-balance snapshot (date required; metrics optional)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/hydrationbalance.Snapshot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (date already present)",
+                        "schema": {
+                            "$ref": "#/definitions/hydrationbalance.Snapshot"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/hydrationbalance.Snapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | sweat_loss_ml_invalid | activity_intake_ml_invalid | goal_ml_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/hydration-balance/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "hydration-balance"
+                ],
+                "summary": "Get the hydration-balance snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/hydrationbalance.Snapshot"
+                        }
+                    },
+                    "404": {
+                        "description": "hydration_balance_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "hydration-balance"
+                ],
+                "summary": "Delete the hydration-balance snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "hydration_balance_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/hydration/{id}": {
             "delete": {
                 "security": [
@@ -3726,6 +3908,14 @@ const docTemplate = `{
                 "hydration": {
                     "$ref": "#/definitions/dailycontext.HydrationBlock"
                 },
+                "hydration_balance": {
+                    "description": "Garmin's daily water-balance estimate (sweat out, activity intake in, goal).\nSame-day-or-null. Distinct from the Hydration block (logged intake).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/hydrationbalance.Snapshot"
+                        }
+                    ]
+                },
                 "nutrition": {
                     "$ref": "#/definitions/dailycontext.NutritionBlock"
                 },
@@ -4198,6 +4388,29 @@ const docTemplate = `{
                 },
                 "workout_id": {
                     "description": "WorkoutID supports the empty-string clear sentinel:\n  omitted   → leave unchanged\n  \"\u003cuuid\u003e\"  → set the link\n  \"\"        → clear the link",
+                    "type": "string"
+                }
+            }
+        },
+        "hydrationbalance.Snapshot": {
+            "type": "object",
+            "properties": {
+                "activity_intake_ml": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "goal_ml": {
+                    "type": "number"
+                },
+                "sweat_loss_ml": {
+                    "type": "number"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }

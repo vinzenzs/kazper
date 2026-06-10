@@ -109,6 +109,12 @@ definitions:
         $ref: '#/definitions/dailycontext.GoalOverrideBlock'
       hydration:
         $ref: '#/definitions/dailycontext.HydrationBlock'
+      hydration_balance:
+        allOf:
+        - $ref: '#/definitions/hydrationbalance.Snapshot'
+        description: |-
+          Garmin's daily water-balance estimate (sweat out, activity intake in, goal).
+          Same-day-or-null. Distinct from the Hydration block (logged intake).
       nutrition:
         $ref: '#/definitions/dailycontext.NutritionBlock'
       phase:
@@ -421,6 +427,21 @@ definitions:
             omitted   → leave unchanged
             "<uuid>"  → set the link
             ""        → clear the link
+        type: string
+    type: object
+  hydrationbalance.Snapshot:
+    properties:
+      activity_intake_ml:
+        type: number
+      created_at:
+        type: string
+      date:
+        type: string
+      goal_ml:
+        type: number
+      sweat_loss_ml:
+        type: number
+      updated_at:
         type: string
     type: object
   meals.MealEntry:
@@ -2042,6 +2063,125 @@ paths:
       summary: Log a hydration entry
       tags:
       - hydration
+  /hydration-balance:
+    get:
+      parameters:
+      - description: Inclusive lower bound YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive upper bound YYYY-MM-DD; max 92-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ hydration_balance: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: window_required | window_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List hydration-balance snapshots in a date window
+      tags:
+      - hydration-balance
+    post:
+      consumes:
+      - application/json
+      description: Creates or full-replaces the daily water-balance snapshot for a
+        calendar date — estimated sweat loss, fluid taken during activity, daily goal.
+        Re-pushing the same date updates in place. Distinct from /hydration (per-entry
+        logged intake). Standard `Idempotency-Key` header supported.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Hydration-balance snapshot (date required; metrics optional)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/hydrationbalance.Snapshot'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (date already present)
+          schema:
+            $ref: '#/definitions/hydrationbalance.Snapshot'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/hydrationbalance.Snapshot'
+        "400":
+          description: date_invalid | sweat_loss_ml_invalid | activity_intake_ml_invalid
+            | goal_ml_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a daily hydration-balance snapshot (by date)
+      tags:
+      - hydration-balance
+  /hydration-balance/{date}:
+    delete:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: hydration_balance_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete the hydration-balance snapshot for a date
+      tags:
+      - hydration-balance
+    get:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/hydrationbalance.Snapshot'
+        "404":
+          description: hydration_balance_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the hydration-balance snapshot for a date
+      tags:
+      - hydration-balance
   /hydration/{id}:
     delete:
       parameters:

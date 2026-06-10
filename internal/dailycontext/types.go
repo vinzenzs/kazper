@@ -11,6 +11,7 @@ import (
 
 	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
+	"github.com/vinzenzs/nutrition-api/internal/hydrationbalance"
 	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
@@ -35,6 +36,9 @@ type DailyContext struct {
 	// reading is misleading). nil when no snapshot exists for the date.
 	Recovery *recoverymetrics.Snapshot `json:"recovery"`
 	Fitness  *fitnessmetrics.Snapshot  `json:"fitness"`
+	// Garmin's daily water-balance estimate (sweat out, activity intake in, goal).
+	// Same-day-or-null. Distinct from the Hydration block (logged intake).
+	HydrationBalance *hydrationbalance.Snapshot `json:"hydration_balance"`
 }
 
 // AdherenceBlock mirrors the summary.Daily adherence + source fields.

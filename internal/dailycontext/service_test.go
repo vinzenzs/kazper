@@ -14,6 +14,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
+	"github.com/vinzenzs/nutrition-api/internal/hydrationbalance"
 	"github.com/vinzenzs/nutrition-api/internal/meals"
 	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/store/storetest"
@@ -26,18 +27,19 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 type fix struct {
-	svc            *dailycontext.Service
-	meals          *meals.Repo
-	hydration      *hydration.Repo
-	workouts       *workouts.Repo
-	workoutFuel    *workoutfuel.Repo
-	bodyWeight     *bodyweight.Repo
-	goalsDefault   *goals.Repo
-	goalsOverrides *goals.OverridesRepo
-	templates      *trainingphases.TemplatesRepo
-	phases         *trainingphases.PhasesRepo
-	recovery       *recoverymetrics.Repo
-	fitness        *fitnessmetrics.Repo
+	svc              *dailycontext.Service
+	meals            *meals.Repo
+	hydration        *hydration.Repo
+	workouts         *workouts.Repo
+	workoutFuel      *workoutfuel.Repo
+	bodyWeight       *bodyweight.Repo
+	goalsDefault     *goals.Repo
+	goalsOverrides   *goals.OverridesRepo
+	templates        *trainingphases.TemplatesRepo
+	phases           *trainingphases.PhasesRepo
+	recovery         *recoverymetrics.Repo
+	fitness          *fitnessmetrics.Repo
+	hydrationBalance *hydrationbalance.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -60,24 +62,26 @@ func setup(t *testing.T) *fix {
 	summarySvc := summary.NewService(pool, mealsRepo, resolver)
 	recoveryRepo := recoverymetrics.NewRepo(pool)
 	fitnessRepo := fitnessmetrics.NewRepo(pool)
+	hydrationBalRepo := hydrationbalance.NewRepo(pool)
 	svc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, overridesRepo, phRepo,
-		recoveryRepo, fitnessRepo,
+		recoveryRepo, fitnessRepo, hydrationBalRepo,
 	)
 	return &fix{
-		svc:            svc,
-		recovery:       recoveryRepo,
-		fitness:        fitnessRepo,
-		meals:          mealsRepo,
-		hydration:      hydrationRepo,
-		workouts:       workoutsRepo,
-		workoutFuel:    workoutFuelRepo,
-		bodyWeight:     bodyWeightRepo,
-		goalsDefault:   goalsRepo,
-		goalsOverrides: overridesRepo,
-		templates:      tplRepo,
-		phases:         phRepo,
+		svc:              svc,
+		recovery:         recoveryRepo,
+		fitness:          fitnessRepo,
+		hydrationBalance: hydrationBalRepo,
+		meals:            mealsRepo,
+		hydration:        hydrationRepo,
+		workouts:         workoutsRepo,
+		workoutFuel:      workoutFuelRepo,
+		bodyWeight:       bodyWeightRepo,
+		goalsDefault:     goalsRepo,
+		goalsOverrides:   overridesRepo,
+		templates:        tplRepo,
+		phases:           phRepo,
 	}
 }
 
@@ -408,4 +412,47 @@ func TestBuildFor_RecoveryAndFitnessNullWhenAbsentNoCarryover(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, out.Recovery, "recovery is same-day-or-null, never carried over")
 	assert.Nil(t, out.Fitness, "fitness is same-day-or-null, never carried over")
+}
+
+// TestBuildFor_HydrationBalancePresent covers the add-hydration-balance-metrics
+// addition: the same-day snapshot surfaces in its own block, stays distinct from
+// the logged-intake hydration block, and is null (no carryover) when absent.
+func TestBuildFor_HydrationBalancePresent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	_, err := f.hydrationBalance.Upsert(ctx, &hydrationbalance.Snapshot{
+		Date: "2026-07-15", SweatLossML: ptr(2400.0), ActivityIntakeML: ptr(1800.0), GoalML: ptr(3000.0),
+	})
+	require.NoError(t, err)
+	// A logged hydration entry on the same day — the two blocks must stay distinct.
+	require.NoError(t, f.hydration.Insert(ctx, &hydration.Entry{
+		LoggedAt: time.Date(2026, 7, 15, 9, 0, 0, 0, loc), QuantityMl: 500,
+	}))
+
+	out, err := f.svc.BuildFor(ctx, date, loc)
+	require.NoError(t, err)
+
+	require.NotNil(t, out.HydrationBalance)
+	require.NotNil(t, out.HydrationBalance.SweatLossML)
+	assert.InDelta(t, 2400, *out.HydrationBalance.SweatLossML, 0.05)
+	// Distinct from the logged-intake block.
+	assert.InDelta(t, 500, out.Hydration.TotalMl, 0.05)
+	assert.Equal(t, 1, out.Hydration.EntriesCount)
+}
+
+func TestBuildFor_HydrationBalanceNullWhenAbsentNoCarryover(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+
+	// Snapshot exists for the PRIOR day only — must NOT carry over.
+	_, err := f.hydrationBalance.Upsert(ctx, &hydrationbalance.Snapshot{Date: "2026-07-14", SweatLossML: ptr(2200.0)})
+	require.NoError(t, err)
+
+	out, err := f.svc.BuildFor(ctx, time.Date(2026, 7, 15, 0, 0, 0, 0, loc), loc)
+	require.NoError(t, err)
+	assert.Nil(t, out.HydrationBalance, "hydration_balance is same-day-or-null, never carried over")
 }

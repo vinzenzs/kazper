@@ -503,15 +503,20 @@ curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: a
     -d "{\"date\":\"$DAY\",\"vo2max_running\":54,\"race_predictor_5k_seconds\":1230,\"acute_load\":420.5,\"chronic_load\":380}" \
     http://localhost:8080/fitness-metrics > /dev/null
 
+# Hydration balance (Garmin's daily sweat-out / activity-intake / goal — distinct from /hydration)
+curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d "{\"date\":\"$DAY\",\"sweat_loss_ml\":2400,\"activity_intake_ml\":1800,\"goal_ml\":3000}" \
+    http://localhost:8080/hydration-balance > /dev/null
+
 # Tomorrow's planned ride from the training calendar (status=planned allows the future date)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
     -d "{\"source\":\"garmin\",\"sport\":\"bike\",\"status\":\"planned\",\"name\":\"Z2 endurance\",\"started_at\":\"$(date -u -v+1d +%Y-%m-%dT07:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT07:00:00Z)\",\"ended_at\":\"$(date -u -v+1d +%Y-%m-%dT09:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT09:00:00Z)\"}" \
     http://localhost:8080/workouts > /dev/null
 
-# daily_context now carries recovery + fitness for today
+# daily_context now carries recovery + fitness + hydration_balance for today
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/context/daily?date=$DAY" | jq '{recovery: .recovery.resting_hr, fitness: .fitness.vo2max_running}'
-# → { "recovery": 48, "fitness": 54 }
+    "http://localhost:8080/context/daily?date=$DAY" | jq '{recovery: .recovery.resting_hr, fitness: .fitness.vo2max_running, sweat_loss: .hydration_balance.sweat_loss_ml}'
+# → { "recovery": 48, "fitness": 54, "sweat_loss": 2400 }
 ```
 
 ### Cleaning up leftover products
@@ -605,6 +610,31 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     jq '{rpe, gi_distress_score, sweat_loss_ml, temperature_c, intra_carbs: .intra_window.workout_fuel.totals.carbs_g}'
 # Expected: { "rpe": 7, "gi_distress_score": 2, "sweat_loss_ml": 2600, "temperature_c": 28, "intra_carbs": 75 }
 ```
+
+---
+
+## Pairing the companion app
+
+The Flutter companion app (`apps/companion/`) authenticates with the same
+`MOBILE_API_TOKEN` the curl examples use. Pairing is a one-time QR scan:
+
+```bash
+# With `task dev` running and qrencode installed (see Prerequisites):
+task dev:pair        # or `task app:pair`
+```
+
+This prints a QR code **in the terminal** encoding a JSON payload:
+
+```json
+{"base_url": "http://<your-LAN-ip>:8080", "token": "<MOBILE_API_TOKEN>"}
+```
+
+Open the app on first launch — it shows a pairing screen — and point the camera
+at the QR. The app stores the token in the Android Keystore and the base URL in
+preferences, then drops you on the Today screen. The phone must be on the same
+network as the backend (the URL uses your LAN IP, not `localhost`). To re-pair
+against a different backend, use **Unpair** in the app's Settings sheet and scan
+again.
 
 ---
 

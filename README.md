@@ -23,6 +23,15 @@ future re-extraction.
 - Idempotent writes via `Idempotency-Key` so retries (especially from the
   agent) are safe
 
+## Mobile companion
+
+A Flutter (Android) companion app lives in [`apps/companion/`](apps/companion/).
+It is a focused supplement to the agent — three screens (Today, Camera, Recent)
+and three killer interactions: barcode→log, photo→log, and a one-tap hydration
+home-screen widget that works offline. It talks to this same REST API using
+`MOBILE_API_TOKEN`, paired once by scanning the QR printed by `task dev:pair`.
+See [`apps/companion/README.md`](apps/companion/README.md) to build and run it.
+
 ## Quickstart
 
 ```bash
@@ -529,6 +538,26 @@ curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     http://localhost:8080/fitness-metrics
 curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     "http://localhost:8080/fitness-metrics?from=2026-06-01&to=2026-06-30"
+```
+
+### Hydration balance
+
+One daily snapshot of the body's water balance — `sweat_loss_ml` (estimated sweat out),
+`activity_intake_ml` (fluid taken during activity; a real `0` is meaningful), and `goal_ml` (the
+daily hydration goal). Same date-keyed upsert + list / get / delete shape as recovery/fitness.
+
+This is **distinct from `/hydration`**: `/hydration` is the user's per-entry *logged intake* (and
+its summary sums those entries); hydration-balance is a device's *daily estimate* (one row/day).
+The daily balance reads sweat-out from here and total-in from the hydration summary — the API
+stores both primitives; the agent computes the deficit/ratio.
+
+```bash
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"date":"2026-06-09","sweat_loss_ml":2400,"activity_intake_ml":1800,"goal_ml":3000}' \
+    http://localhost:8080/hydration-balance
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/hydration-balance?from=2026-06-01&to=2026-06-30"
 ```
 
 ### Energy availability

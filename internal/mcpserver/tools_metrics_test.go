@@ -134,3 +134,59 @@ func TestPatchWorkout_ForwardsStatus(t *testing.T) {
 
 func ptrInt(v int) *int           { return &v }
 func ptrFloat(v float64) *float64 { return &v }
+
+// ----- hydration-balance tools -----
+
+func TestLogHydrationBalance_ForwardsBodyAndDerivesKey(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"date":"2026-06-09"}`)
+	_ = handleLogHydrationBalance(context.Background(), c, LogHydrationBalanceArgs{
+		Date: "2026-06-09", SweatLossML: ptrFloat(2400), ActivityIntakeML: ptrFloat(0), GoalML: ptrFloat(3000),
+	})
+	require.Len(t, *recs, 1)
+	rec := (*recs)[0]
+	assert.Equal(t, http.MethodPost, rec.method)
+	assert.Equal(t, "/hydration-balance", rec.path)
+	assert.NotEmpty(t, rec.idemKey)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.body, &body))
+	assert.InDelta(t, 2400.0, body["sweat_loss_ml"], 0.001)
+	assert.EqualValues(t, 0, body["activity_intake_ml"], "a real zero is forwarded, not dropped")
+	assert.InDelta(t, 3000.0, body["goal_ml"], 0.001)
+}
+
+func TestLogHydrationBalance_OmitsUnsetMetrics(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"date":"2026-06-09"}`)
+	_ = handleLogHydrationBalance(context.Background(), c, LogHydrationBalanceArgs{
+		Date: "2026-06-09", SweatLossML: ptrFloat(2400),
+	})
+	require.Len(t, *recs, 1)
+	body := string((*recs)[0].body)
+	assert.NotContains(t, body, `"activity_intake_ml"`)
+	assert.NotContains(t, body, `"goal_ml"`)
+}
+
+func TestListHydrationBalance_BuildsWindowNoKey(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"hydration_balance":[]}`)
+	_ = handleListHydrationBalance(context.Background(), c, ListHydrationBalanceArgs{From: "2026-06-01", To: "2026-06-30"})
+	require.Len(t, *recs, 1)
+	rec := (*recs)[0]
+	assert.Equal(t, "/hydration-balance", rec.path)
+	values, err := url.ParseQuery(rec.rawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-06-01", values.Get("from"))
+	assert.Empty(t, rec.idemKey)
+}
+
+func TestGetAndDeleteHydrationBalance_AddressByDate(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"date":"2026-06-09"}`)
+	_ = handleGetHydrationBalance(context.Background(), c, GetHydrationBalanceArgs{Date: "2026-06-09"})
+	require.Len(t, *recs, 1)
+	assert.Equal(t, "/hydration-balance/2026-06-09", (*recs)[0].path)
+
+	c2, recs2 := newWorkoutRecorder(t, 204, ``)
+	r := handleDeleteHydrationBalance(context.Background(), c2, DeleteHydrationBalanceArgs{Date: "2026-06-09"})
+	require.Len(t, *recs2, 1)
+	assert.Equal(t, http.MethodDelete, (*recs2)[0].method)
+	assert.Equal(t, "/hydration-balance/2026-06-09", (*recs2)[0].path)
+	assert.False(t, r.IsError)
+}

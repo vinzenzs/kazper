@@ -19,6 +19,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
+	"github.com/vinzenzs/nutrition-api/internal/hydrationbalance"
 	"github.com/vinzenzs/nutrition-api/internal/idempotency"
 	"github.com/vinzenzs/nutrition-api/internal/meals"
 	"github.com/vinzenzs/nutrition-api/internal/off"
@@ -139,6 +140,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	recoveryMetricsSvc := recoverymetrics.NewService(recoveryMetricsRepo)
 	fitnessMetricsRepo := fitnessmetrics.NewRepo(pool)
 	fitnessMetricsSvc := fitnessmetrics.NewService(fitnessMetricsRepo)
+	hydrationBalanceRepo := hydrationbalance.NewRepo(pool)
+	hydrationBalanceSvc := hydrationbalance.NewService(hydrationBalanceRepo)
 	energySvc := energy.NewService(mealsRepo, workoutsRepo, bodyWeightRepo)
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
@@ -201,11 +204,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
 	recoverymetrics.NewHandlers(recoveryMetricsSvc).Register(api)
 	fitnessmetrics.NewHandlers(fitnessMetricsSvc).Register(api)
+	hydrationbalance.NewHandlers(hydrationBalanceSvc).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
-		recoveryMetricsRepo, fitnessMetricsRepo,
+		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 

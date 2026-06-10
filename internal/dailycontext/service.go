@@ -12,6 +12,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
 	"github.com/vinzenzs/nutrition-api/internal/goals"
 	"github.com/vinzenzs/nutrition-api/internal/hydration"
+	"github.com/vinzenzs/nutrition-api/internal/hydrationbalance"
 	"github.com/vinzenzs/nutrition-api/internal/numfmt"
 	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
@@ -32,6 +33,7 @@ type Service struct {
 	phasesRepo        *trainingphases.PhasesRepo
 	recoveryRepo      *recoverymetrics.Repo
 	fitnessRepo       *fitnessmetrics.Repo
+	hydrationBalRepo  *hydrationbalance.Repo
 	summarySvc        *summary.Service
 }
 
@@ -47,6 +49,7 @@ func NewService(
 	phasesRepo *trainingphases.PhasesRepo,
 	recoveryRepo *recoverymetrics.Repo,
 	fitnessRepo *fitnessmetrics.Repo,
+	hydrationBalRepo *hydrationbalance.Repo,
 ) *Service {
 	return &Service{
 		summarySvc:        summarySvc,
@@ -58,6 +61,7 @@ func NewService(
 		phasesRepo:        phasesRepo,
 		recoveryRepo:      recoveryRepo,
 		fitnessRepo:       fitnessRepo,
+		hydrationBalRepo:  hydrationBalRepo,
 	}
 }
 
@@ -228,6 +232,19 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 			return fmt.Errorf("fitness metrics: %w", err)
 		}
 		out.Fitness = snap
+		return nil
+	})
+
+	// Hydration-balance snapshot for the date (same-day-or-null, no carryover).
+	g.Go(func() error {
+		snap, err := s.hydrationBalRepo.GetByDate(gctx, dateStr)
+		if err != nil {
+			if errors.Is(err, hydrationbalance.ErrNotFound) {
+				return nil // out.HydrationBalance stays nil
+			}
+			return fmt.Errorf("hydration balance: %w", err)
+		}
+		out.HydrationBalance = snap
 		return nil
 	})
 
