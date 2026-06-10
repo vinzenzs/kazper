@@ -53,7 +53,15 @@ type createRequest struct {
 	// and lose the field-specific diagnostic.
 	RPE             json.RawMessage `json:"rpe,omitempty"`
 	GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
-	Notes           *string         `json:"notes,omitempty"`
+	// Ingestion metrics. avg_power_w uses RawMessage for the same reason as
+	// rpe/gi: a non-integer payload must surface `avg_power_w_invalid`, not
+	// `invalid_json`. The float fields tolerate integer JSON natively.
+	DistanceM     *float64        `json:"distance_m,omitempty"`
+	AvgPowerW     json.RawMessage `json:"avg_power_w,omitempty"`
+	TemperatureC  *float64        `json:"temperature_c,omitempty"`
+	SweatLossML   *float64        `json:"sweat_loss_ml,omitempty"`
+	SessionGroup  *string         `json:"session_group,omitempty"`
+	Notes         *string         `json:"notes,omitempty"`
 }
 
 // create godoc
@@ -66,7 +74,7 @@ type createRequest struct {
 // @Param        body             body    createRequest  true   "Workout"
 // @Success      201  {object}  Workout  "INSERT"
 // @Success      200  {object}  Workout  "UPDATE (external_id collision)"
-// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid"
+// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid"
 // @Security     BearerAuth
 // @Router       /workouts [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -89,13 +97,18 @@ func (h *Handlers) create(c *gin.Context) {
 	}
 	w, created, err := h.svc.Upsert(c.Request.Context(), in)
 	if err != nil {
-		// rpe / gi_distress_score validation errors carry a `range` hint.
+		// rpe / gi_distress_score / temperature_c validation errors carry a
+		// `range` hint; the others map to a plain error code.
 		if errors.Is(err, ErrRPEInvalid) {
 			respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
 			return
 		}
 		if errors.Is(err, ErrGIDistressScoreInvalid) {
 			respondRangeError(c, "gi_distress_score_invalid", GIDistressScoreMin, GIDistressScoreMax)
+			return
+		}
+		if errors.Is(err, ErrTemperatureCInvalid) {
+			respondRangeError(c, "temperature_c_invalid", TemperatureCMin, TemperatureCMax)
 			return
 		}
 		respondServiceError(c, err)
@@ -201,8 +214,9 @@ func (h *Handlers) bulkCreate(c *gin.Context) {
 // @Summary      List workouts in a time window
 // @Tags         workouts
 // @Produce      json
-// @Param        from  query  string  true  "Inclusive RFC3339 lower bound"
-// @Param        to    query  string  true  "Inclusive RFC3339 upper bound"
+// @Param        from           query  string  true   "Inclusive RFC3339 lower bound"
+// @Param        to             query  string  true   "Inclusive RFC3339 upper bound"
+// @Param        session_group  query  string  false  "Narrow to the legs of one brick/multisport session (exact-match on session_group)"
 // @Success      200  {object}  map[string]interface{}  "{ workouts: [...] }"
 // @Failure      400  {object}  map[string]interface{}  "window_required | window_invalid | range_too_large"
 // @Security     BearerAuth
@@ -213,6 +227,12 @@ func (h *Handlers) list(c *gin.Context) {
 	if fromStr == "" || toStr == "" {
 		respondError(c, http.StatusBadRequest, "window_required")
 		return
+	}
+	// Optional exact-match filter — the window stays mandatory, this composes
+	// as an additional AND-predicate. Empty string means "no filter".
+	var sessionGroup *string
+	if sg := c.Query("session_group"); sg != "" {
+		sessionGroup = &sg
 	}
 	from, err := time.Parse(time.RFC3339, fromStr)
 	if err != nil {
@@ -232,7 +252,7 @@ func (h *Handlers) list(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "range_too_large", "max_days": maxWindowDays})
 		return
 	}
-	rows, err := h.svc.ListWindow(c.Request.Context(), from, to)
+	rows, err := h.svc.ListWindow(c.Request.Context(), from, to, sessionGroup)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "list_failed")
 		return
@@ -271,14 +291,14 @@ func (h *Handlers) get(c *gin.Context) {
 
 // patch godoc
 // @Summary      Partially update a workout (mutable fields only)
-// @Description  Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`. `source`, `external_id`, `sport`, `started_at`, `ended_at` are immutable — delete and re-create if those are wrong.
+// @Description  Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`, `gi_distress_score`, `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, `session_group`. `source`, `external_id`, `sport`, `started_at`, `ended_at` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.
 // @Tags         workouts
 // @Accept       json
 // @Produce      json
 // @Param        id    path  string  true  "Workout UUID"
 // @Param        body  body  map[string]interface{}  true  "Mutable fields"
 // @Success      200  {object}  Workout
-// @Failure      400  {object}  map[string]string  "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid"
+// @Failure      400  {object}  map[string]string  "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid"
 // @Failure      404  {object}  map[string]string  "workout_not_found"
 // @Security     BearerAuth
 // @Router       /workouts/{id} [patch]
@@ -319,6 +339,11 @@ func (h *Handlers) patch(c *gin.Context) {
 			"tss":               true,
 			"rpe":               true,
 			"gi_distress_score": true,
+			"distance_m":        true,
+			"avg_power_w":       true,
+			"temperature_c":     true,
+			"sweat_loss_ml":     true,
+			"session_group":     true,
 		}
 		for field := range probe {
 			if immutable[field] {
@@ -340,6 +365,11 @@ func (h *Handlers) patch(c *gin.Context) {
 		TSS             *float64        `json:"tss,omitempty"`
 		RPE             json.RawMessage `json:"rpe,omitempty"`
 		GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
+		DistanceM       json.RawMessage `json:"distance_m,omitempty"`
+		AvgPowerW       json.RawMessage `json:"avg_power_w,omitempty"`
+		TemperatureC    json.RawMessage `json:"temperature_c,omitempty"`
+		SweatLossML     json.RawMessage `json:"sweat_loss_ml,omitempty"`
+		SessionGroup    json.RawMessage `json:"session_group,omitempty"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &body); err != nil {
@@ -380,6 +410,69 @@ func (h *Handlers) patch(c *gin.Context) {
 			in.GIDistressScore = &v
 		}
 	}
+	// Ingestion-metric tri-state: same null-clears convention. A non-null
+	// payload that fails to decode to the field's type surfaces the precise
+	// per-field error code rather than `invalid_json`.
+	if body.DistanceM != nil {
+		if string(body.DistanceM) == "null" {
+			in.ClearDistanceM = true
+		} else {
+			var v float64
+			if err := json.Unmarshal(body.DistanceM, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "distance_m_invalid")
+				return
+			}
+			in.DistanceM = &v
+		}
+	}
+	if body.AvgPowerW != nil {
+		if string(body.AvgPowerW) == "null" {
+			in.ClearAvgPowerW = true
+		} else {
+			var v int
+			if err := json.Unmarshal(body.AvgPowerW, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "avg_power_w_invalid")
+				return
+			}
+			in.AvgPowerW = &v
+		}
+	}
+	if body.TemperatureC != nil {
+		if string(body.TemperatureC) == "null" {
+			in.ClearTemperatureC = true
+		} else {
+			var v float64
+			if err := json.Unmarshal(body.TemperatureC, &v); err != nil {
+				respondRangeError(c, "temperature_c_invalid", TemperatureCMin, TemperatureCMax)
+				return
+			}
+			in.TemperatureC = &v
+		}
+	}
+	if body.SweatLossML != nil {
+		if string(body.SweatLossML) == "null" {
+			in.ClearSweatLossML = true
+		} else {
+			var v float64
+			if err := json.Unmarshal(body.SweatLossML, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "sweat_loss_ml_invalid")
+				return
+			}
+			in.SweatLossML = &v
+		}
+	}
+	if body.SessionGroup != nil {
+		if string(body.SessionGroup) == "null" {
+			in.ClearSessionGroup = true
+		} else {
+			var v string
+			if err := json.Unmarshal(body.SessionGroup, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "session_group_invalid")
+				return
+			}
+			in.SessionGroup = &v
+		}
+	}
 	w, err := h.svc.Patch(c.Request.Context(), id, in)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -388,6 +481,10 @@ func (h *Handlers) patch(c *gin.Context) {
 		}
 		if errors.Is(err, ErrRPEInvalid) {
 			respondRangeError(c, "rpe_invalid", RPEMin, RPEMax)
+			return
+		}
+		if errors.Is(err, ErrTemperatureCInvalid) {
+			respondRangeError(c, "temperature_c_invalid", TemperatureCMin, TemperatureCMax)
 			return
 		}
 		if errors.Is(err, ErrGIDistressScoreInvalid) {
@@ -446,16 +543,20 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 		return CreateInput{}, "sport_invalid"
 	}
 	in := CreateInput{
-		ExternalID: req.ExternalID,
-		Source:     req.Source,
-		Sport:      req.Sport,
-		Name:       req.Name,
-		StartedAt:  startedAt,
-		EndedAt:    endedAt,
-		KcalBurned: req.KcalBurned,
-		AvgHR:      req.AvgHR,
-		TSS:        req.TSS,
-		Notes:      req.Notes,
+		ExternalID:   req.ExternalID,
+		Source:       req.Source,
+		Sport:        req.Sport,
+		Name:         req.Name,
+		StartedAt:    startedAt,
+		EndedAt:      endedAt,
+		KcalBurned:   req.KcalBurned,
+		AvgHR:        req.AvgHR,
+		TSS:          req.TSS,
+		DistanceM:    req.DistanceM,
+		TemperatureC: req.TemperatureC,
+		SweatLossML:  req.SweatLossML,
+		SessionGroup: req.SessionGroup,
+		Notes:        req.Notes,
 	}
 	// Parse RPE / GI as strict integers; non-integer payloads surface the
 	// precise per-field error code rather than `invalid_json`.
@@ -472,6 +573,14 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 			return CreateInput{}, "gi_distress_score_invalid"
 		}
 		in.GIDistressScore = &v
+	}
+	// avg_power_w is a strict integer (watts) — same rejection rule as avg_hr.
+	if req.AvgPowerW != nil {
+		var v int
+		if err := json.Unmarshal(req.AvgPowerW, &v); err != nil {
+			return CreateInput{}, "avg_power_w_invalid"
+		}
+		in.AvgPowerW = &v
 	}
 	return in, ""
 }
@@ -506,6 +615,16 @@ func errCodeFor(err error) string {
 		return "rpe_invalid"
 	case errors.Is(err, ErrGIDistressScoreInvalid):
 		return "gi_distress_score_invalid"
+	case errors.Is(err, ErrDistanceMInvalid):
+		return "distance_m_invalid"
+	case errors.Is(err, ErrAvgPowerWInvalid):
+		return "avg_power_w_invalid"
+	case errors.Is(err, ErrTemperatureCInvalid):
+		return "temperature_c_invalid"
+	case errors.Is(err, ErrSweatLossMLInvalid):
+		return "sweat_loss_ml_invalid"
+	case errors.Is(err, ErrSessionGroupInvalid):
+		return "session_group_invalid"
 	}
 	if strings.Contains(err.Error(), "upsert") {
 		return "write_failed"

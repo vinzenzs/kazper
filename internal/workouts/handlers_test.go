@@ -424,7 +424,7 @@ func TestBulk_DuplicateExternalIDInBatchLastWriteWins(t *testing.T) {
 	// Verify only one row exists with that external_id, and its kcal is 600.
 	from, _ := time.Parse(time.RFC3339, "2026-06-07T07:00:00Z")
 	to, _ := time.Parse(time.RFC3339, "2026-06-07T10:00:00Z")
-	rows, err := f.repo.List(context.Background(), from, to)
+	rows, err := f.repo.List(context.Background(), from, to, nil)
 	require.NoError(t, err)
 	var dup []*workouts.Workout
 	for _, r := range rows {
@@ -589,4 +589,210 @@ func TestPatch_LeaveUnchangedWhenAbsent(t *testing.T) {
 	assert.Equal(t, 7, *got.RPE)
 	require.NotNil(t, got.GIDistressScore)
 	assert.Equal(t, 2, *got.GIDistressScore)
+}
+
+// ============================================================================
+// Ingestion metrics (distance / power / temperature / sweat / session_group)
+// ============================================================================
+
+func TestPost_WithIngestionMetrics_Returns201AndEchoesFields(t *testing.T) {
+	f := setup(t)
+	body := `{
+        "external_id":"garmin:555","source":"garmin","sport":"bike",
+        "started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T11:00:00Z",
+        "distance_m":80500,"avg_power_w":182,"temperature_c":27.5,
+        "sweat_loss_ml":2400,"session_group":"garmin:554"
+    }`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+	require.NotNil(t, w.DistanceM)
+	assert.InDelta(t, 80500, *w.DistanceM, 0.05)
+	require.NotNil(t, w.AvgPowerW)
+	assert.Equal(t, 182, *w.AvgPowerW)
+	require.NotNil(t, w.TemperatureC)
+	assert.InDelta(t, 27.5, *w.TemperatureC, 0.05)
+	require.NotNil(t, w.SweatLossML)
+	assert.InDelta(t, 2400, *w.SweatLossML, 0.05)
+	require.NotNil(t, w.SessionGroup)
+	assert.Equal(t, "garmin:554", *w.SessionGroup)
+}
+
+func TestPost_WithoutIngestionMetrics_OmitsFromResponse(t *testing.T) {
+	f := setup(t)
+	body := `{"source":"manual","sport":"strength","started_at":"2026-06-07T18:00:00Z","ended_at":"2026-06-07T19:00:00Z"}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	s := rec.Body.String()
+	assert.NotContains(t, s, `"distance_m"`)
+	assert.NotContains(t, s, `"avg_power_w"`)
+	assert.NotContains(t, s, `"temperature_c"`)
+	assert.NotContains(t, s, `"sweat_loss_ml"`)
+	assert.NotContains(t, s, `"session_group"`)
+}
+
+func TestPost_IngestionInvalidValues_Return400(t *testing.T) {
+	f := setup(t)
+	base := `"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"`
+	cases := []struct {
+		field, frag, wantErr string
+	}{
+		{"distance_m", `"distance_m":-100`, "distance_m_invalid"},
+		{"distance_m_zero", `"distance_m":0`, "distance_m_invalid"},
+		{"avg_power_w", `"avg_power_w":0`, "avg_power_w_invalid"},
+		{"avg_power_w_noninteger", `"avg_power_w":"strong"`, "avg_power_w_invalid"},
+		{"sweat_loss_ml", `"sweat_loss_ml":-1`, "sweat_loss_ml_invalid"},
+		{"session_group_empty", `"session_group":""`, "session_group_invalid"},
+	}
+	for _, tc := range cases {
+		body := fmt.Sprintf("{%s,%s}", base, tc.frag)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusBadRequest, rec.Code, "%s: %s", tc.field, rec.Body.String())
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		assert.Equal(t, tc.wantErr, got["error"], tc.field)
+	}
+}
+
+func TestPost_TemperatureOutOfRange_Returns400WithRangeHint(t *testing.T) {
+	f := setup(t)
+	for _, bad := range []string{"-41", "61", "98.6"} {
+		body := fmt.Sprintf(`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","temperature_c":%s}`, bad)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusBadRequest, rec.Code, "temp=%s", bad)
+		assert.JSONEq(t, `{"error":"temperature_c_invalid","range":{"min":-40,"max":60}}`, rec.Body.String())
+	}
+}
+
+func TestPost_TemperatureNegativeInRange_Accepted(t *testing.T) {
+	f := setup(t)
+	body := `{"source":"manual","sport":"run","started_at":"2026-01-07T08:00:00Z","ended_at":"2026-01-07T09:00:00Z","temperature_c":-5.5}`
+	rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &w))
+	require.NotNil(t, w.TemperatureC)
+	assert.InDelta(t, -5.5, *w.TemperatureC, 0.05)
+}
+
+func TestPost_BrickLegsShareSessionGroup(t *testing.T) {
+	f := setup(t)
+	post := func(extID, sport, started, ended string) {
+		t.Helper()
+		body := fmt.Sprintf(`{"external_id":%q,"source":"garmin","sport":%q,"started_at":%q,"ended_at":%q,"session_group":"garmin:9876543"}`, extID, sport, started, ended)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	post("g:bike", "bike", "2026-06-07T08:00:00Z", "2026-06-07T09:00:00Z")
+	post("g:run", "run", "2026-06-07T09:05:00Z", "2026-06-07T09:35:00Z")
+
+	rec := doReq(t, f.r, http.MethodGet, "/workouts?from=2026-06-07T00:00:00Z&to=2026-06-08T00:00:00Z&session_group=garmin:9876543", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out struct {
+		Workouts []workouts.Workout `json:"workouts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.Workouts, 2)
+	// Each leg keeps its own real sport — no merged pseudo-workout.
+	assert.Equal(t, workouts.SportBike, out.Workouts[0].Sport)
+	assert.Equal(t, workouts.SportRun, out.Workouts[1].Sport)
+}
+
+func TestList_SessionGroupFilterExcludesNonMatching(t *testing.T) {
+	f := setup(t)
+	post := func(extID, sport string, group string) {
+		t.Helper()
+		grpFrag := ""
+		if group != "" {
+			grpFrag = fmt.Sprintf(`,"session_group":%q`, group)
+		}
+		body := fmt.Sprintf(`{"external_id":%q,"source":"garmin","sport":%q,"started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T08:30:00Z"%s}`, extID, sport, grpFrag)
+		rec := doReq(t, f.r, http.MethodPost, "/workouts", body)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	post("g:leg", "bike", "garmin:1")
+	post("g:loose", "swim", "")
+
+	rec := doReq(t, f.r, http.MethodGet, "/workouts?from=2026-06-07T00:00:00Z&to=2026-06-08T00:00:00Z&session_group=garmin:1", "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var out struct {
+		Workouts []workouts.Workout `json:"workouts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.Workouts, 1)
+	assert.Equal(t, "g:leg", *out.Workouts[0].ExternalID)
+}
+
+func TestList_SessionGroupWithoutWindowStillRequiresWindow(t *testing.T) {
+	f := setup(t)
+	rec := doReq(t, f.r, http.MethodGet, "/workouts?session_group=garmin:1", "")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"window_required"}`, rec.Body.String())
+}
+
+func TestPatch_SetIngestionMetrics_OnExistingRow(t *testing.T) {
+	f := setup(t)
+	postBody := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"}`
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts", postBody)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"sweat_loss_ml":1850,"temperature_c":31}`)
+	require.Equal(t, http.StatusOK, patchRec.Code, patchRec.Body.String())
+	var got workouts.Workout
+	require.NoError(t, json.Unmarshal(patchRec.Body.Bytes(), &got))
+	require.NotNil(t, got.SweatLossML)
+	assert.InDelta(t, 1850, *got.SweatLossML, 0.05)
+	require.NotNil(t, got.TemperatureC)
+	assert.InDelta(t, 31, *got.TemperatureC, 0.05)
+	assert.Nil(t, got.DistanceM, "untouched ingestion field stays NULL")
+}
+
+func TestPatch_ClearSessionGroupViaJSONNull(t *testing.T) {
+	f := setup(t)
+	postBody := `{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","session_group":"garmin:9876543","sweat_loss_ml":2400}`
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts", postBody)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	patchRec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"session_group":null}`)
+	require.Equal(t, http.StatusOK, patchRec.Code, patchRec.Body.String())
+	body := patchRec.Body.String()
+	assert.NotContains(t, body, `"session_group"`)
+	assert.Contains(t, body, `"sweat_loss_ml":2400`, "other ingestion field unchanged")
+}
+
+func TestPatch_IngestionValidationMatchesPost(t *testing.T) {
+	f := setup(t)
+	postRec := doReq(t, f.r, http.MethodPost, "/workouts",
+		`{"source":"manual","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z"}`)
+	require.Equal(t, http.StatusCreated, postRec.Code)
+	var w workouts.Workout
+	require.NoError(t, json.Unmarshal(postRec.Body.Bytes(), &w))
+
+	// temperature out of range → range hint
+	rec := doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"temperature_c":98.6}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"temperature_c_invalid","range":{"min":-40,"max":60}}`, rec.Body.String())
+
+	// negative distance → plain code
+	rec = doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"distance_m":-100}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "distance_m_invalid", decodeErr(t, rec))
+
+	// empty session_group → plain code
+	rec = doReq(t, f.r, http.MethodPatch, "/workouts/"+w.ID.String(), `{"session_group":""}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "session_group_invalid", decodeErr(t, rec))
+}
+
+func decodeErr(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	s, _ := got["error"].(string)
+	return s
 }

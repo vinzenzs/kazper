@@ -267,3 +267,91 @@ func TestPatchWorkout_OmitsRPEAndGIWhenAbsent(t *testing.T) {
 	assert.NotContains(t, body, `"gi_distress_score"`)
 	assert.Contains(t, body, `"notes":"felt strong"`)
 }
+
+// ----- Ingestion metrics + session_group -----
+
+func TestLogWorkout_IngestionMetricsForwardedInBody(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"id":"w1"}`)
+	dist := 80500.0
+	pwr := 182
+	temp := 27.5
+	sweat := 2400.0
+	grp := "garmin:554"
+	_ = handleLogWorkout(context.Background(), c, LogWorkoutArgs{
+		Source: "garmin", Sport: "bike",
+		StartedAt: "2026-06-13T08:00:00Z", EndedAt: "2026-06-13T11:00:00Z",
+		DistanceM: &dist, AvgPowerW: &pwr, TemperatureC: &temp,
+		SweatLossML: &sweat, SessionGroup: &grp,
+	})
+	require.Len(t, *recs, 1)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal((*recs)[0].body, &body))
+	assert.EqualValues(t, 80500, body["distance_m"])
+	assert.EqualValues(t, 182, body["avg_power_w"])
+	assert.InDelta(t, 27.5, body["temperature_c"], 0.001)
+	assert.EqualValues(t, 2400, body["sweat_loss_ml"])
+	assert.Equal(t, "garmin:554", body["session_group"])
+}
+
+func TestLogWorkout_OmitsIngestionMetricsWhenNil(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 201, `{"id":"w1"}`)
+	_ = handleLogWorkout(context.Background(), c, LogWorkoutArgs{
+		Source: "manual", Sport: "strength",
+		StartedAt: "2026-06-07T18:00:00Z", EndedAt: "2026-06-07T19:00:00Z",
+	})
+	require.Len(t, *recs, 1)
+	body := string((*recs)[0].body)
+	for _, k := range []string{`"distance_m"`, `"avg_power_w"`, `"temperature_c"`, `"sweat_loss_ml"`, `"session_group"`} {
+		assert.NotContains(t, body, k)
+	}
+}
+
+func TestListWorkouts_ForwardsSessionGroupFilter(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"workouts":[]}`)
+	grp := "garmin:9876543"
+	_ = handleListWorkouts(context.Background(), c, ListWorkoutsArgs{
+		From: "2026-06-13T00:00:00Z", To: "2026-06-14T00:00:00Z", SessionGroup: &grp,
+	})
+	require.Len(t, *recs, 1)
+	values, err := url.ParseQuery((*recs)[0].rawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "garmin:9876543", values.Get("session_group"))
+}
+
+func TestListWorkouts_OmitsSessionGroupWhenNil(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"workouts":[]}`)
+	_ = handleListWorkouts(context.Background(), c, ListWorkoutsArgs{
+		From: "2026-06-13T00:00:00Z", To: "2026-06-14T00:00:00Z",
+	})
+	require.Len(t, *recs, 1)
+	values, err := url.ParseQuery((*recs)[0].rawQuery)
+	require.NoError(t, err)
+	_, has := values["session_group"]
+	assert.False(t, has)
+}
+
+func TestPatchWorkout_ClearSessionGroupEncodesJSONNull(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"id":"w1"}`)
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID:                "w1",
+		ClearSessionGroup: true,
+	})
+	require.Len(t, *recs, 1)
+	assert.Contains(t, string((*recs)[0].body), `"session_group":null`)
+}
+
+func TestPatchWorkout_SetIngestionMetrics(t *testing.T) {
+	c, recs := newWorkoutRecorder(t, 200, `{"id":"w1"}`)
+	sweat := 1850.0
+	temp := 31.0
+	_ = handlePatchWorkout(context.Background(), c, PatchWorkoutArgs{
+		ID: "w1", SweatLossML: &sweat, TemperatureC: &temp,
+	})
+	require.Len(t, *recs, 1)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal((*recs)[0].body, &body))
+	assert.EqualValues(t, 1850, body["sweat_loss_ml"])
+	assert.InDelta(t, 31.0, body["temperature_c"], 0.001)
+	_, hasDist := body["distance_m"]
+	assert.False(t, hasDist, "unset ingestion field absent from PATCH body")
+}

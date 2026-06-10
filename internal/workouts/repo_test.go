@@ -156,6 +156,7 @@ func TestList_WindowFilterAndOrdering(t *testing.T) {
 	rows, err := repo.List(ctx,
 		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC),
+		nil,
 	)
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
@@ -260,7 +261,169 @@ func TestList_EmptyWindowReturnsEmpty(t *testing.T) {
 	rows, err := repo.List(context.Background(),
 		time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC),
+		nil,
 	)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
+}
+
+// ----- Ingestion metrics (distance / power / temperature / sweat / group) -----
+
+func TestUpsert_StoresIngestionMetrics(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(ptrStr("garmin:metrics"), 1800)
+	w.DistanceM = ptrF(80500)
+	w.AvgPowerW = ptrI(182)
+	w.TemperatureC = ptrF(27.5)
+	w.SweatLossML = ptrF(2400)
+	w.SessionGroup = ptrStr("garmin:554")
+	_, err := repo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(context.Background(), w.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.DistanceM)
+	assert.InDelta(t, 80500, *got.DistanceM, 0.05)
+	require.NotNil(t, got.AvgPowerW)
+	assert.Equal(t, 182, *got.AvgPowerW)
+	require.NotNil(t, got.TemperatureC)
+	assert.InDelta(t, 27.5, *got.TemperatureC, 0.05)
+	require.NotNil(t, got.SweatLossML)
+	assert.InDelta(t, 2400, *got.SweatLossML, 0.05)
+	require.NotNil(t, got.SessionGroup)
+	assert.Equal(t, "garmin:554", *got.SessionGroup)
+}
+
+func TestUpsert_OmittedIngestionMetricsRemainNull(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600) // none of the five fields set
+	_, err := repo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+	got, err := repo.GetByID(context.Background(), w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.DistanceM)
+	assert.Nil(t, got.AvgPowerW)
+	assert.Nil(t, got.TemperatureC)
+	assert.Nil(t, got.SweatLossML)
+	assert.Nil(t, got.SessionGroup)
+}
+
+func TestUpsert_FullReplaceNullsOmittedMetric(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+
+	first := sample(ptrStr("garmin:replace"), 1800)
+	first.SweatLossML = ptrF(2400)
+	_, err := repo.Upsert(ctx, first)
+	require.NoError(t, err)
+
+	// Re-POST the same external_id WITHOUT sweat_loss_ml — full-replace nulls it.
+	second := sample(ptrStr("garmin:replace"), 1800)
+	_, err = repo.Upsert(ctx, second)
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(ctx, second.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.SweatLossML, "UPSERT full-replace nulls an omitted mutable field")
+}
+
+func TestUpsert_DBChecksRejectNegativeDistance(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	w.DistanceM = ptrF(-100)
+	_, err := repo.Upsert(context.Background(), w)
+	require.Error(t, err, "DB CHECK must reject distance_m <= 0")
+}
+
+func TestUpsert_DBChecksRejectTemperatureOutOfRange(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	w := sample(nil, 600)
+	w.TemperatureC = ptrF(100) // outside [-40, 60]
+	_, err := repo.Upsert(context.Background(), w)
+	require.Error(t, err, "DB CHECK must reject temperature_c=100")
+}
+
+func TestPatch_IngestionSetClearAndLeaveUnchanged(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+
+	w := sample(nil, 1800)
+	w.SweatLossML = ptrF(2400)
+	w.SessionGroup = ptrStr("garmin:554")
+	_, err := repo.Upsert(ctx, w)
+	require.NoError(t, err)
+
+	// Set temperature; leave sweat + group unchanged.
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{
+		TemperatureC: ptrF(31),
+	}))
+	got, err := repo.GetByID(ctx, w.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.TemperatureC)
+	assert.InDelta(t, 31, *got.TemperatureC, 0.05)
+	assert.InDelta(t, 2400, *got.SweatLossML, 0.05, "untouched field stays")
+	assert.Equal(t, "garmin:554", *got.SessionGroup, "untouched field stays")
+
+	// Clear the session group (un-group a mis-linked leg).
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{
+		ClearSessionGroup: true,
+	}))
+	got, err = repo.GetByID(ctx, w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.SessionGroup)
+	assert.InDelta(t, 2400, *got.SweatLossML, 0.05, "sweat loss still unchanged")
+}
+
+func TestList_FilteredBySessionGroup(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+
+	mk := func(extID string, start time.Time, sport workouts.Sport, group *string) {
+		t.Helper()
+		w := &workouts.Workout{
+			ExternalID:   ptrStr(extID),
+			Source:       workouts.SourceGarmin,
+			Sport:        sport,
+			StartedAt:    start,
+			EndedAt:      start.Add(30 * time.Minute),
+			SessionGroup: group,
+		}
+		_, err := repo.Upsert(ctx, w)
+		require.NoError(t, err)
+	}
+
+	base := time.Date(2026, 6, 13, 8, 0, 0, 0, time.UTC)
+	// A brick: bike leg then run leg, sharing a group key; plus an unrelated swim.
+	mk("g:bike", base, workouts.SportBike, ptrStr("garmin:9876543"))
+	mk("g:run", base.Add(90*time.Minute), workouts.SportRun, ptrStr("garmin:9876543"))
+	mk("g:swim", base.Add(3*time.Hour), workouts.SportSwim, nil)
+
+	from := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 14, 0, 0, 0, 0, time.UTC)
+
+	// Filtered: exactly the two legs, in started_at (leg) order.
+	group := "garmin:9876543"
+	legs, err := repo.List(ctx, from, to, &group)
+	require.NoError(t, err)
+	require.Len(t, legs, 2)
+	assert.Equal(t, "g:bike", *legs[0].ExternalID)
+	assert.Equal(t, "g:run", *legs[1].ExternalID)
+
+	// Unmatched group → empty.
+	none := "garmin:nope"
+	empty, err := repo.List(ctx, from, to, &none)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+
+	// No filter → all three.
+	all, err := repo.List(ctx, from, to, nil)
+	require.NoError(t, err)
+	assert.Len(t, all, 3)
 }

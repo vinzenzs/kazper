@@ -3,6 +3,7 @@ package workouts
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,11 @@ var (
 	ErrTSSInvalid             = errors.New("tss_invalid")
 	ErrRPEInvalid             = errors.New("rpe_invalid")
 	ErrGIDistressScoreInvalid = errors.New("gi_distress_score_invalid")
+	ErrDistanceMInvalid       = errors.New("distance_m_invalid")
+	ErrAvgPowerWInvalid       = errors.New("avg_power_w_invalid")
+	ErrTemperatureCInvalid    = errors.New("temperature_c_invalid")
+	ErrSweatLossMLInvalid     = errors.New("sweat_loss_ml_invalid")
+	ErrSessionGroupInvalid    = errors.New("session_group_invalid")
 )
 
 // RPE + GI distress score bounds. Exposed so handler error responses can echo
@@ -29,6 +35,14 @@ const (
 	RPEMax             = 10
 	GIDistressScoreMin = 1
 	GIDistressScoreMax = 5
+)
+
+// Temperature bounds (°C) and the session-group length cap. Exposed so the
+// handler can echo `range: {min, max}` for temperature the way rpe/gi do.
+const (
+	TemperatureCMin    = -40
+	TemperatureCMax    = 60
+	SessionGroupMaxLen = 255
 )
 
 // Service orchestrates workout CRUD over the repo.
@@ -53,6 +67,11 @@ type CreateInput struct {
 	TSS             *float64
 	RPE             *int
 	GIDistressScore *int
+	DistanceM       *float64
+	AvgPowerW       *int
+	TemperatureC    *float64
+	SweatLossML     *float64
+	SessionGroup    *string
 	Notes           *string
 }
 
@@ -90,6 +109,17 @@ type PatchInput struct {
 	ClearRPE             bool
 	GIDistressScore      *int
 	ClearGIDistressScore bool
+
+	DistanceM         *float64
+	ClearDistanceM    bool
+	AvgPowerW         *int
+	ClearAvgPowerW    bool
+	TemperatureC      *float64
+	ClearTemperatureC bool
+	SweatLossML       *float64
+	ClearSweatLossML  bool
+	SessionGroup      *string
+	ClearSessionGroup bool
 }
 
 // Patch validates and applies the partial update. Range validation runs
@@ -117,6 +147,9 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
 		return nil, err
 	}
+	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
+		return nil, err
+	}
 	params := PatchParams{
 		Name:                 in.Name,
 		Notes:                in.Notes,
@@ -127,6 +160,16 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 		ClearRPE:             in.ClearRPE,
 		GIDistressScore:      in.GIDistressScore,
 		ClearGIDistressScore: in.ClearGIDistressScore,
+		DistanceM:            in.DistanceM,
+		ClearDistanceM:       in.ClearDistanceM,
+		AvgPowerW:            in.AvgPowerW,
+		ClearAvgPowerW:       in.ClearAvgPowerW,
+		TemperatureC:         in.TemperatureC,
+		ClearTemperatureC:    in.ClearTemperatureC,
+		SweatLossML:          in.SweatLossML,
+		ClearSweatLossML:     in.ClearSweatLossML,
+		SessionGroup:         in.SessionGroup,
+		ClearSessionGroup:    in.ClearSessionGroup,
 	}
 	if err := s.repo.Patch(ctx, id, params); err != nil {
 		return nil, err
@@ -139,9 +182,11 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }
 
-// ListWindow returns workouts whose started_at falls within [from, to].
-func (s *Service) ListWindow(ctx context.Context, from, to time.Time) ([]*Workout, error) {
-	return s.repo.List(ctx, from, to)
+// ListWindow returns workouts whose started_at falls within [from, to]. When
+// sessionGroup is non-nil the result is further narrowed to workouts whose
+// session_group equals that key (the legs of one brick/multisport session).
+func (s *Service) ListWindow(ctx context.Context, from, to time.Time, sessionGroup *string) ([]*Workout, error) {
+	return s.repo.List(ctx, from, to, sessionGroup)
 }
 
 // BulkItemResult carries the per-item outcome of a BulkUpsert call.
@@ -206,6 +251,9 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
 		return nil, err
 	}
+	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
+		return nil, err
+	}
 	return &Workout{
 		ExternalID:      in.ExternalID,
 		Source:          Source(in.Source),
@@ -218,6 +266,11 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 		TSS:             in.TSS,
 		RPE:             in.RPE,
 		GIDistressScore: in.GIDistressScore,
+		DistanceM:       in.DistanceM,
+		AvgPowerW:       in.AvgPowerW,
+		TemperatureC:    in.TemperatureC,
+		SweatLossML:     in.SweatLossML,
+		SessionGroup:    in.SessionGroup,
 		Notes:           in.Notes,
 	}, nil
 }
@@ -264,6 +317,32 @@ func validateGIDistressScore(v *int) error {
 	}
 	if *v < GIDistressScoreMin || *v > GIDistressScoreMax {
 		return ErrGIDistressScoreInvalid
+	}
+	return nil
+}
+
+// validateIngestionMetrics validates the five ingestion fields. Each is nil
+// when not supplied (set or clear-to-NULL paths both skip validation here —
+// clearing carries no value to check). Distance/power/sweat must be > 0,
+// temperature in [TemperatureCMin, TemperatureCMax], session_group non-empty
+// (after trimming) and ≤ SessionGroupMaxLen.
+func validateIngestionMetrics(distanceM *float64, avgPowerW *int, temperatureC, sweatLossML *float64, sessionGroup *string) error {
+	if distanceM != nil && *distanceM <= 0 {
+		return ErrDistanceMInvalid
+	}
+	if avgPowerW != nil && *avgPowerW <= 0 {
+		return ErrAvgPowerWInvalid
+	}
+	if temperatureC != nil && (*temperatureC < TemperatureCMin || *temperatureC > TemperatureCMax) {
+		return ErrTemperatureCInvalid
+	}
+	if sweatLossML != nil && *sweatLossML <= 0 {
+		return ErrSweatLossMLInvalid
+	}
+	if sessionGroup != nil {
+		if strings.TrimSpace(*sessionGroup) == "" || len(*sessionGroup) > SessionGroupMaxLen {
+			return ErrSessionGroupInvalid
+		}
 	}
 	return nil
 }

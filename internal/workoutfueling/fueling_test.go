@@ -493,3 +493,53 @@ func TestFueling_OmitsRPEAndGIWhenNull(t *testing.T) {
 	assert.NotContains(t, body, `"rpe"`)
 	assert.NotContains(t, body, `"gi_distress_score"`)
 }
+
+// ----- Sweat/heat context surfacing (and performance-field exclusion) -----
+
+func TestFueling_SurfacesSweatLossAndTemperatureWhenSet(t *testing.T) {
+	f := setup(t)
+	sweat := 2400.0
+	temp := 27.5
+	dist := 80500.0
+	pwr := 182
+	grp := "garmin:554"
+	w := &workouts.Workout{
+		Source:       workouts.SourceGarmin,
+		Sport:        workouts.SportBike,
+		StartedAt:    time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC),
+		EndedAt:      time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC),
+		SweatLossML:  &sweat,
+		TemperatureC: &temp,
+		DistanceM:    &dist,
+		AvgPowerW:    &pwr,
+		SessionGroup: &grp,
+	}
+	_, err := f.workoutsRepo.Upsert(context.Background(), w)
+	require.NoError(t, err)
+
+	rec := doGet(t, f.r, "/workouts/"+w.ID.String()+"/fueling")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var out workoutfueling.WorkoutFueling
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.NotNil(t, out.SweatLossML)
+	assert.InDelta(t, 2400, *out.SweatLossML, 0.05)
+	require.NotNil(t, out.TemperatureC)
+	assert.InDelta(t, 27.5, *out.TemperatureC, 0.05)
+
+	// Performance fields are NEVER echoed on the fueling response.
+	body := rec.Body.String()
+	assert.NotContains(t, body, `"distance_m"`)
+	assert.NotContains(t, body, `"avg_power_w"`)
+	assert.NotContains(t, body, `"session_group"`)
+}
+
+func TestFueling_OmitsSweatAndTemperatureWhenNull(t *testing.T) {
+	f := setup(t)
+	id := makeWorkout(t, f.workoutsRepo)
+	rec := doGet(t, f.r, "/workouts/"+id.String()+"/fueling")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.NotContains(t, body, `"sweat_loss_ml"`)
+	assert.NotContains(t, body, `"temperature_c"`)
+}

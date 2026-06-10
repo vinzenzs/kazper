@@ -323,6 +323,15 @@ the same workout updates it in place (Garmin re-syncs land here automatically). 
 backfill or any batch import, `/workouts/bulk` accepts up to 100 items per request with
 per-item results so partial failures are reportable.
 
+Beyond the core fields, a row carries optional **ingestion metrics** a watch typically
+measures: `distance_m` (metres), `avg_power_w` (watts), `temperature_c` (°C), and
+`sweat_loss_ml` (estimated sweat loss, ml — personalises fluid targets). All are nullable
+and source-agnostic. A `session_group` key links the legs of a **brick / multisport** session:
+set the same key (e.g. the Garmin parent activity id) on every leg, then fetch them together
+with `?session_group=`. Each leg stays its own real row with its own sport and window — no
+merged pseudo-workout. The fueling endpoint echoes `sweat_loss_ml` + `temperature_c` (sweat/
+heat context for evaluating intake); the performance fields are not echoed there.
+
 ```bash
 # Manual workout (gym session — no Garmin tracking)
 curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
@@ -362,6 +371,22 @@ curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
         ]}' \
     http://localhost:8080/workouts/bulk
 # → { "results": [{"index":0,"id":"...","created":true}, {"index":1,"id":"...","created":true}] }
+
+# Brick / multisport: post each leg with a shared session_group, then fetch them together.
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"external_id":"garmin:9876543-1","source":"garmin","sport":"bike",
+         "started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:00:00Z",
+         "distance_m":30000,"avg_power_w":190,"temperature_c":24,"sweat_loss_ml":900,
+         "session_group":"garmin:9876543"}' \
+    http://localhost:8080/workouts
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"external_id":"garmin:9876543-2","source":"garmin","sport":"run",
+         "started_at":"2026-06-07T09:05:00Z","ended_at":"2026-06-07T09:35:00Z",
+         "distance_m":5000,"session_group":"garmin:9876543"}' \
+    http://localhost:8080/workouts
+# Fetch both legs of that brick (window still required):
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/workouts?from=2026-06-07T00:00:00Z&to=2026-06-08T00:00:00Z&session_group=garmin:9876543"
 
 # List window
 curl -H "Authorization: Bearer $MOBILE_API_TOKEN" \

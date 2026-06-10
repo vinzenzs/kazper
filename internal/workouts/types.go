@@ -79,6 +79,17 @@ type Workout struct {
 	RPE             *int `json:"rpe,omitempty"`
 	GIDistressScore *int `json:"gi_distress_score,omitempty"`
 
+	// Source-agnostic ingestion metrics — all nullable, populated by whatever
+	// writer measured them (Garmin today). distance in metres, average power in
+	// watts, ambient temperature in °C, estimated sweat loss in ml. SessionGroup
+	// is a free-text key linking the legs of a brick/multisport session (e.g. the
+	// Garmin parent activity id set on every leg).
+	DistanceM    *float64 `json:"distance_m,omitempty"`
+	AvgPowerW    *int     `json:"avg_power_w,omitempty"`
+	TemperatureC *float64 `json:"temperature_c,omitempty"`
+	SweatLossML  *float64 `json:"sweat_loss_ml,omitempty"`
+	SessionGroup *string  `json:"session_group,omitempty"`
+
 	Notes *string `json:"notes,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

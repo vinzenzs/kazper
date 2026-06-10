@@ -109,7 +109,7 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 
 	// Workouts whose started_at falls in the day's window.
 	g.Go(func() error {
-		ws, err := s.workoutsRepo.List(gctx, dayStart.UTC(), dayEnd.UTC())
+		ws, err := s.workoutsRepo.List(gctx, dayStart.UTC(), dayEnd.UTC(), nil)
 		if err != nil {
 			return fmt.Errorf("workouts list: %w", err)
 		}

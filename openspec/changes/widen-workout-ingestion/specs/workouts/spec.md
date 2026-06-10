@@ -1,0 +1,373 @@
+## MODIFIED Requirements
+
+### Requirement: Workouts are stored in a dedicated table
+
+The system SHALL persist workouts in a `workouts` table independent of meals, hydration, and products. Each row holds a sport, a time window (`started_at`, `ended_at`), provenance metadata, optional intensity/burn signals, optional ingestion metrics (distance, average power, ambient temperature, estimated sweat loss), an optional session-group key linking the legs of a brick/multisport session, and audit timestamps. The table is the data shape that external writers — initially `garmin.py`, in future potentially Apple Health, Strava, or a manual UI — target via the REST endpoints.
+
+#### Scenario: Table is created with the documented columns
+
+- **WHEN** the migration set is applied to a clean database
+- **THEN** `workouts` exists with columns:
+  - `id` (UUID PRIMARY KEY)
+  - `external_id` (TEXT NULL)
+  - `source` (TEXT NOT NULL, CHECK IN `('garmin', 'manual', 'other')`)
+  - `sport` (TEXT NOT NULL, CHECK IN `('run', 'bike', 'swim', 'strength', 'other')`)
+  - `name` (TEXT NULL)
+  - `started_at` (TIMESTAMPTZ NOT NULL)
+  - `ended_at` (TIMESTAMPTZ NOT NULL)
+  - `kcal_burned` (NUMERIC(10, 1) NULL, CHECK `kcal_burned IS NULL OR kcal_burned > 0`)
+  - `avg_hr` (INTEGER NULL, CHECK `avg_hr IS NULL OR avg_hr > 0`)
+  - `tss` (NUMERIC(10, 2) NULL, CHECK `tss IS NULL OR tss >= 0`)
+  - `rpe` (INTEGER NULL, CHECK `rpe IS NULL OR (rpe BETWEEN 1 AND 10)`)
+  - `gi_distress_score` (INTEGER NULL, CHECK `gi_distress_score IS NULL OR (gi_distress_score BETWEEN 1 AND 5)`)
+  - `distance_m` (NUMERIC(10, 1) NULL, CHECK `distance_m IS NULL OR distance_m > 0`)
+  - `avg_power_w` (INTEGER NULL, CHECK `avg_power_w IS NULL OR avg_power_w > 0`)
+  - `temperature_c` (NUMERIC(4, 1) NULL, CHECK `temperature_c IS NULL OR (temperature_c BETWEEN -40 AND 60)`)
+  - `sweat_loss_ml` (NUMERIC(10, 1) NULL, CHECK `sweat_loss_ml IS NULL OR sweat_loss_ml > 0`)
+  - `session_group` (TEXT NULL)
+  - `notes` (TEXT NULL)
+  - `created_at` (TIMESTAMPTZ NOT NULL DEFAULT now())
+  - `updated_at` (TIMESTAMPTZ NOT NULL DEFAULT now())
+- **AND** a CHECK constraint enforces `ended_at > started_at`
+- **AND** an index `workouts_started_at_idx` exists on `(started_at)`
+- **AND** a partial UNIQUE index exists on `(external_id) WHERE external_id IS NOT NULL`
+- **AND** a partial (non-unique) index `workouts_session_group_idx` exists on `(session_group) WHERE session_group IS NOT NULL`
+- **AND** there is NO `intensity` column (TSS is the intensity signal; downstream tools derive bands at call time)
+
+#### Scenario: rpe and gi_distress_score are nullable per session
+
+- **WHEN** the migration is applied to a database with existing `workouts` rows
+- **THEN** every existing row carries `rpe = NULL` and `gi_distress_score = NULL`
+- **AND** the migration succeeds without back-filling either column
+- **AND** subsequent INSERT/UPSERT/PATCH paths default both fields to NULL when omitted
+
+#### Scenario: Ingestion-metric columns are nullable with no back-fill
+
+- **WHEN** the migration adding `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, and `session_group` is applied to a database with existing `workouts` rows
+- **THEN** every existing row carries NULL for all five columns
+- **AND** the migration succeeds without back-filling any of them
+- **AND** subsequent INSERT/UPSERT/PATCH paths default all five fields to NULL when omitted ("not measured" / "not grouped" is a meaningful state, not a data-quality bug)
+
+### Requirement: POST /workouts creates or updates a workout via external_id UPSERT
+
+The system SHALL expose `POST /workouts` that accepts a workout body and persists it. When `external_id` is present and a row already exists with the same `external_id`, the system UPDATES that row (full-replace of the mutable fields); otherwise the system INSERTS a new row. The mutable field set includes `rpe` and `gi_distress_score` as optional integer-valued per-session signals (1..10 and 1..5 respectively), plus the optional ingestion metrics `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, and the optional `session_group` key. This semantic lets an external writer "POST every activity it sees" without tracking what is already synced.
+
+#### Scenario: First POST with external_id inserts a new row
+
+- **WHEN** the client posts `{"external_id":"garmin:1234567","source":"garmin","sport":"bike","started_at":"2026-06-07T08:00:00Z","ended_at":"2026-06-07T09:30:00Z","kcal_burned":850,"tss":78}`
+- **THEN** the system creates a row and returns `201 Created` with the new workout including its generated `id`
+
+#### Scenario: Subsequent POST with same external_id updates the existing row
+
+- **WHEN** a workout with `external_id: "garmin:1234567"` already exists
+- **AND** the client posts another body with the same `external_id` but `kcal_burned: 900`
+- **THEN** the system UPDATES the existing row to the new values
+- **AND** returns `200 OK` with the updated workout (the same `id`)
+- **AND** no duplicate row is created
+
+#### Scenario: POST without external_id always inserts
+
+- **WHEN** the client posts a body without an `external_id` (e.g. `{"source":"manual","sport":"strength","started_at":"…","ended_at":"…"}`)
+- **THEN** the system INSERTS a new row with `external_id: NULL`
+- **AND** returns `201 Created`
+- **AND** two such POSTs produce two distinct rows even if the bodies are identical (manual writes have no implicit dedup)
+
+#### Scenario: source is required and validated
+
+- **WHEN** the client posts a body without `source`, or with `source` not in the documented enum
+- **THEN** the system returns `400 Bad Request` with `{"error":"source_invalid"}`
+
+#### Scenario: sport is required and validated
+
+- **WHEN** the client posts a body without `sport`, or with `sport` not in `run|bike|swim|strength|other`
+- **THEN** the system returns `400 Bad Request` with `{"error":"sport_invalid"}`
+
+#### Scenario: started_at and ended_at are required and validated
+
+- **WHEN** the client posts a body where `started_at` or `ended_at` is missing or unparseable as RFC 3339
+- **THEN** the system returns `400 Bad Request` with `{"error":"window_invalid"}`
+
+#### Scenario: ended_at must be after started_at
+
+- **WHEN** the client posts a body where `ended_at <= started_at`
+- **THEN** the system returns `400 Bad Request` with `{"error":"window_invalid"}`
+
+#### Scenario: started_at far in the future is rejected
+
+- **WHEN** the client posts `started_at` more than 24 hours in the future
+- **THEN** the system returns `400 Bad Request` with `{"error":"started_at_too_far_future"}`
+
+#### Scenario: kcal_burned if supplied must be positive
+
+- **WHEN** the client posts `kcal_burned` that is zero or negative
+- **THEN** the system returns `400 Bad Request` with `{"error":"kcal_burned_invalid"}`
+
+#### Scenario: avg_hr if supplied must be positive integer
+
+- **WHEN** the client posts `avg_hr` that is zero, negative, or non-integer
+- **THEN** the system returns `400 Bad Request` with `{"error":"avg_hr_invalid"}`
+
+#### Scenario: tss if supplied must be non-negative
+
+- **WHEN** the client posts `tss` that is negative
+- **THEN** the system returns `400 Bad Request` with `{"error":"tss_invalid"}`
+
+#### Scenario: POST with rpe and gi_distress_score stores the values
+
+- **WHEN** the client posts `{"source":"manual","sport":"bike","started_at":"2026-07-15T08:00:00Z","ended_at":"2026-07-15T09:30:00Z","rpe":7,"gi_distress_score":2}`
+- **THEN** the system creates a row with `rpe = 7` and `gi_distress_score = 2`
+- **AND** returns `201 Created` with the response body echoing both fields
+
+#### Scenario: POST omitting rpe and gi_distress_score stores NULL
+
+- **WHEN** the client posts a workout body that omits both fields
+- **THEN** the row is created with both columns `NULL`
+- **AND** the response body's JSON omits both fields (omitempty pattern matching `kcal_burned`, `avg_hr`, `tss`, `notes`)
+
+#### Scenario: POST with rpe out of range is rejected
+
+- **WHEN** the client posts `{"source":"manual","sport":"bike",…,"rpe":0}` or `{"…","rpe":11}` or `{"…","rpe":-1}`
+- **THEN** the system returns `400 Bad Request` with `{"error":"rpe_invalid","range":{"min":1,"max":10}}`
+- **AND** no row is inserted
+
+#### Scenario: POST with gi_distress_score out of range is rejected
+
+- **WHEN** the client posts a workout body with `gi_distress_score` set to `0` or `6` or `-2` or `100`
+- **THEN** the system returns `400 Bad Request` with `{"error":"gi_distress_score_invalid","range":{"min":1,"max":5}}`
+- **AND** no row is inserted
+
+#### Scenario: POST with non-integer rpe / gi_distress_score is rejected
+
+- **WHEN** the client posts with `rpe: "seven"` or `rpe: 7.5` or `gi_distress_score: "mild"`
+- **THEN** the system returns `400 Bad Request` with `{"error":"rpe_invalid"}` or `{"error":"gi_distress_score_invalid"}` respectively
+- **AND** no row is inserted
+
+#### Scenario: Garmin import path passes through with NULLs on rehearsal fields
+
+- **WHEN** the Garmin importer POSTs a workout body that does not include `rpe` or `gi_distress_score` (Garmin does not surface either)
+- **THEN** the row is created with both fields `NULL`
+- **AND** the user can subsequently PATCH the row to add the rehearsal signals
+
+#### Scenario: POST with all five ingestion metrics stores them
+
+- **WHEN** the client posts `{"external_id":"garmin:555","source":"garmin","sport":"bike","started_at":"2026-06-13T08:00:00Z","ended_at":"2026-06-13T11:00:00Z","distance_m":80500,"avg_power_w":182,"temperature_c":27.5,"sweat_loss_ml":2400,"session_group":"garmin:554"}`
+- **THEN** the system creates a row carrying all five values
+- **AND** returns `201 Created` with the response body echoing all five fields
+- **AND** `distance_m` and `sweat_loss_ml` are rounded to 1 decimal place at the response boundary
+
+#### Scenario: distance_m if supplied must be positive
+
+- **WHEN** the client posts `distance_m` that is zero or negative
+- **THEN** the system returns `400 Bad Request` with `{"error":"distance_m_invalid"}`
+- **AND** no row is inserted
+
+#### Scenario: avg_power_w if supplied must be a positive integer
+
+- **WHEN** the client posts `avg_power_w` that is zero, negative, or non-integer
+- **THEN** the system returns `400 Bad Request` with `{"error":"avg_power_w_invalid"}`
+- **AND** no row is inserted
+
+#### Scenario: temperature_c if supplied must be within [-40, 60]
+
+- **WHEN** the client posts `temperature_c` of `-41` or `61` or `98.6`
+- **THEN** the system returns `400 Bad Request` with `{"error":"temperature_c_invalid","range":{"min":-40,"max":60}}`
+- **AND** no row is inserted
+
+#### Scenario: temperature_c accepts negative values in range
+
+- **WHEN** the client posts `temperature_c: -5.5` (winter session)
+- **THEN** the row is created with `temperature_c = -5.5`
+
+#### Scenario: sweat_loss_ml if supplied must be positive
+
+- **WHEN** the client posts `sweat_loss_ml` that is zero or negative
+- **THEN** the system returns `400 Bad Request` with `{"error":"sweat_loss_ml_invalid"}`
+- **AND** no row is inserted
+
+#### Scenario: session_group must be non-empty and bounded when supplied
+
+- **WHEN** the client posts `session_group` that is empty, whitespace-only, or longer than 255 characters
+- **THEN** the system returns `400 Bad Request` with `{"error":"session_group_invalid"}`
+- **AND** no row is inserted
+
+#### Scenario: Two legs of a brick share a session_group
+
+- **WHEN** the importer posts a bike leg and a run leg, both with `session_group: "garmin:9876543"` (the multisport parent activity's id)
+- **THEN** both rows persist with the same `session_group` value
+- **AND** each row keeps its own real `sport`, time window, and metrics (no merged pseudo-workout is created)
+
+#### Scenario: UPSERT full-replace covers the ingestion metrics
+
+- **WHEN** a workout with `external_id: "garmin:555"` exists with `sweat_loss_ml = 2400`
+- **AND** the client re-POSTs the same `external_id` with a body that omits `sweat_loss_ml`
+- **THEN** the row's `sweat_loss_ml` becomes `NULL` (full-replace of the mutable field set, matching the existing UPSERT semantics)
+
+### Requirement: GET /workouts lists workouts in a window
+
+The system SHALL expose `GET /workouts?from=<rfc3339>&to=<rfc3339>` that returns workouts whose `started_at` falls in the inclusive window, ordered by `started_at` ascending. An optional `session_group=<key>` query parameter SHALL narrow the result to workouts whose `session_group` equals the supplied key exactly — an additional AND-predicate inside the (still mandatory) window, used to fetch the legs of one brick/multisport session together.
+
+#### Scenario: Window filtering returns only workouts in range
+
+- **WHEN** the client calls `GET /workouts?from=2026-06-07T00:00:00Z&to=2026-06-08T00:00:00Z`
+- **THEN** only workouts with `from <= started_at <= to` are returned
+- **AND** workouts outside the window are excluded
+
+#### Scenario: Missing window parameters are rejected
+
+- **WHEN** the client omits `from` or `to`
+- **THEN** the system returns `400 Bad Request` with `{"error":"window_required"}`
+
+#### Scenario: Inverted window is rejected
+
+- **WHEN** `from > to`
+- **THEN** the system returns `400 Bad Request` with `{"error":"window_invalid"}`
+
+#### Scenario: Window larger than 92 days is rejected
+
+- **WHEN** the supplied window spans more than 92 days
+- **THEN** the system returns `400 Bad Request` with `{"error":"range_too_large","max_days":92}`
+
+#### Scenario: Response wraps the list
+
+- **WHEN** the request is valid
+- **THEN** the response body has the shape `{"workouts": [Workout, ...]}` (consistent with `/meals` and `/hydration`)
+
+#### Scenario: List includes rehearsal fields per row
+
+- **WHEN** the client lists workouts in a window containing one rehearsal-tagged ride (with `rpe`/`gi_distress_score` set) and one Garmin-imported ride (both fields `NULL`)
+- **THEN** the rehearsal-tagged ride's entry includes `rpe` and `gi_distress_score`
+- **AND** the Garmin-imported ride's entry omits both fields (omitempty)
+
+#### Scenario: session_group filter returns only matching legs
+
+- **WHEN** a window contains a bike leg and a run leg with `session_group: "garmin:9876543"` plus an unrelated swim with `session_group = NULL`
+- **AND** the client calls `GET /workouts?from=…&to=…&session_group=garmin:9876543`
+- **THEN** exactly the two legs are returned, ordered by `started_at` ascending (leg order)
+- **AND** the swim is excluded
+
+#### Scenario: session_group filter still requires the window
+
+- **WHEN** the client calls `GET /workouts?session_group=garmin:9876543` without `from`/`to`
+- **THEN** the system returns `400 Bad Request` with `{"error":"window_required"}` (the filter composes with, and does not replace, the window contract)
+
+#### Scenario: session_group filter matching nothing returns an empty list
+
+- **WHEN** no workout in the window carries the supplied `session_group`
+- **THEN** the response is `200 OK` with `{"workouts": []}`
+
+#### Scenario: List includes ingestion metrics per row (omitempty)
+
+- **WHEN** the client lists a window containing one Garmin-imported ride with `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml` set and one manual gym session with all five NULL
+- **THEN** the ride's entry includes the set fields
+- **AND** the gym session's entry omits all five keys
+
+### Requirement: PATCH /workouts/{id} updates the mutable subset
+
+The system SHALL expose `PATCH /workouts/{id}` accepting partial updates of `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`, `gi_distress_score`, `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, and `session_group`. Validation rules match the POST endpoint for the same fields. The fields `source`, `external_id`, `sport`, `started_at`, and `ended_at` are IMMUTABLE via PATCH. PATCH supports tri-state semantics on the two integer rehearsal fields AND on the five ingestion fields: `unchanged` when absent from the body, `set` when present with a value, and `cleared to NULL` when present with explicit JSON `null`.
+
+#### Scenario: Partial update changes only supplied mutable fields
+
+- **WHEN** the client patches `{"tss":85,"notes":"FTP changed last month; updated TSS"}` on an existing workout
+- **THEN** the response shows the new TSS and notes
+- **AND** other fields remain unchanged
+
+#### Scenario: Patching an immutable field is rejected
+
+- **WHEN** the client patches a body containing any of `source`, `external_id`, `sport`, `started_at`, `ended_at`
+- **THEN** the system returns `400 Bad Request` with `{"error":"field_immutable","field":"<offending-field>"}`
+
+#### Scenario: Patching to a negative tss is rejected
+
+- **WHEN** the client patches `{"tss":-1}`
+- **THEN** the system returns `400 Bad Request` with `{"error":"tss_invalid"}`
+
+#### Scenario: Patch on unknown id returns 404
+
+- **WHEN** the client patches an id that does not exist
+- **THEN** the system returns `404 Not Found` with `{"error":"workout_not_found"}`
+
+#### Scenario: PATCH sets rpe and gi_distress_score on an existing workout
+
+- **WHEN** a workout exists with both fields `NULL`
+- **AND** the client patches `{"rpe": 7, "gi_distress_score": 2}`
+- **THEN** the row's `rpe = 7` and `gi_distress_score = 2`
+- **AND** the response is `200 OK` with the updated workout
+
+#### Scenario: PATCH absent rehearsal fields leaves them unchanged
+
+- **WHEN** a workout has `rpe = 7` and `gi_distress_score = 2`
+- **AND** the client patches `{"notes": "felt strong"}` (no rpe / no gi_distress_score)
+- **THEN** the row's `rpe` and `gi_distress_score` are unchanged
+- **AND** `notes` is updated to `"felt strong"`
+
+#### Scenario: PATCH explicit null clears the rehearsal field to NULL
+
+- **WHEN** a workout has `rpe = 7`
+- **AND** the client patches `{"rpe": null}`
+- **THEN** the row's `rpe` becomes `NULL`
+- **AND** subsequent GET responses omit the `rpe` field
+
+#### Scenario: PATCH rpe out of range is rejected without touching other fields
+
+- **WHEN** the client patches `{"rpe": 11, "gi_distress_score": 3}`
+- **THEN** the system returns `400 Bad Request` with `{"error":"rpe_invalid","range":{"min":1,"max":10}}`
+- **AND** no field is updated (transactional validation — the GI score is NOT written even though it's valid)
+
+#### Scenario: PATCH sets ingestion metrics on an existing workout
+
+- **WHEN** a workout exists with all five ingestion fields `NULL`
+- **AND** the client patches `{"sweat_loss_ml": 1850, "temperature_c": 31}`
+- **THEN** the row's `sweat_loss_ml = 1850` and `temperature_c = 31`
+- **AND** the other three ingestion fields remain `NULL`
+- **AND** the response is `200 OK` with the updated workout
+
+#### Scenario: PATCH explicit null clears an ingestion field
+
+- **WHEN** a workout has `session_group = "garmin:9876543"` (grouped by mistake)
+- **AND** the client patches `{"session_group": null}`
+- **THEN** the row's `session_group` becomes `NULL`
+- **AND** subsequent GET responses omit the `session_group` field
+- **AND** the same null-clears semantics apply to `distance_m`, `avg_power_w`, `temperature_c`, and `sweat_loss_ml`
+
+#### Scenario: PATCH ingestion field validation matches POST
+
+- **WHEN** the client patches `{"temperature_c": 98.6}` or `{"distance_m": -100}` or `{"session_group": ""}`
+- **THEN** the system returns `400 Bad Request` with the corresponding error code (`temperature_c_invalid`, `distance_m_invalid`, `session_group_invalid`)
+- **AND** no field is updated
+
+### Requirement: GET /workouts/{id}/fueling surfaces rehearsal signals on the workout
+
+The system SHALL include `rpe`, `gi_distress_score`, `sweat_loss_ml`, and `temperature_c` on the `GET /workouts/{id}/fueling` response so the agent can read the rehearsal-outcome signals and the sweat/heat context alongside the fueling totals in a single call. The fields are echoed at the top level of the response, alongside `workout_id`, `started_at`, `ended_at`, and follow the same omitempty rule as everywhere else — absent when NULL on the underlying workout row. `distance_m`, `avg_power_w`, and `session_group` are deliberately NOT echoed here: they are not inputs to fueling-adequacy judgment, and the capability excludes performance analysis.
+
+#### Scenario: Fueling response carries rpe and gi_distress_score when set
+
+- **WHEN** a workout has `rpe = 7` and `gi_distress_score = 2`
+- **AND** the client calls `GET /workouts/{id}/fueling`
+- **THEN** the response body includes `"rpe": 7` and `"gi_distress_score": 2` at the top level (alongside `workout_id`, `started_at`, `ended_at`, `pre_window`, `intra_window`, `post_window`)
+
+#### Scenario: Fueling response omits the fields when NULL
+
+- **WHEN** a workout has both fields `NULL`
+- **AND** the client calls `GET /workouts/{id}/fueling`
+- **THEN** the response body omits the `rpe` and `gi_distress_score` keys
+- **AND** the fueling window shapes are otherwise unchanged
+
+#### Scenario: Fueling endpoint requires no new query params for the new fields
+
+- **WHEN** the client calls `GET /workouts/{id}/fueling`
+- **THEN** the existing `pre_window_min` / `post_window_min` query semantics apply unchanged
+- **AND** no `include_rehearsal` opt-in is required — the fields are always present (or always omitted via omitempty)
+
+#### Scenario: Fueling response carries sweat_loss_ml and temperature_c when set
+
+- **WHEN** a workout has `sweat_loss_ml = 2400` and `temperature_c = 27.5`
+- **AND** the client calls `GET /workouts/{id}/fueling`
+- **THEN** the response body includes `"sweat_loss_ml": 2400` and `"temperature_c": 27.5` at the top level
+- **AND** the agent can compare `sweat_loss_ml` against the summed fluid intake (`hydration.total_ml` + `workout_fuel.totals.quantity_ml` across the windows) in one call
+
+#### Scenario: Fueling response omits sweat/heat context when NULL and never echoes performance fields
+
+- **WHEN** a workout has `sweat_loss_ml` and `temperature_c` `NULL` but `distance_m` and `avg_power_w` set
+- **AND** the client calls `GET /workouts/{id}/fueling`
+- **THEN** the response body omits `sweat_loss_ml` and `temperature_c`
+- **AND** the response body does NOT contain `distance_m`, `avg_power_w`, or `session_group` keys regardless of their values on the row

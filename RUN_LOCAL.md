@@ -549,9 +549,14 @@ RIDE_ID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          \"name\":\"Z2 long ride — fueling rehearsal\",
          \"started_at\":\"$(date -u +%Y-%m-%dT07:00:00Z)\",
          \"ended_at\":\"$(date -u +%Y-%m-%dT10:00:00Z)\",
-         \"kcal_burned\":1800,\"tss\":110
+         \"kcal_burned\":1800,\"tss\":110,
+         \"distance_m\":85000,\"avg_power_w\":175,
+         \"temperature_c\":28,\"sweat_loss_ml\":2600
        }" \
     http://localhost:8080/workouts | jq -r .id)
+# distance/power/temperature/sweat_loss are optional ingestion metrics (a watch
+# measures them; omit what you don't have). sweat_loss_ml + temperature_c get
+# echoed back on /fueling so you can weigh estimated loss against fluid taken.
 
 # 2. Log a few workout_fuel entries during the ride (skipped here — see the
 #    Workout fuel section). Each carries carbs/sodium/caffeine/notes.
@@ -566,8 +571,8 @@ curl -s -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 #    the pre/intra/post window totals — one call for the rehearsal evaluation.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     "http://localhost:8080/workouts/$RIDE_ID/fueling" | \
-    jq '{rpe, gi_distress_score, intra_carbs: .intra_window.workout_fuel.totals.carbs_g}'
-# Expected: { "rpe": 7, "gi_distress_score": 2, "intra_carbs": 75 }
+    jq '{rpe, gi_distress_score, sweat_loss_ml, temperature_c, intra_carbs: .intra_window.workout_fuel.totals.carbs_g}'
+# Expected: { "rpe": 7, "gi_distress_score": 2, "sweat_loss_ml": 2600, "temperature_c": 28, "intra_carbs": 75 }
 ```
 
 ---

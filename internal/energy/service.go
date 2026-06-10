@@ -52,7 +52,7 @@ func (s *Service) Compute(ctx context.Context, params AvailabilityParams) (*Avai
 	if err != nil {
 		return nil, err
 	}
-	workoutsAll, err := s.workouts.List(ctx, params.From, params.To)
+	workoutsAll, err := s.workouts.List(ctx, params.From, params.To, nil)
 	if err != nil {
 		return nil, err
 	}

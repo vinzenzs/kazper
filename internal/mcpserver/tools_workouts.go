@@ -23,14 +23,20 @@ type LogWorkoutArgs struct {
 	TSS             *float64 `json:"tss,omitempty" jsonschema:"Training Stress Score; the intensity signal. Non-negative."`
 	RPE             *int     `json:"rpe,omitempty" jsonschema:"Borg CR-10 perceived effort, integer 1..10. Per session — logged after the workout. Nullable; omit for non-rehearsal rides (Z1 spins, gym sessions, etc.)."`
 	GIDistressScore *int     `json:"gi_distress_score,omitempty" jsonschema:"GI distress severity, integer 1..5 (1 = no distress, 5 = severe / couldn't continue). Per session — the rehearsal-outcome signal that lets you iterate fueling strategy. Nullable."`
+	DistanceM       *float64 `json:"distance_m,omitempty" jsonschema:"session distance in METRES (> 0). Nullable; omit if the source did not measure it."`
+	AvgPowerW       *int     `json:"avg_power_w,omitempty" jsonschema:"average power in WATTS (positive integer). Nullable."`
+	TemperatureC    *float64 `json:"temperature_c,omitempty" jsonschema:"ambient temperature in °C, range -40..60. Heat context for fueling. Nullable."`
+	SweatLossML     *float64 `json:"sweat_loss_ml,omitempty" jsonschema:"estimated sweat loss in MILLILITRES (> 0). Personalises fluid targets. Nullable."`
+	SessionGroup    *string  `json:"session_group,omitempty" jsonschema:"free-text key linking the legs of a brick/multisport session — set the SAME key on every leg (e.g. the Garmin parent activity id) so they can be fetched together. Nullable."`
 	Notes           *string  `json:"notes,omitempty" jsonschema:"free-text notes (e.g. how the fueling went, which product caused issues at minute N)"`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args. Note: writers normally rely on external_id for dedup, not this header."`
 }
 
 type ListWorkoutsArgs struct {
-	From string `json:"from" jsonschema:"inclusive RFC 3339 lower bound on started_at"`
-	To   string `json:"to" jsonschema:"inclusive RFC 3339 upper bound on started_at; max 92 days from 'from'"`
+	From         string  `json:"from" jsonschema:"inclusive RFC 3339 lower bound on started_at"`
+	To           string  `json:"to" jsonschema:"inclusive RFC 3339 upper bound on started_at; max 92 days from 'from'"`
+	SessionGroup *string `json:"session_group,omitempty" jsonschema:"optional: narrow to the legs of one brick/multisport session (exact-match on the session_group key). The from/to window is still required."`
 }
 
 type GetWorkoutArgs struct {
@@ -51,6 +57,18 @@ type PatchWorkoutArgs struct {
 	ClearRPE             bool `json:"clear_rpe,omitempty" jsonschema:"set true to clear rpe to null (retract a previously logged value). Mutually exclusive with rpe."`
 	GIDistressScore      *int `json:"gi_distress_score,omitempty" jsonschema:"GI distress severity 1..5. Per session. Omit to leave unchanged."`
 	ClearGIDistressScore bool `json:"clear_gi_distress_score,omitempty" jsonschema:"set true to clear gi_distress_score to null. Mutually exclusive with gi_distress_score."`
+
+	// Ingestion metrics — same tri-state: value sets, Clear* clears to null, omit leaves unchanged.
+	DistanceM         *float64 `json:"distance_m,omitempty" jsonschema:"corrected distance in METRES (> 0). Omit to leave unchanged."`
+	ClearDistanceM    bool     `json:"clear_distance_m,omitempty" jsonschema:"set true to clear distance_m to null."`
+	AvgPowerW         *int     `json:"avg_power_w,omitempty" jsonschema:"corrected average power in WATTS (positive integer). Omit to leave unchanged."`
+	ClearAvgPowerW    bool     `json:"clear_avg_power_w,omitempty" jsonschema:"set true to clear avg_power_w to null."`
+	TemperatureC      *float64 `json:"temperature_c,omitempty" jsonschema:"corrected ambient temperature in °C (-40..60). Omit to leave unchanged."`
+	ClearTemperatureC bool     `json:"clear_temperature_c,omitempty" jsonschema:"set true to clear temperature_c to null."`
+	SweatLossML       *float64 `json:"sweat_loss_ml,omitempty" jsonschema:"corrected estimated sweat loss in MILLILITRES (> 0). Omit to leave unchanged."`
+	ClearSweatLossML  bool     `json:"clear_sweat_loss_ml,omitempty" jsonschema:"set true to clear sweat_loss_ml to null."`
+	SessionGroup      *string  `json:"session_group,omitempty" jsonschema:"set the brick/multisport group key. Omit to leave unchanged."`
+	ClearSessionGroup bool     `json:"clear_session_group,omitempty" jsonschema:"set true to un-group this leg (clear session_group to null)."`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
@@ -79,6 +97,11 @@ func handleLogWorkout(ctx context.Context, c *apiClient, args LogWorkoutArgs) *m
 		TSS             *float64 `json:"tss,omitempty"`
 		RPE             *int     `json:"rpe,omitempty"`
 		GIDistressScore *int     `json:"gi_distress_score,omitempty"`
+		DistanceM       *float64 `json:"distance_m,omitempty"`
+		AvgPowerW       *int     `json:"avg_power_w,omitempty"`
+		TemperatureC    *float64 `json:"temperature_c,omitempty"`
+		SweatLossML     *float64 `json:"sweat_loss_ml,omitempty"`
+		SessionGroup    *string  `json:"session_group,omitempty"`
 		Notes           *string  `json:"notes,omitempty"`
 	}{
 		ExternalID:      args.ExternalID,
@@ -92,6 +115,11 @@ func handleLogWorkout(ctx context.Context, c *apiClient, args LogWorkoutArgs) *m
 		TSS:             args.TSS,
 		RPE:             args.RPE,
 		GIDistressScore: args.GIDistressScore,
+		DistanceM:       args.DistanceM,
+		AvgPowerW:       args.AvgPowerW,
+		TemperatureC:    args.TemperatureC,
+		SweatLossML:     args.SweatLossML,
+		SessionGroup:    args.SessionGroup,
 		Notes:           args.Notes,
 	})
 	if err != nil {
@@ -106,6 +134,9 @@ func handleListWorkouts(ctx context.Context, c *apiClient, args ListWorkoutsArgs
 	q := url.Values{}
 	q.Set("from", args.From)
 	q.Set("to", args.To)
+	if args.SessionGroup != nil {
+		q.Set("session_group", *args.SessionGroup)
+	}
 	status, body, err := c.Get(ctx, "/workouts", q)
 	return toToolResult(status, body, err)
 }
@@ -143,6 +174,33 @@ func handlePatchWorkout(ctx context.Context, c *apiClient, args PatchWorkoutArgs
 		payload["gi_distress_score"] = nil
 	} else if args.GIDistressScore != nil {
 		payload["gi_distress_score"] = *args.GIDistressScore
+	}
+	// Ingestion-metric tri-state: Clear* wins (JSON null → backend clears),
+	// otherwise value if set, otherwise field absent from payload.
+	if args.ClearDistanceM {
+		payload["distance_m"] = nil
+	} else if args.DistanceM != nil {
+		payload["distance_m"] = *args.DistanceM
+	}
+	if args.ClearAvgPowerW {
+		payload["avg_power_w"] = nil
+	} else if args.AvgPowerW != nil {
+		payload["avg_power_w"] = *args.AvgPowerW
+	}
+	if args.ClearTemperatureC {
+		payload["temperature_c"] = nil
+	} else if args.TemperatureC != nil {
+		payload["temperature_c"] = *args.TemperatureC
+	}
+	if args.ClearSweatLossML {
+		payload["sweat_loss_ml"] = nil
+	} else if args.SweatLossML != nil {
+		payload["sweat_loss_ml"] = *args.SweatLossML
+	}
+	if args.ClearSessionGroup {
+		payload["session_group"] = nil
+	} else if args.SessionGroup != nil {
+		payload["session_group"] = *args.SessionGroup
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -187,7 +245,11 @@ func registerWorkoutsTools(server *mcp.Server, c *apiClient) {
 			"`rpe` and `gi_distress_score` are the rehearsal-outcome signals — log them after fueling-rehearsal " +
 			"workouts (e.g. long Z2 rides in race-prep blocks). RPE is Borg CR-10 perceived effort, integer 1..10. " +
 			"GI distress is 1=no distress through 5=severe / had to stop. Both are nullable and only meaningful for " +
-			"sessions you're actively iterating fueling on; skip for everyday Z1 spins and gym work.",
+			"sessions you're actively iterating fueling on; skip for everyday Z1 spins and gym work. " +
+			"Ingestion metrics (all nullable, units fixed): `distance_m` metres, `avg_power_w` watts, " +
+			"`temperature_c` °C, `sweat_loss_ml` millilitres. `session_group` links the legs of a brick/multisport " +
+			"session — set the SAME key on every leg (e.g. the Garmin parent activity id) so they can be fetched " +
+			"together; omit for single-sport sessions.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args LogWorkoutArgs) (*mcp.CallToolResult, any, error) {
 		return handleLogWorkout(ctx, c, args), nil, nil
 	})
@@ -195,7 +257,8 @@ func registerWorkoutsTools(server *mcp.Server, c *apiClient) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_workouts",
 		Description: "List workouts whose started_at falls within the RFC 3339 window. Window is capped at 92 days. " +
-			"Use this when answering 'what did I train this week?' or aggregating fueling-relevant workouts.",
+			"Use this when answering 'what did I train this week?' or aggregating fueling-relevant workouts. " +
+			"Pass `session_group` to fetch just the legs of one brick/multisport session (the window stays required).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args ListWorkoutsArgs) (*mcp.CallToolResult, any, error) {
 		return handleListWorkouts(ctx, c, args), nil, nil
 	})
@@ -210,14 +273,15 @@ func registerWorkoutsTools(server *mcp.Server, c *apiClient) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "patch_workout",
 		Description: "Adjust mutable fields on an existing workout. PATCH-able: `name`, `notes`, `kcal_burned`, " +
-			"`avg_hr`, `tss`, `rpe`, `gi_distress_score`. IMMUTABLE (delete + re-create if these are wrong): " +
+			"`avg_hr`, `tss`, `rpe`, `gi_distress_score`, `distance_m`, `avg_power_w`, `temperature_c`, " +
+			"`sweat_loss_ml`, `session_group`. IMMUTABLE (delete + re-create if these are wrong): " +
 			"`sport`, `started_at`, `ended_at`, `source`, `external_id`. " +
 			"Typical post-ride flow: set `rpe` (Borg CR-10 perceived effort, 1..10) and `gi_distress_score` " +
 			"(1=no distress, 5=severe) on the workout you just rehearsed fueling on. Other typical uses: " +
 			"capture how the fueling went in `notes`, supply a missing kcal estimate, correct TSS after an FTP " +
-			"change. " +
-			"For RPE / GI: omit to leave unchanged, set an integer to overwrite, OR set `clear_rpe: true` / " +
-			"`clear_gi_distress_score: true` to retract a previously logged value (clears to null on the backend).",
+			"change, or un-group a mis-linked brick leg (`clear_session_group: true`). " +
+			"Every nullable field is tri-state: omit to leave unchanged, set a value to overwrite, OR set the " +
+			"matching `clear_*` flag to retract a value (clears to null on the backend).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args PatchWorkoutArgs) (*mcp.CallToolResult, any, error) {
 		return handlePatchWorkout(ctx, c, args), nil, nil
 	})

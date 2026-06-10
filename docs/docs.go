@@ -2856,6 +2856,12 @@ const docTemplate = `{
                         "name": "to",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Narrow to the legs of one brick/multisport session (exact-match on session_group)",
+                        "name": "session_group",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2923,7 +2929,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid",
+                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3062,7 +3068,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong.",
+                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `, ` + "`" + `rpe` + "`" + `, ` + "`" + `gi_distress_score` + "`" + `, ` + "`" + `distance_m` + "`" + `, ` + "`" + `avg_power_w` + "`" + `, ` + "`" + `temperature_c` + "`" + `, ` + "`" + `sweat_loss_ml` + "`" + `, ` + "`" + `session_group` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3100,7 +3106,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid",
+                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -5068,6 +5074,13 @@ const docTemplate = `{
                 "started_at": {
                     "type": "string"
                 },
+                "sweat_loss_ml": {
+                    "description": "Sweat/heat context echoed from the workout row when set — fueling-\nadequacy inputs the agent compares against the windows' fluid totals.\nThe performance metrics (distance_m, avg_power_w, session_group) are\ndeliberately NOT echoed here: not fueling-judgment inputs.",
+                    "type": "number"
+                },
+                "temperature_c": {
+                    "type": "number"
+                },
                 "workout_id": {
                     "type": "string"
                 }
@@ -5109,8 +5122,15 @@ const docTemplate = `{
                 "avg_hr": {
                     "type": "integer"
                 },
+                "avg_power_w": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
+                },
+                "distance_m": {
+                    "description": "Source-agnostic ingestion metrics — all nullable, populated by whatever\nwriter measured them (Garmin today). distance in metres, average power in\nwatts, ambient temperature in °C, estimated sweat loss in ml. SessionGroup\nis a free-text key linking the legs of a brick/multisport session (e.g. the\nGarmin parent activity id set on every leg).",
+                    "type": "number"
                 },
                 "ended_at": {
                     "type": "string"
@@ -5137,6 +5157,9 @@ const docTemplate = `{
                     "description": "Per-session rehearsal-outcome signals — both nullable, set by the user\nafter a fueling-rehearsal workout. Validated 1..10 (Borg CR-10) and 1..5\n(1=no GI distress, 5=severe) at handler + DB CHECK layers.",
                     "type": "integer"
                 },
+                "session_group": {
+                    "type": "string"
+                },
                 "source": {
                     "$ref": "#/definitions/workouts.Source"
                 },
@@ -5145,6 +5168,12 @@ const docTemplate = `{
                 },
                 "started_at": {
                     "type": "string"
+                },
+                "sweat_loss_ml": {
+                    "type": "number"
+                },
+                "temperature_c": {
+                    "type": "number"
                 },
                 "tss": {
                     "type": "number"

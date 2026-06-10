@@ -83,6 +83,13 @@ type WorkoutFueling struct {
 	RPE             *int `json:"rpe,omitempty"`
 	GIDistressScore *int `json:"gi_distress_score,omitempty"`
 
+	// Sweat/heat context echoed from the workout row when set — fueling-
+	// adequacy inputs the agent compares against the windows' fluid totals.
+	// The performance metrics (distance_m, avg_power_w, session_group) are
+	// deliberately NOT echoed here: not fueling-judgment inputs.
+	SweatLossML  *float64 `json:"sweat_loss_ml,omitempty"`
+	TemperatureC *float64 `json:"temperature_c,omitempty"`
+
 	PreWindow   FuelingWindow `json:"pre_window"`
 	IntraWindow FuelingWindow `json:"intra_window"`
 	PostWindow  FuelingWindow `json:"post_window"`
@@ -133,6 +140,8 @@ func (s *Service) FueledFor(ctx context.Context, id uuid.UUID, preMin, postMin i
 		EndedAt:         w.EndedAt,
 		RPE:             w.RPE,
 		GIDistressScore: w.GIDistressScore,
+		SweatLossML:     numfmt.Round1Ptr(w.SweatLossML),
+		TemperatureC:    numfmt.Round1Ptr(w.TemperatureC),
 		PreWindow:       buildWindow(preStart, w.StartedAt, preMin, mealsAll, hydAll, fuelAll),
 		IntraWindow:     buildWindow(w.StartedAt, w.EndedAt, intraMinutes(w.StartedAt, w.EndedAt), mealsAll, hydAll, fuelAll),
 		PostWindow:      buildWindow(w.EndedAt, postEnd, postMin, mealsAll, hydAll, fuelAll),
