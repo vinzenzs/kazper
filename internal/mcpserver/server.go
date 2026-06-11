@@ -44,6 +44,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	registerProductsTools(server, client)
 	registerMealsTools(server, client)
 	registerMealPlanTools(server, client)
+	registerShoppingTools(server, client)
 	registerSummaryTools(server, client)
 	registerGoalsTools(server, client)
 	registerGoalOverrideTools(server, client)

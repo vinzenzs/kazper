@@ -3342,6 +3342,232 @@
                 }
             }
         },
+        "/shopping/items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns unchecked items in creation order by default. With include_checked=true, checked items are appended after the unchecked ones.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "shopping-list"
+                ],
+                "summary": "List shopping items",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Include checked items (last)",
+                        "name": "include_checked",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ items: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Inserts 1–200 items atomically (all or none) in input order — the agent's consolidated, already-merged list in one call. `name` is required (≤300 chars); `quantity_text` is opaque (\"3 large\"), never parsed; `recipe_product_id` (if set) must reference an existing product; `plan_date` is bare provenance. A single invalid item fails the batch with its index.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "shopping-list"
+                ],
+                "summary": "Create shopping items in bulk",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Items",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/shoppinglist.bulkCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "{ items: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "items_required | batch_too_large | name_invalid | plan_date_invalid | recipe_product_id_invalid | product_not_found (with index)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "`DELETE /shopping/items?checked=true` removes all checked items and reports the count. An unqualified bulk delete is intentionally rejected — there is no \"wipe the whole list\" call.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "shopping-list"
+                ],
+                "summary": "Clear checked shopping items",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Must be true",
+                        "name": "checked",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ deleted: n }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "checked_qualifier_required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/shopping/items/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "shopping-list"
+                ],
+                "summary": "Delete a shopping item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Item UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "shopping_item_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Partial update of `name`, `quantity_text` (null clears) and `checked`. Setting checked=true stamps checked_at; checked=false clears it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "shopping-list"
+                ],
+                "summary": "Update a shopping item (rename / check / uncheck)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Item UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/shoppinglist.Item"
+                        }
+                    },
+                    "400": {
+                        "description": "name_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "shopping_item_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/summary/daily": {
             "get": {
                 "security": [
@@ -6343,6 +6569,64 @@
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "shoppinglist.Item": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "type": "boolean"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "plan_date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "quantity_text": {
+                    "type": "string"
+                },
+                "recipe_product_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "shoppinglist.bulkCreateRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/shoppinglist.itemRequest"
+                    }
+                }
+            }
+        },
+        "shoppinglist.itemRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "plan_date": {
+                    "type": "string"
+                },
+                "quantity_text": {
+                    "type": "string"
+                },
+                "recipe_product_id": {
                     "type": "string"
                 }
             }

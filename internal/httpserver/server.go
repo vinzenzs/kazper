@@ -29,6 +29,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/raceprep"
 	"github.com/vinzenzs/nutrition-api/internal/races"
 	"github.com/vinzenzs/nutrition-api/internal/recoverymetrics"
+	"github.com/vinzenzs/nutrition-api/internal/shoppinglist"
 	"github.com/vinzenzs/nutrition-api/internal/store"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
@@ -164,6 +165,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	mealPlanSvc := mealplan.NewService(pool, mealplan.NewRepo(pool))
 	mealPlanSvc.SetProductsRepo(productsRepo)
 	mealPlanSvc.SetMealsService(mealsSvc)
+	// Shopping list: dumb checklist with soft product provenance. Inject the
+	// products repo for the recipe_product_id existence check only.
+	shoppingSvc := shoppinglist.NewService(shoppinglist.NewRepo(pool))
+	shoppingSvc.SetProductsRepo(productsRepo)
 	racePrepSvc := raceprep.NewService(time.Now, userTZ, pool)
 	// recommend-workout-fuel needs the workouts row + body-weight resolver.
 	// Optional setters so the existing constructor signature stays stable
@@ -213,6 +218,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	racePrepHandlers.Register(api)
 	races.NewHandlers(racesSvc).Register(api)
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
+	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)

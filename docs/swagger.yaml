@@ -1320,6 +1320,44 @@ definitions:
       updated_at:
         type: string
     type: object
+  shoppinglist.Item:
+    properties:
+      checked:
+        type: boolean
+      checked_at:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      plan_date:
+        description: YYYY-MM-DD
+        type: string
+      quantity_text:
+        type: string
+      recipe_product_id:
+        type: string
+    type: object
+  shoppinglist.bulkCreateRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/shoppinglist.itemRequest'
+        type: array
+    type: object
+  shoppinglist.itemRequest:
+    properties:
+      name:
+        type: string
+      plan_date:
+        type: string
+      quantity_text:
+        type: string
+      recipe_product_id:
+        type: string
+    type: object
   summary.Adherence:
     additionalProperties:
       $ref: '#/definitions/summary.AdherenceEntry'
@@ -4063,6 +4101,159 @@ paths:
       summary: Get the recovery snapshot for a date
       tags:
       - recovery-metrics
+  /shopping/items:
+    delete:
+      description: '`DELETE /shopping/items?checked=true` removes all checked items
+        and reports the count. An unqualified bulk delete is intentionally rejected
+        — there is no "wipe the whole list" call.'
+      parameters:
+      - description: Must be true
+        in: query
+        name: checked
+        required: true
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ deleted: n }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: checked_qualifier_required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Clear checked shopping items
+      tags:
+      - shopping-list
+    get:
+      description: Returns unchecked items in creation order by default. With include_checked=true,
+        checked items are appended after the unchecked ones.
+      parameters:
+      - description: Include checked items (last)
+        in: query
+        name: include_checked
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ items: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List shopping items
+      tags:
+      - shopping-list
+    post:
+      consumes:
+      - application/json
+      description: Inserts 1–200 items atomically (all or none) in input order — the
+        agent's consolidated, already-merged list in one call. `name` is required
+        (≤300 chars); `quantity_text` is opaque ("3 large"), never parsed; `recipe_product_id`
+        (if set) must reference an existing product; `plan_date` is bare provenance.
+        A single invalid item fails the batch with its index.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Items
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/shoppinglist.bulkCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: '{ items: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: items_required | batch_too_large | name_invalid | plan_date_invalid
+            | recipe_product_id_invalid | product_not_found (with index)
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create shopping items in bulk
+      tags:
+      - shopping-list
+  /shopping/items/{id}:
+    delete:
+      parameters:
+      - description: Item UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: shopping_item_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a shopping item
+      tags:
+      - shopping-list
+    patch:
+      consumes:
+      - application/json
+      description: Partial update of `name`, `quantity_text` (null clears) and `checked`.
+        Setting checked=true stamps checked_at; checked=false clears it.
+      parameters:
+      - description: Item UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/shoppinglist.Item'
+        "400":
+          description: name_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: shopping_item_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a shopping item (rename / check / uncheck)
+      tags:
+      - shopping-list
   /summary/daily:
     get:
       description: Returns aggregated totals for a single calendar date in the supplied
