@@ -104,18 +104,26 @@ Future<void> _showAmberConfirm(
 }
 
 /// Editable meal sheet. Used by the low/amber photo bands (seeded from the
-/// inference) and by the freeform "describe it" escape hatch (empty seed).
-/// Submit calls `POST /meals/freeform`.
+/// inference), the freeform "describe it" escape hatch (empty seed), and the
+/// food picker's quick-create ([saveAsProduct] true, optionally [seedName]
+/// pre-filled from the search query). Submit calls `POST /meals/freeform`;
+/// when [saveAsProduct] is set it also persists a reusable product server-side.
 Future<void> showFreeformSheet(
   BuildContext context,
   WidgetRef ref, {
   MealEntry? seed,
+  String? seedName,
+  bool saveAsProduct = false,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _EditableMealSheet(seed: seed),
+    builder: (_) => _EditableMealSheet(
+      seed: seed,
+      seedName: seedName,
+      saveAsProduct: saveAsProduct,
+    ),
   );
 }
 
@@ -171,7 +179,13 @@ class _ConfirmBanner extends StatelessWidget {
 
 class _EditableMealSheet extends ConsumerStatefulWidget {
   final MealEntry? seed;
-  const _EditableMealSheet({this.seed});
+  final String? seedName;
+  final bool saveAsProduct;
+  const _EditableMealSheet({
+    this.seed,
+    this.seedName,
+    this.saveAsProduct = false,
+  });
 
   @override
   ConsumerState<_EditableMealSheet> createState() => _EditableMealSheetState();
@@ -191,7 +205,8 @@ class _EditableMealSheetState extends ConsumerState<_EditableMealSheet> {
     super.initState();
     final seed = widget.seed;
     final n = seed?.effectiveNutrimentsPer100g;
-    _name = TextEditingController(text: seed?.effectiveName ?? '');
+    _name = TextEditingController(
+        text: seed?.effectiveName ?? widget.seedName ?? '');
     _qty = TextEditingController(text: (seed?.quantityG ?? 100).toStringAsFixed(0));
     _kcal = TextEditingController(text: _fmt(n?.kcal));
     _protein = TextEditingController(text: _fmt(n?.proteinG));
@@ -222,11 +237,13 @@ class _EditableMealSheetState extends ConsumerState<_EditableMealSheet> {
           proteinG: double.tryParse(_protein.text),
           carbsG: double.tryParse(_carbs.text),
           fatG: double.tryParse(_fat.text),
+          saveAsProduct: widget.saveAsProduct,
         );
     if (!mounted) return;
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Meal logged')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(widget.saveAsProduct ? 'Food saved & logged' : 'Meal logged'),
+    ));
   }
 
   @override
@@ -238,7 +255,7 @@ class _EditableMealSheetState extends ConsumerState<_EditableMealSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Describe the meal',
+          Text(widget.saveAsProduct ? 'Create food' : 'Describe the meal',
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           TextField(
@@ -269,7 +286,11 @@ class _EditableMealSheetState extends ConsumerState<_EditableMealSheet> {
             width: double.infinity,
             child: FilledButton(
               onPressed: _saving ? null : _submit,
-              child: Text(_saving ? 'Saving…' : 'Log meal'),
+              child: Text(_saving
+                  ? 'Saving…'
+                  : widget.saveAsProduct
+                      ? 'Save & log'
+                      : 'Log meal'),
             ),
           ),
         ],

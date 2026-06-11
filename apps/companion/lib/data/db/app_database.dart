@@ -19,6 +19,10 @@ class ProductsCache extends Table {
   TextColumn get nutrimentsPer100gJson => text()();
   RealColumn get servingSizeG => real().nullable()();
   RealColumn get lastLoggedQuantityG => real().nullable()();
+  // Recency-of-use, mirrored from the backend's products.last_logged_at, so the
+  // food picker can order "previously-used foods" most-recently-used first even
+  // offline. Null until the food has been logged at least once.
+  DateTimeColumn get lastLoggedAt => dateTime().nullable()();
   DateTimeColumn get refreshedAt => dateTime()();
 
   @override
@@ -77,13 +81,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          // v2 hook reserved — append branches as the schema evolves.
+          // v2: products_cache gains last_logged_at for recency-of-use ordering
+          // in the food picker.
+          if (from < 2) {
+            await m.addColumn(productsCache, productsCache.lastLoggedAt);
+          }
         },
       );
 

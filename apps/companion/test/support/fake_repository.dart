@@ -16,6 +16,16 @@ class FakeRepository implements Repository {
   PhotoMealResult? photoResult;
   Object? photoError;
 
+  // Food picker wiring. `networkError`, when set, makes the network reads
+  // (searchProducts/recentProducts) throw so tests can exercise the offline
+  // fallback to the cached* lists.
+  List<Product> searchResults = [];
+  List<Product> recentResults = [];
+  List<Product> cachedRecent = [];
+  List<Product> cachedSearch = [];
+  Object? networkError;
+  final List<String> searchQueries = [];
+
   final List<Map<String, dynamic>> meals = [];
   final List<String> deletedMeals = [];
   final List<double> hydrationLogs = [];
@@ -58,6 +68,25 @@ class FakeRepository implements Repository {
   }
 
   @override
+  Future<List<Product>> searchProducts(String q) async {
+    searchQueries.add(q);
+    if (networkError != null) throw networkError!;
+    return searchResults;
+  }
+
+  @override
+  Future<List<Product>> recentProducts({int limit = 50, int offset = 0}) async {
+    if (networkError != null) throw networkError!;
+    return recentResults;
+  }
+
+  @override
+  Future<List<Product>> cachedRecentProducts(int limit) async => cachedRecent;
+
+  @override
+  Future<List<Product>> cachedSearchProducts(String q) async => cachedSearch;
+
+  @override
   Future<PhotoMealResult> logMealFromPhoto({
     required Uint8List jpegBytes,
     required double quantityG,
@@ -97,8 +126,16 @@ class FakeRepository implements Repository {
     double? proteinG,
     double? carbsG,
     double? fatG,
+    Map<String, double>? micros,
+    bool saveAsProduct = false,
   }) async {
-    meals.add({'name': name, 'quantity_g': quantityG, 'freeform': true});
+    meals.add({
+      'name': name,
+      'quantity_g': quantityG,
+      'freeform': true,
+      'save_as_product': saveAsProduct,
+    });
+    _appended.add(mealFixture(id: 'freeform-${meals.length}', name: name));
   }
 
   @override
@@ -152,9 +189,15 @@ MealEntry mealFixture({
   );
 }
 
-Product productFixture({double? lastQ, double? serving}) => Product(
-      id: '12345',
-      name: 'Test bar',
+Product productFixture({
+  String id = '12345',
+  String name = 'Test bar',
+  double? lastQ,
+  double? serving,
+}) =>
+    Product(
+      id: id,
+      name: name,
       source: 'off',
       nutrimentsPer100g:
           Nutriments(kcal: 100, proteinG: 5, carbsG: 10, fatG: 2),

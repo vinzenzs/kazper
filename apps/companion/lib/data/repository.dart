@@ -37,6 +37,21 @@ abstract class Repository {
   /// Throws [ProductNotFound] on 404.
   Future<Product> lookupProduct(String barcode);
 
+  /// `GET /products/search?q=`, recency-ranked, write-through to the cache.
+  Future<List<Product>> searchProducts(String q);
+
+  /// `GET /products`, most-recently-used first, write-through to the cache.
+  Future<List<Product>> recentProducts({int limit, int offset});
+
+  /// Previously-used foods from the local cache, most-recently-used first.
+  /// Used for the picker's instant (stale-while-revalidate) first paint and as
+  /// the offline source when the network is unreachable.
+  Future<List<Product>> cachedRecentProducts(int limit);
+
+  /// Offline search fallback: a case-insensitive substring match over the
+  /// cached foods, recency-first.
+  Future<List<Product>> cachedSearchProducts(String q);
+
   /// Multipart `POST /meals/from_photo`. Returns the committed meal + the
   /// inference confidence. Not routed through the outbox — the caller needs
   /// the response synchronously and the image bytes are large.
@@ -65,6 +80,8 @@ abstract class Repository {
     double? proteinG,
     double? carbsG,
     double? fatG,
+    Map<String, double>? micros,
+    bool saveAsProduct,
   });
 
   Future<void> enqueuePatchMeal(
@@ -165,15 +182,62 @@ class ApiRepository implements Repository {
   Future<Product?> cachedProduct(String id) async {
     final row = await db.productsCacheDao.getById(id);
     if (row == null) return null;
-    return Product.fromJson({
-      'id': row.id,
-      'name': row.name,
-      'brand': row.brand,
-      'source': row.source,
-      'nutriments_per_100g': jsonDecode(row.nutrimentsPer100gJson),
-      'serving_size_g': row.servingSizeG,
-      'last_logged_quantity_g': row.lastLoggedQuantityG,
-    });
+    return _rowToProduct(row);
+  }
+
+  Product _rowToProduct(ProductsCacheData row) => Product.fromJson({
+        'id': row.id,
+        'name': row.name,
+        'brand': row.brand,
+        'source': row.source,
+        'nutriments_per_100g': jsonDecode(row.nutrimentsPer100gJson),
+        'serving_size_g': row.servingSizeG,
+        'last_logged_quantity_g': row.lastLoggedQuantityG,
+        'last_logged_at': row.lastLoggedAt?.toUtc().toIso8601String(),
+      });
+
+  @override
+  Future<List<Product>> searchProducts(String q) async {
+    final resp = await api.dio.get<Map<String, dynamic>>(
+      '/products/search',
+      queryParameters: {'q': q},
+    );
+    final results = (resp.data?['results'] as List?) ?? const [];
+    final products = <Product>[];
+    for (final r in results) {
+      final json = (r as Map).cast<String, dynamic>();
+      await db.productsCacheDao.upsertFromApi(json);
+      products.add(Product.fromJson(json));
+    }
+    return products;
+  }
+
+  @override
+  Future<List<Product>> recentProducts({int limit = 50, int offset = 0}) async {
+    final resp = await api.dio.get<Map<String, dynamic>>(
+      '/products',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    final rows = (resp.data?['products'] as List?) ?? const [];
+    final products = <Product>[];
+    for (final r in rows) {
+      final json = (r as Map).cast<String, dynamic>();
+      await db.productsCacheDao.upsertFromApi(json);
+      products.add(Product.fromJson(json));
+    }
+    return products;
+  }
+
+  @override
+  Future<List<Product>> cachedRecentProducts(int limit) async {
+    final rows = await db.productsCacheDao.recentlyUsed(limit);
+    return rows.map(_rowToProduct).toList();
+  }
+
+  @override
+  Future<List<Product>> cachedSearchProducts(String q) async {
+    final rows = await db.productsCacheDao.searchCached(q);
+    return rows.map(_rowToProduct).toList();
   }
 
   @override
@@ -258,6 +322,8 @@ class ApiRepository implements Repository {
     double? proteinG,
     double? carbsG,
     double? fatG,
+    Map<String, double>? micros,
+    bool saveAsProduct = false,
   }) {
     return _enqueue('POST', '/meals/freeform', {
       'name': name,
@@ -269,7 +335,12 @@ class ApiRepository implements Repository {
         'protein_g': ?proteinG,
         'carbs_g': ?carbsG,
         'fat_g': ?fatG,
+        ...?micros,
       },
+      // Quick-create logs the meal AND persists a reusable product server-side
+      // (one idempotent call, replays through the outbox). Omitted when false
+      // so the plain "describe it" escape hatch stays a pure freeform log.
+      if (saveAsProduct) 'save_as_product': true,
     });
   }
 

@@ -78,6 +78,17 @@ class $ProductsCacheTable extends ProductsCache
         type: DriftSqlType.double,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _lastLoggedAtMeta = const VerificationMeta(
+    'lastLoggedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastLoggedAt = GeneratedColumn<DateTime>(
+    'last_logged_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _refreshedAtMeta = const VerificationMeta(
     'refreshedAt',
   );
@@ -98,6 +109,7 @@ class $ProductsCacheTable extends ProductsCache
     nutrimentsPer100gJson,
     servingSizeG,
     lastLoggedQuantityG,
+    lastLoggedAt,
     refreshedAt,
   ];
   @override
@@ -168,6 +180,15 @@ class $ProductsCacheTable extends ProductsCache
         ),
       );
     }
+    if (data.containsKey('last_logged_at')) {
+      context.handle(
+        _lastLoggedAtMeta,
+        lastLoggedAt.isAcceptableOrUnknown(
+          data['last_logged_at']!,
+          _lastLoggedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('refreshed_at')) {
       context.handle(
         _refreshedAtMeta,
@@ -216,6 +237,10 @@ class $ProductsCacheTable extends ProductsCache
         DriftSqlType.double,
         data['${effectivePrefix}last_logged_quantity_g'],
       ),
+      lastLoggedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_logged_at'],
+      ),
       refreshedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}refreshed_at'],
@@ -238,6 +263,7 @@ class ProductsCacheData extends DataClass
   final String nutrimentsPer100gJson;
   final double? servingSizeG;
   final double? lastLoggedQuantityG;
+  final DateTime? lastLoggedAt;
   final DateTime refreshedAt;
   const ProductsCacheData({
     required this.id,
@@ -247,6 +273,7 @@ class ProductsCacheData extends DataClass
     required this.nutrimentsPer100gJson,
     this.servingSizeG,
     this.lastLoggedQuantityG,
+    this.lastLoggedAt,
     required this.refreshedAt,
   });
   @override
@@ -264,6 +291,9 @@ class ProductsCacheData extends DataClass
     }
     if (!nullToAbsent || lastLoggedQuantityG != null) {
       map['last_logged_quantity_g'] = Variable<double>(lastLoggedQuantityG);
+    }
+    if (!nullToAbsent || lastLoggedAt != null) {
+      map['last_logged_at'] = Variable<DateTime>(lastLoggedAt);
     }
     map['refreshed_at'] = Variable<DateTime>(refreshedAt);
     return map;
@@ -284,6 +314,9 @@ class ProductsCacheData extends DataClass
       lastLoggedQuantityG: lastLoggedQuantityG == null && nullToAbsent
           ? const Value.absent()
           : Value(lastLoggedQuantityG),
+      lastLoggedAt: lastLoggedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastLoggedAt),
       refreshedAt: Value(refreshedAt),
     );
   }
@@ -305,6 +338,7 @@ class ProductsCacheData extends DataClass
       lastLoggedQuantityG: serializer.fromJson<double?>(
         json['lastLoggedQuantityG'],
       ),
+      lastLoggedAt: serializer.fromJson<DateTime?>(json['lastLoggedAt']),
       refreshedAt: serializer.fromJson<DateTime>(json['refreshedAt']),
     );
   }
@@ -319,6 +353,7 @@ class ProductsCacheData extends DataClass
       'nutrimentsPer100gJson': serializer.toJson<String>(nutrimentsPer100gJson),
       'servingSizeG': serializer.toJson<double?>(servingSizeG),
       'lastLoggedQuantityG': serializer.toJson<double?>(lastLoggedQuantityG),
+      'lastLoggedAt': serializer.toJson<DateTime?>(lastLoggedAt),
       'refreshedAt': serializer.toJson<DateTime>(refreshedAt),
     };
   }
@@ -331,6 +366,7 @@ class ProductsCacheData extends DataClass
     String? nutrimentsPer100gJson,
     Value<double?> servingSizeG = const Value.absent(),
     Value<double?> lastLoggedQuantityG = const Value.absent(),
+    Value<DateTime?> lastLoggedAt = const Value.absent(),
     DateTime? refreshedAt,
   }) => ProductsCacheData(
     id: id ?? this.id,
@@ -342,6 +378,7 @@ class ProductsCacheData extends DataClass
     lastLoggedQuantityG: lastLoggedQuantityG.present
         ? lastLoggedQuantityG.value
         : this.lastLoggedQuantityG,
+    lastLoggedAt: lastLoggedAt.present ? lastLoggedAt.value : this.lastLoggedAt,
     refreshedAt: refreshedAt ?? this.refreshedAt,
   );
   ProductsCacheData copyWithCompanion(ProductsCacheCompanion data) {
@@ -359,6 +396,9 @@ class ProductsCacheData extends DataClass
       lastLoggedQuantityG: data.lastLoggedQuantityG.present
           ? data.lastLoggedQuantityG.value
           : this.lastLoggedQuantityG,
+      lastLoggedAt: data.lastLoggedAt.present
+          ? data.lastLoggedAt.value
+          : this.lastLoggedAt,
       refreshedAt: data.refreshedAt.present
           ? data.refreshedAt.value
           : this.refreshedAt,
@@ -375,6 +415,7 @@ class ProductsCacheData extends DataClass
           ..write('nutrimentsPer100gJson: $nutrimentsPer100gJson, ')
           ..write('servingSizeG: $servingSizeG, ')
           ..write('lastLoggedQuantityG: $lastLoggedQuantityG, ')
+          ..write('lastLoggedAt: $lastLoggedAt, ')
           ..write('refreshedAt: $refreshedAt')
           ..write(')'))
         .toString();
@@ -389,6 +430,7 @@ class ProductsCacheData extends DataClass
     nutrimentsPer100gJson,
     servingSizeG,
     lastLoggedQuantityG,
+    lastLoggedAt,
     refreshedAt,
   );
   @override
@@ -402,6 +444,7 @@ class ProductsCacheData extends DataClass
           other.nutrimentsPer100gJson == this.nutrimentsPer100gJson &&
           other.servingSizeG == this.servingSizeG &&
           other.lastLoggedQuantityG == this.lastLoggedQuantityG &&
+          other.lastLoggedAt == this.lastLoggedAt &&
           other.refreshedAt == this.refreshedAt);
 }
 
@@ -413,6 +456,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
   final Value<String> nutrimentsPer100gJson;
   final Value<double?> servingSizeG;
   final Value<double?> lastLoggedQuantityG;
+  final Value<DateTime?> lastLoggedAt;
   final Value<DateTime> refreshedAt;
   final Value<int> rowid;
   const ProductsCacheCompanion({
@@ -423,6 +467,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
     this.nutrimentsPer100gJson = const Value.absent(),
     this.servingSizeG = const Value.absent(),
     this.lastLoggedQuantityG = const Value.absent(),
+    this.lastLoggedAt = const Value.absent(),
     this.refreshedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -434,6 +479,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
     required String nutrimentsPer100gJson,
     this.servingSizeG = const Value.absent(),
     this.lastLoggedQuantityG = const Value.absent(),
+    this.lastLoggedAt = const Value.absent(),
     required DateTime refreshedAt,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -449,6 +495,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
     Expression<String>? nutrimentsPer100gJson,
     Expression<double>? servingSizeG,
     Expression<double>? lastLoggedQuantityG,
+    Expression<DateTime>? lastLoggedAt,
     Expression<DateTime>? refreshedAt,
     Expression<int>? rowid,
   }) {
@@ -462,6 +509,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
       if (servingSizeG != null) 'serving_size_g': servingSizeG,
       if (lastLoggedQuantityG != null)
         'last_logged_quantity_g': lastLoggedQuantityG,
+      if (lastLoggedAt != null) 'last_logged_at': lastLoggedAt,
       if (refreshedAt != null) 'refreshed_at': refreshedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -475,6 +523,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
     Value<String>? nutrimentsPer100gJson,
     Value<double?>? servingSizeG,
     Value<double?>? lastLoggedQuantityG,
+    Value<DateTime?>? lastLoggedAt,
     Value<DateTime>? refreshedAt,
     Value<int>? rowid,
   }) {
@@ -487,6 +536,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
           nutrimentsPer100gJson ?? this.nutrimentsPer100gJson,
       servingSizeG: servingSizeG ?? this.servingSizeG,
       lastLoggedQuantityG: lastLoggedQuantityG ?? this.lastLoggedQuantityG,
+      lastLoggedAt: lastLoggedAt ?? this.lastLoggedAt,
       refreshedAt: refreshedAt ?? this.refreshedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -520,6 +570,9 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
         lastLoggedQuantityG.value,
       );
     }
+    if (lastLoggedAt.present) {
+      map['last_logged_at'] = Variable<DateTime>(lastLoggedAt.value);
+    }
     if (refreshedAt.present) {
       map['refreshed_at'] = Variable<DateTime>(refreshedAt.value);
     }
@@ -539,6 +592,7 @@ class ProductsCacheCompanion extends UpdateCompanion<ProductsCacheData> {
           ..write('nutrimentsPer100gJson: $nutrimentsPer100gJson, ')
           ..write('servingSizeG: $servingSizeG, ')
           ..write('lastLoggedQuantityG: $lastLoggedQuantityG, ')
+          ..write('lastLoggedAt: $lastLoggedAt, ')
           ..write('refreshedAt: $refreshedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -1880,6 +1934,7 @@ typedef $$ProductsCacheTableCreateCompanionBuilder =
       required String nutrimentsPer100gJson,
       Value<double?> servingSizeG,
       Value<double?> lastLoggedQuantityG,
+      Value<DateTime?> lastLoggedAt,
       required DateTime refreshedAt,
       Value<int> rowid,
     });
@@ -1892,6 +1947,7 @@ typedef $$ProductsCacheTableUpdateCompanionBuilder =
       Value<String> nutrimentsPer100gJson,
       Value<double?> servingSizeG,
       Value<double?> lastLoggedQuantityG,
+      Value<DateTime?> lastLoggedAt,
       Value<DateTime> refreshedAt,
       Value<int> rowid,
     });
@@ -1937,6 +1993,11 @@ class $$ProductsCacheTableFilterComposer
 
   ColumnFilters<double> get lastLoggedQuantityG => $composableBuilder(
     column: $table.lastLoggedQuantityG,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastLoggedAt => $composableBuilder(
+    column: $table.lastLoggedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1990,6 +2051,11 @@ class $$ProductsCacheTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get lastLoggedAt => $composableBuilder(
+    column: $table.lastLoggedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get refreshedAt => $composableBuilder(
     column: $table.refreshedAt,
     builder: (column) => ColumnOrderings(column),
@@ -2029,6 +2095,11 @@ class $$ProductsCacheTableAnnotationComposer
 
   GeneratedColumn<double> get lastLoggedQuantityG => $composableBuilder(
     column: $table.lastLoggedQuantityG,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastLoggedAt => $composableBuilder(
+    column: $table.lastLoggedAt,
     builder: (column) => column,
   );
 
@@ -2080,6 +2151,7 @@ class $$ProductsCacheTableTableManager
                 Value<String> nutrimentsPer100gJson = const Value.absent(),
                 Value<double?> servingSizeG = const Value.absent(),
                 Value<double?> lastLoggedQuantityG = const Value.absent(),
+                Value<DateTime?> lastLoggedAt = const Value.absent(),
                 Value<DateTime> refreshedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ProductsCacheCompanion(
@@ -2090,6 +2162,7 @@ class $$ProductsCacheTableTableManager
                 nutrimentsPer100gJson: nutrimentsPer100gJson,
                 servingSizeG: servingSizeG,
                 lastLoggedQuantityG: lastLoggedQuantityG,
+                lastLoggedAt: lastLoggedAt,
                 refreshedAt: refreshedAt,
                 rowid: rowid,
               ),
@@ -2102,6 +2175,7 @@ class $$ProductsCacheTableTableManager
                 required String nutrimentsPer100gJson,
                 Value<double?> servingSizeG = const Value.absent(),
                 Value<double?> lastLoggedQuantityG = const Value.absent(),
+                Value<DateTime?> lastLoggedAt = const Value.absent(),
                 required DateTime refreshedAt,
                 Value<int> rowid = const Value.absent(),
               }) => ProductsCacheCompanion.insert(
@@ -2112,6 +2186,7 @@ class $$ProductsCacheTableTableManager
                 nutrimentsPer100gJson: nutrimentsPer100gJson,
                 servingSizeG: servingSizeG,
                 lastLoggedQuantityG: lastLoggedQuantityG,
+                lastLoggedAt: lastLoggedAt,
                 refreshedAt: refreshedAt,
                 rowid: rowid,
               ),

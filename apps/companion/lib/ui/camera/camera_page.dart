@@ -7,13 +7,15 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../data/repository.dart';
 import '../../state/app_providers.dart';
 import '../../state/scan_provider.dart';
+import 'food_search.dart';
 import 'photo_confirm.dart';
 import 'product_card.dart';
 
-enum CameraMode { scan, photo }
+enum CameraMode { scan, photo, search }
 
 /// Camera-first input. A segmented control at the top switches between scan
-/// (barcode → product card → log) and photo (capture → vision → confirm).
+/// (barcode → product card → log), photo (capture → vision → confirm), and
+/// search (recent foods + name search + quick-create → log).
 class CameraPage extends ConsumerStatefulWidget {
   const CameraPage({super.key});
 
@@ -43,7 +45,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Camera'),
+        title: const Text('Add food'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -58,6 +60,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                     value: CameraMode.photo,
                     icon: Icon(Icons.photo_camera_outlined),
                     label: Text('Photo')),
+                ButtonSegment(
+                    value: CameraMode.search,
+                    icon: Icon(Icons.search),
+                    label: Text('Search')),
               ],
               selected: {_mode},
               onSelectionChanged: (s) => _switchTo(s.first),
@@ -65,7 +71,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
           ),
         ),
       ),
-      body: _mode == CameraMode.scan ? _scanBody() : _photoBody(),
+      body: switch (_mode) {
+        CameraMode.scan => _scanBody(),
+        CameraMode.photo => _photoBody(),
+        CameraMode.search => const FoodSearchView(),
+      },
     );
   }
 
