@@ -212,6 +212,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	racePrepHandlers.SetLogger(logger)
 	racePrepHandlers.Register(api)
 	races.NewHandlers(racesSvc).Register(api)
+	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
