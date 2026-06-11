@@ -35,7 +35,10 @@ class TodayPage extends ConsumerWidget {
         onPressed: () => _logGlass(context, ref),
       ),
       body: RefreshIndicator(
-        onRefresh: () => ref.read(todayProvider.notifier).refresh(),
+        onRefresh: () => Future.wait([
+          ref.read(todayProvider.notifier).refresh(),
+          ref.read(hydrationDailyProvider.notifier).refresh(),
+        ]),
         child: today.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => _ErrorBody(message: '$e'),
@@ -49,21 +52,24 @@ class TodayPage extends ConsumerWidget {
 
   Future<void> _logGlass(BuildContext context, WidgetRef ref) async {
     final prefs = ref.read(prefsProvider);
-    final ml = prefs.glassSizeMl;
-    await ref
-        .read(repositoryProvider)
-        .enqueueHydration(quantityMl: ml.toDouble());
+    final ml = prefs.glassSizeMl.toDouble();
+
+    // Reflect the glass in the UI immediately. The write is enqueued in the
+    // outbox and lands on the backend asynchronously, so we must NOT re-fetch
+    // right away (the GET would race the POST and read the stale total).
+    ref.read(hydrationDailyProvider.notifier).addOptimistic(ml);
+    await ref.read(repositoryProvider).enqueueHydration(quantityMl: ml);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Logged ${ml}ml')),
+      SnackBar(content: Text('Logged ${ml.toStringAsFixed(0)}ml')),
     );
-    ref.invalidate(hydrationDailyProvider);
 
-    // Push the fresh total into the widget's snapshot (best-effort).
-    final hydration = await ref.read(hydrationDailyProvider.future);
+    // Push the (optimistic) total into the widget's snapshot (best-effort).
+    final total =
+        ref.read(hydrationDailyProvider).valueOrNull?.totalMl ?? ml;
     await ref.read(widgetBridgeProvider).updateSnapshot(
           date: todayDate(),
-          totalMl: hydration.totalMl,
+          totalMl: total,
           goalMl: prefs.hydrationGoalMl.toDouble(),
         );
   }

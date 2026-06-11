@@ -42,7 +42,37 @@ class TodayNotifier extends AsyncNotifier<DailySummary?> {
 final todayProvider =
     AsyncNotifierProvider<TodayNotifier, DailySummary?>(TodayNotifier.new);
 
-/// Today's hydration total + entries. Plain fetch (cheap, small payload).
-final hydrationDailyProvider = FutureProvider<HydrationDaily>((ref) {
-  return ref.watch(repositoryProvider).fetchHydrationDaily(todayDate());
-});
+/// Today's hydration total + entries. Supports an optimistic bump so a logged
+/// glass shows instantly — the write is enqueued in the outbox and only lands
+/// on the backend asynchronously, so a naive immediate re-fetch would race the
+/// POST and read the stale total. The optimistic value is reconciled on the
+/// next refresh (pull-to-refresh / foreground).
+class HydrationTodayNotifier extends AsyncNotifier<HydrationDaily> {
+  @override
+  Future<HydrationDaily> build() {
+    return ref.watch(repositoryProvider).fetchHydrationDaily(todayDate());
+  }
+
+  /// Immediately reflect [ml] added to today's total (no network round-trip).
+  void addOptimistic(double ml) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(HydrationDaily(
+      date: current.date,
+      tz: current.tz,
+      totalMl: current.totalMl + ml,
+      entries: current.entries,
+    ));
+  }
+
+  /// Re-fetch from the backend, reconciling any optimistic bumps.
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(
+      () => ref.read(repositoryProvider).fetchHydrationDaily(todayDate()),
+    );
+  }
+}
+
+final hydrationDailyProvider =
+    AsyncNotifierProvider<HydrationTodayNotifier, HydrationDaily>(
+        HydrationTodayNotifier.new);

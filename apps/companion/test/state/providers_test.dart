@@ -87,6 +87,26 @@ void main() {
     });
   });
 
+  group('hydrationDailyProvider', () {
+    test('addOptimistic bumps the total instantly without a re-fetch', () async {
+      final repo = FakeRepository()
+        ..hydrationDaily = HydrationDaily(
+          date: '2026-06-10',
+          tz: 'UTC',
+          totalMl: 500,
+          entries: const [],
+        );
+      final c = _container(repo);
+      // Prime the provider (initial fetch → 500ml).
+      final initial = await c.read(hydrationDailyProvider.future);
+      expect(initial.totalMl, 500);
+
+      // Optimistic bump reflects immediately, no network read.
+      c.read(hydrationDailyProvider.notifier).addOptimistic(250);
+      expect(c.read(hydrationDailyProvider).value!.totalMl, 750);
+    });
+  });
+
   group('recentProvider', () {
     test('merges meals + hydration newest-first', () async {
       final meal = mealFixture(at: DateTime.utc(2026, 6, 10, 8));
