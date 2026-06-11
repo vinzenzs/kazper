@@ -34,6 +34,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/products/recipes", h.createRecipe)
 	rg.POST("/products/recipes/:id/recompute", h.recomputeRecipe)
 	rg.POST("/products/import/cookidoo", h.importCookidoo)
+	rg.PATCH("/products/:id", h.patch)
 	rg.GET("/products", h.list)
 	rg.GET("/products/:id", h.getByID)
 	rg.GET("/products/search", h.search)
@@ -280,6 +281,69 @@ func (h *Handlers) createManual(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, p)
+}
+
+type patchProductRequest struct {
+	Name              *string             `json:"name,omitempty"`
+	ServingSizeG      *float64            `json:"serving_size_g,omitempty"`
+	NutrimentsPer100g *createManualNutris `json:"nutriments_per_100g,omitempty"`
+}
+
+// patch godoc
+// @Summary      Update a product's editable fields
+// @Description  Partial update of a product's name, serving size, and per-100g nutriments. Only supplied fields change; omitted fields keep their current values, and within nutriments_per_100g each supplied key is merged individually. Primarily used to set nutriments on a recipe imported from Cookidoo without a serving size. Does not touch source, external_url, barcode, or last-logged tracking.
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string               true  "Product UUID"
+// @Param        body  body  patchProductRequest  true  "Fields to update"
+// @Success      200   {object}  Product
+// @Failure      400   {object}  map[string]string  "invalid_json | name_required | nutriments_invalid"
+// @Failure      404   {object}  map[string]string  "product_not_found"
+// @Security     BearerAuth
+// @Router       /products/{id} [patch]
+func (h *Handlers) patch(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "product_not_found"})
+		return
+	}
+	var req patchProductRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if req.NutrimentsPer100g != nil {
+		if bad := req.NutrimentsPer100g.validateNutrimentsNonNegative(); bad != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nutriments_invalid", "field": bad})
+			return
+		}
+	}
+
+	in := PatchProductInput{Name: req.Name, ServingSizeG: req.ServingSizeG}
+	if n := req.NutrimentsPer100g; n != nil {
+		in.Nutriments = PatchNutriments{
+			Kcal: n.Kcal, ProteinG: n.ProteinG, CarbsG: n.CarbsG, FatG: n.FatG,
+			FiberG: n.FiberG, SugarG: n.SugarG, SaltG: n.SaltG,
+			IronMg: n.IronMg, CalciumMg: n.CalciumMg, VitaminDMcg: n.VitaminDMcg,
+			VitaminB12Mcg: n.VitaminB12Mcg, VitaminCMg: n.VitaminCMg, MagnesiumMg: n.MagnesiumMg,
+			PotassiumMg: n.PotassiumMg, ZincMg: n.ZincMg,
+		}
+	}
+
+	p, err := h.svc.PatchProduct(c.Request.Context(), id, in)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "product_not_found"})
+		case errors.Is(err, ErrNameEmpty):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name_required"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, p)
 }
 
 // delete godoc

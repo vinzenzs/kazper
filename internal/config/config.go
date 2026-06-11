@@ -52,6 +52,16 @@ type Config struct {
 	// only the per-request timeout is configurable.
 	CookidooTimeout        time.Duration `mapstructure:"-"`
 	CookidooTimeoutSeconds int           `mapstructure:"COOKIDOO_TIMEOUT_SECONDS"`
+
+	// Nutrition chat (POST /chat). Reuses ANTHROPIC_API_KEY; when that is unset
+	// the endpoint returns 503 chat_unavailable. The agent loop streams from the
+	// Anthropic Messages API and dispatches tools as loopback HTTP calls.
+	ChatModel              string        `mapstructure:"CHAT_MODEL"`
+	ChatMaxToolRounds      int           `mapstructure:"CHAT_MAX_TOOL_ROUNDS"`
+	ChatMaxHistoryMessages int           `mapstructure:"CHAT_MAX_HISTORY_MESSAGES"`
+	ChatRequestTimeout     time.Duration `mapstructure:"-"`
+	ChatRequestTimeoutSecs int           `mapstructure:"CHAT_REQUEST_TIMEOUT_SECONDS"`
+	ChatDietaryPreferences string        `mapstructure:"CHAT_DIETARY_PREFERENCES"`
 }
 
 // envKeys lists every environment variable Config recognises. Listed
@@ -75,6 +85,11 @@ var envKeys = []string{
 	"VISION_TIMEOUT_SECONDS",
 	"MEAL_FROM_PHOTO_MAX_BYTES",
 	"COOKIDOO_TIMEOUT_SECONDS",
+	"CHAT_MODEL",
+	"CHAT_MAX_TOOL_ROUNDS",
+	"CHAT_MAX_HISTORY_MESSAGES",
+	"CHAT_REQUEST_TIMEOUT_SECONDS",
+	"CHAT_DIETARY_PREFERENCES",
 }
 
 // New returns a Viper instance pre-bound to all known environment variables
@@ -93,6 +108,11 @@ func New() *viper.Viper {
 	v.SetDefault("VISION_TIMEOUT_SECONDS", 15)
 	v.SetDefault("MEAL_FROM_PHOTO_MAX_BYTES", 10*1024*1024) // 10MB
 	v.SetDefault("COOKIDOO_TIMEOUT_SECONDS", 15)
+	v.SetDefault("CHAT_MODEL", "claude-sonnet-4-6")
+	v.SetDefault("CHAT_MAX_TOOL_ROUNDS", 8)
+	v.SetDefault("CHAT_MAX_HISTORY_MESSAGES", 40)
+	v.SetDefault("CHAT_REQUEST_TIMEOUT_SECONDS", 120)
+	v.SetDefault("CHAT_DIETARY_PREFERENCES", "vegetarian")
 	v.AutomaticEnv()
 	for _, k := range envKeys {
 		_ = v.BindEnv(k)
@@ -116,6 +136,7 @@ func Load(v *viper.Viper) (*Config, error) {
 	c.MCPRequestTimeout = time.Duration(c.MCPRequestTimeoutSeconds) * time.Second
 	c.VisionTimeout = time.Duration(c.VisionTimeoutSeconds) * time.Second
 	c.CookidooTimeout = time.Duration(c.CookidooTimeoutSeconds) * time.Second
+	c.ChatRequestTimeout = time.Duration(c.ChatRequestTimeoutSecs) * time.Second
 	return &c, nil
 }
 

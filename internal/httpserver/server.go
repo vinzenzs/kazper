@@ -13,6 +13,7 @@ import (
 
 	"github.com/vinzenzs/nutrition-api/internal/auth"
 	"github.com/vinzenzs/nutrition-api/internal/bodyweight"
+	"github.com/vinzenzs/nutrition-api/internal/chat"
 	"github.com/vinzenzs/nutrition-api/internal/config"
 	"github.com/vinzenzs/nutrition-api/internal/cookidoo"
 	"github.com/vinzenzs/nutrition-api/internal/dailycontext"
@@ -115,6 +116,26 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 			return err
 		}
 		visionClient = vc
+	}
+
+	// Nutrition chat (POST /chat) is optional the same way: when
+	// ANTHROPIC_API_KEY is unset, chatSvc stays nil and the handler returns 503
+	// chat_unavailable. The loopback handler (the engine) is wired after the
+	// engine is built, below.
+	var chatSvc *chat.Service
+	if cfg.AnthropicAPIKey != "" {
+		cs, err := chat.New(cfg.AnthropicAPIKey, chat.Config{
+			Model:              cfg.ChatModel,
+			MaxToolRounds:      cfg.ChatMaxToolRounds,
+			MaxHistoryMessages: cfg.ChatMaxHistoryMessages,
+			RequestTimeout:     cfg.ChatRequestTimeout,
+			DietaryPreferences: cfg.ChatDietaryPreferences,
+			Timezone:           cfg.DefaultUserTZ,
+		})
+		if err != nil {
+			return err
+		}
+		chatSvc = cs
 	}
 	goalsRepo := goals.NewRepo(pool)
 	goalsOverridesRepo := goals.NewOverridesRepo(pool)
@@ -233,6 +254,20 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
+	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
+	// engages when an Idempotency-Key header is present, and the chat client does
+	// not send one (a streamed conversation turn is not a replayable write — the
+	// idempotency it needs lives one level down, on the individual tool calls the
+	// loop dispatches, each of which carries its own derived key).
+	chat.NewHandlers(chatSvc).Register(api)
+
+	// The chat loop dispatches tools as in-process HTTP calls back through this
+	// same engine (full auth + idempotency + logging middleware). Wire the
+	// loopback target now that every route — including /chat itself — is
+	// registered. Guarded because chatSvc is nil when no API key is configured.
+	if chatSvc != nil {
+		chatSvc.SetLoopbackHandler(r)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

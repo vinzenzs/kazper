@@ -315,6 +315,91 @@ func perServingToPer100g(n cookidoo.NutritionPerServing, servingSizeG float64) N
 	}
 }
 
+// PatchProductInput is the partial-update body of PATCH /products/{id}. Each
+// non-nil field is applied; nil leaves the current value unchanged. Nutriment
+// fields are merged individually, so a caller can set just kcal without
+// clearing the others.
+type PatchProductInput struct {
+	Name         *string
+	ServingSizeG *float64
+	Nutriments   PatchNutriments
+}
+
+// PatchNutriments mirrors Nutriments but every field is an explicit pointer so
+// "not supplied" (nil) is distinct from a supplied value.
+type PatchNutriments struct {
+	Kcal     *float64
+	ProteinG *float64
+	CarbsG   *float64
+	FatG     *float64
+	FiberG   *float64
+	SugarG   *float64
+	SaltG    *float64
+
+	IronMg        *float64
+	CalciumMg     *float64
+	VitaminDMcg   *float64
+	VitaminB12Mcg *float64
+	VitaminCMg    *float64
+	MagnesiumMg   *float64
+	PotassiumMg   *float64
+	ZincMg        *float64
+}
+
+// ErrNameEmpty is returned when a PATCH supplies an all-whitespace name.
+var ErrNameEmpty = errors.New("name must not be empty")
+
+// PatchProduct applies a partial update to an existing product: reads the
+// current row, overlays the supplied fields, and writes the mutable columns
+// back. Returns ErrNotFound if the product does not exist, ErrNameEmpty for a
+// blank name. Used by the chat agent to set a recipe's nutriments after a
+// serving-size-less Cookidoo import.
+func (s *Service) PatchProduct(ctx context.Context, id uuid.UUID, in PatchProductInput) (*Product, error) {
+	p, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" {
+			return nil, ErrNameEmpty
+		}
+		p.Name = name
+	}
+	if in.ServingSizeG != nil {
+		p.ServingSizeG = in.ServingSizeG
+	}
+	applyNutrimentPatch(&p.Nutriments, in.Nutriments)
+	if err := s.repo.UpdateMutable(ctx, p); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, id)
+}
+
+// applyNutrimentPatch overlays each non-nil patch field onto n.
+func applyNutrimentPatch(n *Nutriments, p PatchNutriments) {
+	set := func(dst **float64, src *float64) {
+		if src != nil {
+			*dst = src
+		}
+	}
+	set(&n.KcalPer100g, p.Kcal)
+	set(&n.ProteinGPer100g, p.ProteinG)
+	set(&n.CarbsGPer100g, p.CarbsG)
+	set(&n.FatGPer100g, p.FatG)
+	set(&n.FiberGPer100g, p.FiberG)
+	set(&n.SugarGPer100g, p.SugarG)
+	set(&n.SaltGPer100g, p.SaltG)
+	set(&n.IronMgPer100g, p.IronMg)
+	set(&n.CalciumMgPer100g, p.CalciumMg)
+	set(&n.VitaminDMcgPer100g, p.VitaminDMcg)
+	set(&n.VitaminB12McgPer100g, p.VitaminB12Mcg)
+	set(&n.VitaminCMgPer100g, p.VitaminCMg)
+	set(&n.MagnesiumMgPer100g, p.MagnesiumMg)
+	set(&n.PotassiumMgPer100g, p.PotassiumMg)
+	set(&n.ZincMgPer100g, p.ZincMg)
+}
+
 // Recipe-related errors. Distinct from ErrNotFound because handlers map them
 // to specific REST shapes.
 var (

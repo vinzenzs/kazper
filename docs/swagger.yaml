@@ -88,6 +88,20 @@ definitions:
       weight_kg:
         type: number
     type: object
+  chat.ChatRequest:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/chat.InboundMessage'
+        type: array
+    type: object
+  chat.InboundMessage:
+    properties:
+      content:
+        type: string
+      role:
+        type: string
+    type: object
   dailycontext.AdherenceBlock:
     properties:
       adherence:
@@ -985,6 +999,15 @@ definitions:
       sugar_g:
         type: number
     type: object
+  products.patchProductRequest:
+    properties:
+      name:
+        type: string
+      nutriments_per_100g:
+        $ref: '#/definitions/products.createManualNutris'
+      serving_size_g:
+        type: number
+    type: object
   products.recipeComponentResponse:
     properties:
       effective_nutriments_per_100g:
@@ -1842,6 +1865,51 @@ info:
   title: Nutrition API
   version: 0.1.0
 paths:
+  /chat:
+    post:
+      consumes:
+      - application/json
+      description: Runs a server-side Anthropic agent loop scoped to meal planning
+        and streams the result as Server-Sent Events. The request body is the full
+        client-held transcript ({messages:[{role,content}]}); the server holds no
+        conversation state. The response is text/event-stream with four event types
+        — `text` (assistant delta), `tool` (name+status+summary), `done` (final message,
+        stop_reason, usage), and `error` (typed code). Tools are dispatched as loopback
+        REST calls under the caller's bearer token. Returns 503 chat_unavailable when
+        ANTHROPIC_API_KEY is unset, and 400 for an empty transcript or a client-supplied
+        system message.
+      parameters:
+      - description: Client-held transcript
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chat.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: invalid_json | empty_transcript | system_role_not_allowed |
+            invalid_role
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: chat_unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Stream a nutrition-planning chat turn
+      tags:
+      - chat
   /context/daily:
     get:
       description: One read that returns the day's adherence + nutrition totals +
@@ -3419,6 +3487,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Get a product by ID
+      tags:
+      - products
+    patch:
+      consumes:
+      - application/json
+      description: Partial update of a product's name, serving size, and per-100g
+        nutriments. Only supplied fields change; omitted fields keep their current
+        values, and within nutriments_per_100g each supplied key is merged individually.
+        Primarily used to set nutriments on a recipe imported from Cookidoo without
+        a serving size. Does not touch source, external_url, barcode, or last-logged
+        tracking.
+      parameters:
+      - description: Product UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/products.patchProductRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/products.Product'
+        "400":
+          description: invalid_json | name_required | nutriments_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: product_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a product's editable fields
       tags:
       - products
   /products/import/cookidoo:

@@ -153,6 +153,43 @@ func (r *Repo) UpdateFromOFF(ctx context.Context, p *Product) error {
 	return nil
 }
 
+// UpdateMutable overwrites the user-editable columns (name, serving_size_g, and
+// all nutriment macros/micros) plus updated_at on an existing product row. The
+// caller is expected to have read the current row, overlaid the patch fields,
+// and passed the merged Product — so omitted fields retain their current values.
+// Used by PATCH /products/{id}. Leaves source, external_url, barcode, and the
+// last-logged columns untouched.
+func (r *Repo) UpdateMutable(ctx context.Context, p *Product) error {
+	p.UpdatedAt = time.Now().UTC()
+	const q = `
+        UPDATE products SET
+            name = $2, serving_size_g = $3,
+            kcal_per_100g = $4, protein_g_per_100g = $5, carbs_g_per_100g = $6, fat_g_per_100g = $7,
+            fiber_g_per_100g = $8, sugar_g_per_100g = $9, salt_g_per_100g = $10,
+            iron_mg_per_100g = $11, calcium_mg_per_100g = $12, vitamin_d_mcg_per_100g = $13,
+            vitamin_b12_mcg_per_100g = $14, vitamin_c_mg_per_100g = $15, magnesium_mg_per_100g = $16,
+            potassium_mg_per_100g = $17, zinc_mg_per_100g = $18,
+            updated_at = $19
+        WHERE id = $1
+    `
+	tag, err := r.q.Exec(ctx, q,
+		p.ID, p.Name, p.ServingSizeG,
+		p.Nutriments.KcalPer100g, p.Nutriments.ProteinGPer100g, p.Nutriments.CarbsGPer100g, p.Nutriments.FatGPer100g,
+		p.Nutriments.FiberGPer100g, p.Nutriments.SugarGPer100g, p.Nutriments.SaltGPer100g,
+		p.Nutriments.IronMgPer100g, p.Nutriments.CalciumMgPer100g, p.Nutriments.VitaminDMcgPer100g,
+		p.Nutriments.VitaminB12McgPer100g, p.Nutriments.VitaminCMgPer100g, p.Nutriments.MagnesiumMgPer100g,
+		p.Nutriments.PotassiumMgPer100g, p.Nutriments.ZincMgPer100g,
+		p.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update product mutable: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // UpdateRecipeNutriments overwrites all macros and micros plus
 // nutriment_computed_at on an existing recipe product row.
 func (r *Repo) UpdateRecipeNutriments(ctx context.Context, id uuid.UUID, n Nutriments, computedAt time.Time) error {

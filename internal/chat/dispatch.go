@@ -1,0 +1,117 @@
+package chat
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+)
+
+// dispatcher executes a tool's REST call in-process against the server's own
+// HTTP handler (the Gin engine). Going through ServeHTTP traverses the full
+// middleware stack — auth, idempotency, request logging — exactly as a network
+// call would, so the chat loop has no privileged path to repos and every tool
+// action is audited. The bearer token of the originating /chat request is
+// forwarded so the sub-request authenticates as the same caller.
+type dispatcher struct {
+	handler http.Handler
+	specs   map[string]toolSpec
+}
+
+func newDispatcher(handler http.Handler) *dispatcher {
+	return &dispatcher{handler: handler, specs: registryByName(registry())}
+}
+
+// toolResult is the outcome of one tool execution.
+type toolResult struct {
+	status int
+	body   []byte
+	// ok is true for 2xx.
+	ok bool
+	// err is set when the tool input could not be built into a call (the tool
+	// never reached the REST layer).
+	err error
+}
+
+// execute builds the call for toolName(input) and runs it via loopback. For
+// write tools it attaches a deterministic Idempotency-Key derived from the tool
+// name + canonical input, so an identical replayed turn replays rather than
+// duplicates.
+func (d *dispatcher) execute(ctx context.Context, toolName string, input json.RawMessage, bearer string) toolResult {
+	spec, ok := d.specs[toolName]
+	if !ok {
+		return toolResult{err: errUnknownTool(toolName)}
+	}
+	call, err := spec.build(input)
+	if err != nil {
+		return toolResult{err: err}
+	}
+
+	target := call.path
+	if len(call.query) > 0 {
+		target += "?" + call.query.Encode()
+	}
+	var bodyReader *bytes.Reader
+	if len(call.body) > 0 {
+		bodyReader = bytes.NewReader(call.body)
+	} else {
+		bodyReader = bytes.NewReader(nil)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, call.method, target, bodyReader)
+	if err != nil {
+		return toolResult{err: err}
+	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Content-Type", "application/json")
+	if spec.write {
+		req.Header.Set("Idempotency-Key", deriveIdempotencyKey(toolName, input))
+	}
+
+	rec := httptest.NewRecorder()
+	d.handler.ServeHTTP(rec, req)
+
+	body := rec.Body.Bytes()
+	return toolResult{
+		status: rec.Code,
+		body:   body,
+		ok:     rec.Code >= 200 && rec.Code < 300,
+	}
+}
+
+// deriveIdempotencyKey returns a stable key for a write tool call: sha256 over
+// the tool name and the canonical (sorted-key) JSON of the input. Identical
+// calls in a replayed turn hash identically and hit the idempotency replay
+// path; distinct calls get distinct keys.
+func deriveIdempotencyKey(toolName string, input json.RawMessage) string {
+	canon := canonicalize(input)
+	h := sha256.Sum256(append([]byte(toolName+"|"), canon...))
+	return hex.EncodeToString(h[:])
+}
+
+// canonicalize re-marshals the input with sorted object keys (Go's json.Marshal
+// sorts map keys recursively), giving a stable byte form across reorderings and
+// whitespace differences. Falls back to the raw bytes on decode failure.
+func canonicalize(input json.RawMessage) []byte {
+	if len(input) == 0 {
+		return []byte("{}")
+	}
+	var generic any
+	if err := json.Unmarshal(input, &generic); err != nil {
+		return input
+	}
+	out, err := json.Marshal(generic)
+	if err != nil {
+		return input
+	}
+	return out
+}
+
+type unknownToolError struct{ name string }
+
+func (e unknownToolError) Error() string { return "unknown tool: " + e.name }
+
+func errUnknownTool(name string) error { return unknownToolError{name: name} }
