@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, notes, created_at, updated_at`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, notes, created_at, updated_at`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -118,6 +118,70 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 		*w = *fresh
 	}
 	return inserted, nil
+}
+
+// PlannedSlotInput is the data the training-plan materializer supplies to
+// create/refresh one planned workout from a plan slot.
+type PlannedSlotInput struct {
+	PlanSlotID   uuid.UUID
+	TemplateID   uuid.UUID
+	Sport        string
+	Name         *string
+	StartedAt    time.Time
+	EndedAt      time.Time
+	SessionGroup *string
+}
+
+// UpsertPlannedFromSlot creates (or refreshes) the planned workout for a plan
+// slot, keyed on plan_slot_id via the partial-unique index. It runs against the
+// supplied Querier so the materializer can call it inside a transaction.
+//
+// The `WHERE workouts.status = 'planned'` guard on the UPDATE is load-bearing:
+// once a future reconciliation flips a slot's workout to 'completed' (keeping
+// its plan_slot_id), re-materializing must NOT clobber it back to 'planned'.
+// When the guard blocks the update, RETURNING yields no row; we then return the
+// existing (completed) row unchanged so the caller can report it was skipped.
+//
+// This path is disjoint from the external_id Upsert: planned-from-plan rows
+// carry plan_slot_id and never an external_id, so the two upserts never collide.
+func (r *Repo) UpsertPlannedFromSlot(ctx context.Context, q store.Querier, in PlannedSlotInput) (*Workout, error) {
+	const sql = `
+        INSERT INTO workouts (
+            id, source, sport, name, status,
+            started_at, ended_at, template_id, plan_slot_id, session_group,
+            created_at, updated_at
+        ) VALUES (
+            gen_random_uuid(), 'manual', $1, $2, 'planned',
+            $3, $4, $5, $6, $7,
+            now(), now()
+        )
+        ON CONFLICT (plan_slot_id) WHERE plan_slot_id IS NOT NULL DO UPDATE SET
+            sport         = EXCLUDED.sport,
+            name          = EXCLUDED.name,
+            status        = 'planned',
+            template_id   = EXCLUDED.template_id,
+            started_at    = EXCLUDED.started_at,
+            ended_at      = EXCLUDED.ended_at,
+            session_group = EXCLUDED.session_group,
+            updated_at    = now()
+        WHERE workouts.status = 'planned'
+        RETURNING ` + selectCols
+	row := q.QueryRow(ctx, sql,
+		in.Sport, in.Name, in.StartedAt, in.EndedAt, in.TemplateID, in.PlanSlotID, in.SessionGroup,
+	)
+	w, err := scanWorkout(row)
+	if errors.Is(err, ErrNotFound) {
+		// The conflict row exists but is 'completed' (guard blocked the update).
+		// Return it unchanged so materialize reports a skip, not a failure.
+		return r.getByPlanSlotID(ctx, q, in.PlanSlotID)
+	}
+	return w, err
+}
+
+// getByPlanSlotID fetches the workout owning a plan slot, against the given Querier.
+func (r *Repo) getByPlanSlotID(ctx context.Context, q store.Querier, planSlotID uuid.UUID) (*Workout, error) {
+	row := q.QueryRow(ctx, `SELECT `+selectCols+` FROM workouts WHERE plan_slot_id = $1`, planSlotID)
+	return scanWorkout(row)
 }
 
 // GetByID returns a single workout row.
@@ -344,6 +408,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&w.KcalBurned, &w.AvgHR, &w.TSS,
 		&w.RPE, &w.GIDistressScore,
 		&w.DistanceM, &w.AvgPowerW, &w.TemperatureC, &w.SweatLossML, &w.SessionGroup,
+		&w.TemplateID, &w.PlanSlotID,
 		&w.Notes,
 		&w.CreatedAt, &w.UpdatedAt,
 	)

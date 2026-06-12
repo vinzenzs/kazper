@@ -109,6 +109,13 @@ type Workout struct {
 	SweatLossML  *float64 `json:"sweat_loss_ml,omitempty"`
 	SessionGroup *string  `json:"session_group,omitempty"`
 
+	// Plan links (per add-training-plan), both nullable. TemplateID is the
+	// workout-template a planned workout was compiled from; PlanSlotID is the
+	// training-plan slot it materializes (the materialize upsert key). Imported
+	// activities carry neither.
+	TemplateID *uuid.UUID `json:"template_id,omitempty"`
+	PlanSlotID *uuid.UUID `json:"plan_slot_id,omitempty"`
+
 	Notes *string `json:"notes,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

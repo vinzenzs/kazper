@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -426,4 +427,97 @@ func TestList_FilteredBySessionGroup(t *testing.T) {
 	all, err := repo.List(ctx, from, to, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, all, 3)
+}
+
+// seedSlot inserts the template→plan→week→slot chain needed for a plan_slot FK
+// and returns the new slot id. Uses raw SQL so the workouts package stays
+// independent of the trainingplan package in tests.
+func seedSlot(t *testing.T, pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) (slotID, templateID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	var planID, weekID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO workout_templates (sport, name, steps) VALUES ('run','Easy run','[{"type":"step","intent":"active","duration":{"kind":"open"},"target":{"kind":"none"}}]'::jsonb) RETURNING id`).Scan(&templateID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO training_plans (name, start_date) VALUES ('Plan','2026-06-01') RETURNING id`).Scan(&planID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO plan_weeks (plan_id, ordinal) VALUES ($1, 1) RETURNING id`, planID).Scan(&weekID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO plan_slots (plan_week_id, weekday, ordinal, template_id) VALUES ($1, 0, 0, $2) RETURNING id`, weekID, templateID).Scan(&slotID))
+	return slotID, templateID
+}
+
+func plannedInput(slotID, templateID uuid.UUID) workouts.PlannedSlotInput {
+	return workouts.PlannedSlotInput{
+		PlanSlotID: slotID,
+		TemplateID: templateID,
+		Sport:      "run",
+		Name:       ptrStr("Easy run"),
+		StartedAt:  time.Date(2026, 6, 1, 6, 0, 0, 0, time.UTC),
+		EndedAt:    time.Date(2026, 6, 1, 7, 0, 0, 0, time.UTC),
+	}
+}
+
+func TestUpsertPlannedFromSlot_Idempotent(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+	slotID, templateID := seedSlot(t, pool)
+
+	in := plannedInput(slotID, templateID)
+	w1, err := repo.UpsertPlannedFromSlot(ctx, pool, in)
+	require.NoError(t, err)
+	require.NotNil(t, w1)
+	assert.Equal(t, "planned", string(w1.Status))
+	require.NotNil(t, w1.PlanSlotID)
+	assert.Equal(t, slotID, *w1.PlanSlotID)
+
+	// Re-upsert the same slot → same row (no duplicate).
+	w2, err := repo.UpsertPlannedFromSlot(ctx, pool, in)
+	require.NoError(t, err)
+	assert.Equal(t, w1.ID, w2.ID, "re-materialize updates the same row")
+
+	all, err := repo.List(ctx, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, all, 1)
+}
+
+func TestUpsertPlannedFromSlot_CoexistsWithExternalID(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+	slotID, templateID := seedSlot(t, pool)
+
+	// An imported Garmin activity (external_id, no plan_slot_id).
+	_, err := repo.Upsert(ctx, sample(ptrStr("garmin:99"), 800))
+	require.NoError(t, err)
+	// A planned-from-slot workout.
+	_, err = repo.UpsertPlannedFromSlot(ctx, pool, plannedInput(slotID, templateID))
+	require.NoError(t, err)
+
+	all, err := repo.List(ctx, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, all, 2, "external_id and plan_slot_id paths are disjoint")
+}
+
+func TestUpsertPlannedFromSlot_CompletedNotReverted(t *testing.T) {
+	pool := storetest.NewPool(t)
+	repo := workouts.NewRepo(pool)
+	ctx := context.Background()
+	slotID, templateID := seedSlot(t, pool)
+
+	w, err := repo.UpsertPlannedFromSlot(ctx, pool, plannedInput(slotID, templateID))
+	require.NoError(t, err)
+
+	// Simulate reconciliation flipping it to completed (keeping plan_slot_id).
+	completed := "completed"
+	require.NoError(t, repo.Patch(ctx, w.ID, workouts.PatchParams{Status: &completed}))
+
+	// Re-materialize: the status='planned' guard must NOT revert it.
+	again, err := repo.UpsertPlannedFromSlot(ctx, pool, plannedInput(slotID, templateID))
+	require.NoError(t, err)
+	assert.Equal(t, w.ID, again.ID)
+	assert.Equal(t, "completed", string(again.Status), "guard prevents reverting a fulfilled session")
 }

@@ -203,6 +203,10 @@ func (h *Handlers) delete(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "workout_template_not_found")
 			return
 		}
+		if errors.Is(err, ErrInUse) {
+			respondError(c, http.StatusConflict, "template_in_use")
+			return
+		}
 		respondError(c, http.StatusInternalServerError, "delete_failed")
 		return
 	}

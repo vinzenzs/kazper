@@ -7,12 +7,18 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/vinzenzs/nutrition-api/internal/store"
 )
 
 // ErrNotFound is returned when no template exists for an id.
 var ErrNotFound = errors.New("workout template not found")
+
+// ErrInUse is returned when a delete is refused because a training-plan slot
+// still references the template (FK ON DELETE RESTRICT, added by
+// add-training-plan).
+var ErrInUse = errors.New("template_in_use")
 
 // Repo persists workout templates.
 type Repo struct {
@@ -93,6 +99,11 @@ func (r *Repo) Update(ctx context.Context, t *Template) (*Template, error) {
 func (r *Repo) Delete(ctx context.Context, id string) error {
 	tag, err := r.q.Exec(ctx, `DELETE FROM workout_templates WHERE id = $1`, id)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			// A plan_slot still references this template (ON DELETE RESTRICT).
+			return ErrInUse
+		}
 		return fmt.Errorf("delete workout template: %w", err)
 	}
 	if tag.RowsAffected() == 0 {

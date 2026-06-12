@@ -4226,6 +4226,375 @@ const docTemplate = `{
                 }
             }
         },
+        "/training-plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "List training plans",
+                "responses": {
+                    "200": {
+                        "description": "{ training_plans: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Create a training plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Plan",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.createPlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.Plan"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | name_required | start_date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/training-plans/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Get a training plan with its nested weeks and slots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.Plan"
+                        }
+                    },
+                    "404": {
+                        "description": "training_plan_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Update a training plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update (race_id / notes accept null to clear)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.Plan"
+                        }
+                    },
+                    "404": {
+                        "description": "training_plan_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/training-plans/{id}/materialize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Idempotent, slot-keyed. scope: {\"scope\":\"all\"} | {\"scope\":\"week\",\"week\":5} | {\"scope\":\"range\",\"from\":\"YYYY-MM-DD\",\"to\":\"YYYY-MM-DD\"}.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Expand a plan (or a scope of it) into planned workouts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Scope",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.materializeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ workouts: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | scope_invalid | start_date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "training_plan_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/training-plans/{id}/weeks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Add a week to a plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Week",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.createWeekRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.PlanWeek"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | ordinal_invalid | week_ordinal_taken",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "training_plan_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/training-plans/{id}/weeks/{weekId}/slots": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-plans"
+                ],
+                "summary": "Add a slot to a plan week",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Week UUID",
+                        "name": "weekId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Slot",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.createSlotRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/trainingplan.PlanSlot"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | weekday_invalid | template_id_required | time_of_day_invalid | template_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "plan_week_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/weight": {
             "get": {
                 "security": [
@@ -7675,6 +8044,166 @@ const docTemplate = `{
                 }
             }
         },
+        "trainingplan.Plan": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "YYYY-MM-DD (Monday of week 1)",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weeks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/trainingplan.PlanWeek"
+                    }
+                }
+            }
+        },
+        "trainingplan.PlanSlot": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "plan_week_id": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "time_of_day": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weekday": {
+                    "description": "0=Mon … 6=Sun",
+                    "type": "integer"
+                }
+            }
+        },
+        "trainingplan.PlanWeek": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "phase_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "slots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/trainingplan.PlanSlot"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainingplan.createPlanRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainingplan.createSlotRequest": {
+            "type": "object",
+            "properties": {
+                "ordinal": {
+                    "type": "integer"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "time_of_day": {
+                    "type": "string"
+                },
+                "weekday": {
+                    "type": "integer"
+                }
+            }
+        },
+        "trainingplan.createWeekRequest": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "phase_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainingplan.materializeRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "week": {
+                    "type": "integer"
+                }
+            }
+        },
         "workoutfuel.Entry": {
             "type": "object",
             "properties": {
@@ -7939,6 +8468,9 @@ const docTemplate = `{
                 "notes": {
                     "type": "string"
                 },
+                "plan_slot_id": {
+                    "type": "string"
+                },
                 "rpe": {
                     "description": "Per-session rehearsal-outcome signals — both nullable, set by the user\nafter a fueling-rehearsal workout. Validated 1..10 (Borg CR-10) and 1..5\n(1=no GI distress, 5=severe) at handler + DB CHECK layers.",
                     "type": "integer"
@@ -7963,6 +8495,10 @@ const docTemplate = `{
                 },
                 "temperature_c": {
                     "type": "number"
+                },
+                "template_id": {
+                    "description": "Plan links (per add-training-plan), both nullable. TemplateID is the\nworkout-template a planned workout was compiled from; PlanSlotID is the\ntraining-plan slot it materializes (the materialize upsert key). Imported\nactivities carry neither.",
+                    "type": "string"
                 },
                 "tss": {
                     "type": "number"

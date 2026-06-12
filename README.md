@@ -507,6 +507,40 @@ curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: app
 curl -X DELETE -H "Authorization: Bearer $MOBILE_API_TOKEN" http://localhost:8080/workout-templates/$ID
 ```
 
+### Training plans
+
+The backend is the system of record for the 18-week plan: a **plan** owns ordered **weeks**, each
+week owns ordered day-**slots**, and each slot points at a `workout-template` for a weekday
+(0=Mon … 6=Sun). A plan optionally targets a `race` and each week optionally references a
+`training-phase`. `GET /training-plans/{id}` returns the full nested tree. Writes are per-resource
+(plan / week / slot) so slot ids stay stable.
+
+**Materialize** (`POST /training-plans/{id}/materialize`) expands a scope into dated, **planned**
+`workouts` rows — one per slot, dated `start_date + (week.ordinal-1)*7 + weekday`. It is
+**idempotent**, keyed by `plan_slot_id`: re-running updates the same rows (editing a slot or
+shifting `start_date` moves the planned workout instead of duplicating). Multiple slots on one day
+share a `session_group` (the brick mechanism). A workout already flipped to `completed` is never
+reverted to `planned`.
+
+```bash
+# Build a plan: create it, add a week, add a slot pointing at a template
+PLAN=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"name":"18-week build","start_date":"2026-06-01"}' http://localhost:8080/training-plans | jq -r .id)
+WEEK=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"ordinal":1}' http://localhost:8080/training-plans/$PLAN/weeks | jq -r .id)
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"weekday":0,"ordinal":0,"template_id":"'"$TEMPLATE_ID"'","time_of_day":"06:30"}' \
+    http://localhost:8080/training-plans/$PLAN/weeks/$WEEK/slots
+
+# Nested read, patch a slot, then materialize a scope into planned workouts
+curl -H "Authorization: Bearer $MOBILE_API_TOKEN" http://localhost:8080/training-plans/$PLAN
+curl -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"weekday":2}' http://localhost:8080/training-plans/$PLAN/slots/$SLOT
+curl -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"scope":"week","week":1}' http://localhost:8080/training-plans/$PLAN/materialize
+#   scope: {"scope":"all"} | {"scope":"week","week":N} | {"scope":"range","from":"…","to":"…"}
+```
+
 ### Body weight
 
 A measurement event — kg, optionally body-fat % and the smart-scale biometrics a full Garmin
@@ -1132,6 +1166,18 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `get_workout_template`        | `GET /workout-templates/{id}`          | Fetch one template including its full step program.           |
 | `patch_workout_template`      | `PATCH /workout-templates/{id}`        | Update fields; a supplied `steps` array replaces the whole program, omitted fields unchanged. |
 | `delete_workout_template`     | `DELETE /workout-templates/{id}`       | Delete a template.                                            |
+| `create_training_plan`        | `POST /training-plans`                 | Create a plan (name + start_date = Monday of week 1; optional race link). |
+| `list_training_plans`         | `GET /training-plans`                  | List plans.                                                   |
+| `get_training_plan`           | `GET /training-plans/{id}`             | Get a plan with its nested weeks and slots.                   |
+| `patch_training_plan`         | `PATCH /training-plans/{id}`           | Update name / race_id / start_date / notes.                   |
+| `delete_training_plan`        | `DELETE /training-plans/{id}`          | Delete a plan (cascades weeks + slots; planned workouts detach). |
+| `add_plan_week`               | `POST /training-plans/{id}/weeks`      | Add a week (ordinal ≥ 1, optional phase link).                |
+| `patch_plan_week`             | `PATCH /training-plans/{id}/weeks/{weekId}` | Update a week's ordinal / phase_id / notes.              |
+| `delete_plan_week`            | `DELETE /training-plans/{id}/weeks/{weekId}` | Delete a week (cascades its slots).                     |
+| `add_plan_slot`               | `POST /training-plans/{id}/weeks/{weekId}/slots` | Add a day-slot (weekday + template + optional time_of_day). |
+| `patch_plan_slot`             | `PATCH /training-plans/{id}/slots/{slotId}` | Update a slot's weekday / ordinal / template_id / time_of_day. |
+| `delete_plan_slot`            | `DELETE /training-plans/{id}/slots/{slotId}` | Delete a slot.                                          |
+| `materialize_training_plan`   | `POST /training-plans/{id}/materialize` | Expand a scope (all / week / range) into dated planned workouts; idempotent, slot-keyed. |
 | `log_weight`                  | `POST /weight`                         | Record a body-weight measurement, optionally with body-fat %. |
 | `list_weights`                | `GET /weight?from=…&to=…`              | List body-weight entries in a 92-day window.                  |
 | `patch_weight`                | `PATCH /weight/{id}`                   | Edit weight / body-fat % / logged_at / note.                  |

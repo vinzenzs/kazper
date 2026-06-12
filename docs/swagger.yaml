@@ -1638,6 +1638,111 @@ definitions:
       zinc_mg:
         $ref: '#/definitions/goals.Range'
     type: object
+  trainingplan.Plan:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      race_id:
+        type: string
+      start_date:
+        description: YYYY-MM-DD (Monday of week 1)
+        type: string
+      updated_at:
+        type: string
+      weeks:
+        items:
+          $ref: '#/definitions/trainingplan.PlanWeek'
+        type: array
+    type: object
+  trainingplan.PlanSlot:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      ordinal:
+        type: integer
+      plan_week_id:
+        type: string
+      template_id:
+        type: string
+      time_of_day:
+        type: string
+      updated_at:
+        type: string
+      weekday:
+        description: 0=Mon … 6=Sun
+        type: integer
+    type: object
+  trainingplan.PlanWeek:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      notes:
+        type: string
+      ordinal:
+        type: integer
+      phase_id:
+        type: string
+      plan_id:
+        type: string
+      slots:
+        items:
+          $ref: '#/definitions/trainingplan.PlanSlot'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  trainingplan.createPlanRequest:
+    properties:
+      name:
+        type: string
+      notes:
+        type: string
+      race_id:
+        type: string
+      start_date:
+        type: string
+    type: object
+  trainingplan.createSlotRequest:
+    properties:
+      ordinal:
+        type: integer
+      template_id:
+        type: string
+      time_of_day:
+        type: string
+      weekday:
+        type: integer
+    type: object
+  trainingplan.createWeekRequest:
+    properties:
+      notes:
+        type: string
+      ordinal:
+        type: integer
+      phase_id:
+        type: string
+    type: object
+  trainingplan.materializeRequest:
+    properties:
+      from:
+        type: string
+      scope:
+        type: string
+      to:
+        type: string
+      week:
+        type: integer
+    type: object
   workoutfuel.Entry:
     properties:
       caffeine_mg:
@@ -1829,6 +1934,8 @@ definitions:
         type: string
       notes:
         type: string
+      plan_slot_id:
+        type: string
       rpe:
         description: |-
           Per-session rehearsal-outcome signals — both nullable, set by the user
@@ -1849,6 +1956,13 @@ definitions:
         type: number
       temperature_c:
         type: number
+      template_id:
+        description: |-
+          Plan links (per add-training-plan), both nullable. TemplateID is the
+          workout-template a planned workout was compiled from; PlanSlotID is the
+          training-plan slot it materializes (the materialize upsert key). Imported
+          activities carry neither.
+        type: string
       tss:
         type: number
       updated_at:
@@ -4823,6 +4937,242 @@ paths:
       summary: Rolling-window nutrition average
       tags:
       - summary
+  /training-plans:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ training_plans: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List training plans
+      tags:
+      - training-plans
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Optional idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Plan
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/trainingplan.createPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/trainingplan.Plan'
+        "400":
+          description: invalid_json | name_required | start_date_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a training plan
+      tags:
+      - training-plans
+  /training-plans/{id}:
+    get:
+      parameters:
+      - description: Plan UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/trainingplan.Plan'
+        "404":
+          description: training_plan_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a training plan with its nested weeks and slots
+      tags:
+      - training-plans
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Plan UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update (race_id / notes accept null to clear)
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/trainingplan.Plan'
+        "404":
+          description: training_plan_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a training plan
+      tags:
+      - training-plans
+  /training-plans/{id}/materialize:
+    post:
+      consumes:
+      - application/json
+      description: 'Idempotent, slot-keyed. scope: {"scope":"all"} | {"scope":"week","week":5}
+        | {"scope":"range","from":"YYYY-MM-DD","to":"YYYY-MM-DD"}.'
+      parameters:
+      - description: Plan UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Scope
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/trainingplan.materializeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ workouts: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid_json | scope_invalid | start_date_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: training_plan_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Expand a plan (or a scope of it) into planned workouts
+      tags:
+      - training-plans
+  /training-plans/{id}/weeks:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Plan UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Week
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/trainingplan.createWeekRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/trainingplan.PlanWeek'
+        "400":
+          description: invalid_json | ordinal_invalid | week_ordinal_taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: training_plan_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add a week to a plan
+      tags:
+      - training-plans
+  /training-plans/{id}/weeks/{weekId}/slots:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Plan UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Week UUID
+        in: path
+        name: weekId
+        required: true
+        type: string
+      - description: Slot
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/trainingplan.createSlotRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/trainingplan.PlanSlot'
+        "400":
+          description: invalid_json | weekday_invalid | template_id_required | time_of_day_invalid
+            | template_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: plan_week_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add a slot to a plan week
+      tags:
+      - training-plans
   /weight:
     get:
       parameters:

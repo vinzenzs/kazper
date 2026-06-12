@@ -36,6 +36,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/store"
 	"github.com/vinzenzs/nutrition-api/internal/summary"
 	"github.com/vinzenzs/nutrition-api/internal/trainingphases"
+	"github.com/vinzenzs/nutrition-api/internal/trainingplan"
 	"github.com/vinzenzs/nutrition-api/internal/vision"
 	"github.com/vinzenzs/nutrition-api/internal/workoutfuel"
 	"github.com/vinzenzs/nutrition-api/internal/workoutfueling"
@@ -269,6 +270,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workouttemplates.NewRepo(pool))).Register(api)
+	trainingplan.NewHandlers(trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, cfg.DefaultUserTZ)).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
