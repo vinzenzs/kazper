@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'apps/**'
+      # apps/garmin-bridge is intentionally NOT ignored: its image is built and
+      # pushed below, so a bridge change must trigger this workflow.
+      - 'apps/companion/**'
       - 'extensions/**'
       - 'openspec/**'
       - '**/*.md'
@@ -67,3 +69,17 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/nutrition-api:sha-${{ steps.sha.outputs.short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build + push garmin-bridge (main + sha-<short>)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/garmin-bridge
+          file: apps/garmin-bridge/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/garmin-bridge:main
+            ghcr.io/${{ github.repository_owner }}/garmin-bridge:sha-${{ steps.sha.outputs.short }}
+          # Distinct gha cache scope so it never collides with the api image's.
+          cache-from: type=gha,scope=bridge
+          cache-to: type=gha,mode=max,scope=bridge
