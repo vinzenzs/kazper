@@ -53,6 +53,10 @@ class ChatNotifier extends Notifier<ChatState> {
     return const ChatState();
   }
 
+  /// The active server session id, or null before the first turn. Lets the
+  /// session list reset the screen when the open conversation is deleted.
+  String? get activeSessionId => _sessionId;
+
   /// Starts a fresh conversation. Old messages stay in Drift for scrollback;
   /// the next send opens a new server session.
   void newChat() {
@@ -60,6 +64,25 @@ class ChatNotifier extends Notifier<ChatState> {
     _sessionId = null;
     _lastUserText = null;
     state = const ChatState();
+  }
+
+  /// Reopens a past session: loads its transcript, adopts its server
+  /// `session_id`, and makes it the active conversation so new turns append to
+  /// it. Returns false (leaving the current screen untouched) on a fetch
+  /// failure. No-op while a turn is streaming.
+  Future<bool> openSession(ChatSessionSummary session) async {
+    if (state.streaming) return false;
+    final ChatSessionDetail detail;
+    try {
+      detail = await ref.read(chatClientProvider).getSession(session.id);
+    } catch (_) {
+      return false;
+    }
+    _conversationId = newIdempotencyKey();
+    _sessionId = session.id;
+    _lastUserText = null;
+    state = ChatState(messages: detail.messages);
+    return true;
   }
 
   /// Sends [text] as a user turn and streams the assistant reply.

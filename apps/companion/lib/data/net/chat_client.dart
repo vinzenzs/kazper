@@ -41,6 +41,80 @@ class ChatClient {
     }
   }
 
+  /// Lists past sessions newest-first (`GET /chat/sessions`). Online-only —
+  /// throws [ChatSessionException] on a network/not-paired/HTTP failure.
+  Future<List<ChatSessionSummary>> listSessions() async {
+    final (baseUrl, token) = await _creds();
+    final resp = await _get('$baseUrl/chat/sessions', token);
+    if (resp.statusCode != 200) {
+      throw ChatSessionException('http_${resp.statusCode}');
+    }
+    final j = jsonDecode(resp.body);
+    final list = j is Map ? j['sessions'] : null;
+    if (list is! List) return const [];
+    return [
+      for (final s in list)
+        if (s is Map<String, dynamic>) ChatSessionSummary.fromJson(s),
+    ];
+  }
+
+  /// Fetches one session with its transcript, reconstructed to visible bubbles
+  /// (`GET /chat/sessions/{id}`).
+  Future<ChatSessionDetail> getSession(String id) async {
+    final (baseUrl, token) = await _creds();
+    final resp = await _get('$baseUrl/chat/sessions/$id', token);
+    if (resp.statusCode != 200) {
+      throw ChatSessionException('http_${resp.statusCode}');
+    }
+    final j = jsonDecode(resp.body) as Map<String, dynamic>;
+    return ChatSessionDetail(
+      summary: ChatSessionSummary.fromJson(j),
+      messages: reconstructTranscript((j['messages'] as List?) ?? const []),
+    );
+  }
+
+  /// Renames a session (`PATCH /chat/sessions/{id}`); an empty title clears it.
+  Future<void> renameSession(String id, String title) async {
+    final (baseUrl, token) = await _creds();
+    final resp = await _http.patch(
+      Uri.parse('$baseUrl/chat/sessions/$id'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'title': title}),
+    );
+    if (resp.statusCode != 200) {
+      throw ChatSessionException('http_${resp.statusCode}');
+    }
+  }
+
+  /// Deletes a session (`DELETE /chat/sessions/{id}`).
+  Future<void> deleteSession(String id) async {
+    final (baseUrl, token) = await _creds();
+    final resp = await _http.delete(
+      Uri.parse('$baseUrl/chat/sessions/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw ChatSessionException('http_${resp.statusCode}');
+    }
+  }
+
+  /// Resolves baseUrl + token or throws `not_paired`.
+  Future<(String, String)> _creds() async {
+    final baseUrl = await tokenStore.getBaseUrl();
+    final token = await tokenStore.getToken();
+    if (baseUrl == null || token == null) {
+      throw const ChatSessionException('not_paired');
+    }
+    return (baseUrl, token);
+  }
+
+  Future<http.Response> _get(String url, String token) {
+    return _http.get(Uri.parse(url), headers: {'Authorization': 'Bearer $token'});
+  }
+
   /// Streams one turn: posts [message] against the existing [sessionId]; the
   /// server loads prior turns and persists the new ones.
   Stream<ChatEvent> stream({

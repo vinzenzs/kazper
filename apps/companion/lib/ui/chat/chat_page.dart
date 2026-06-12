@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../domain/chat.dart';
 import '../../state/app_providers.dart';
 import '../../state/chat_provider.dart';
+import 'sessions_page.dart';
 
 /// The v2 Chat surface — streamed assistant replies, tool-activity chips, and
 /// tappable recipe links. Online-only: when offline the composer disables with
@@ -58,6 +59,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       appBar: AppBar(
         title: const Text('Chat'),
         actions: [
+          IconButton(
+            tooltip: 'History',
+            icon: const Icon(Icons.history),
+            onPressed: chat.streaming
+                ? null
+                : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                          builder: (_) => const SessionsPage()),
+                    ),
+          ),
           IconButton(
             tooltip: 'New chat',
             icon: const Icon(Icons.restart_alt),
