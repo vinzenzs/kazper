@@ -269,8 +269,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
-	workouttemplates.NewHandlers(workouttemplates.NewService(workouttemplates.NewRepo(pool))).Register(api)
-	trainingplan.NewHandlers(trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, cfg.DefaultUserTZ)).Register(api)
+	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
+	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
+	trainingPlanSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, cfg.DefaultUserTZ)
+	trainingplan.NewHandlers(trainingPlanSvc).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
@@ -278,10 +280,13 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	fitnessmetrics.NewHandlers(fitnessMetricsSvc).Register(api)
 	hydrationbalance.NewHandlers(hydrationBalanceSvc).Register(api)
 	garminauth.NewHandlers(garminAuthSvc, garminEnabled).Register(api)
-	// Garmin login proxy (per add-garmin-mcp-login): forwards /garmin/login +
-	// /garmin/login/mfa to the bridge at GARMIN_BRIDGE_URL. Empty URL ⇒ the
-	// endpoints return 503 garmin_disabled. Any authenticated identity may call.
-	garmincontrol.NewHandlers(cfg.GarminBridgeURL).Register(api)
+	// Garmin login proxy (per add-garmin-mcp-login) + scheduling orchestration
+	// (per add-garmin-scheduling): forwards login to the bridge at
+	// GARMIN_BRIDGE_URL and compiles/schedules planned workouts onto the watch.
+	// Empty URL ⇒ the endpoints return 503 garmin_disabled.
+	garminControl := garmincontrol.NewHandlers(cfg.GarminBridgeURL)
+	garminControl.SetSchedulingDeps(workoutsRepo, workoutTemplatesRepo, trainingPlanSvc)
+	garminControl.Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,

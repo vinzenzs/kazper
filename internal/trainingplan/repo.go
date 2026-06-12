@@ -244,6 +244,47 @@ func (r *Repo) DeleteSlot(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// PlannedWorkoutsInScope returns the ids of planned workouts materialized from
+// a plan, narrowed to a scope: a single week (by ordinal), a date range (by
+// started_at), or all. Used by the Garmin-scheduling plan push to loop the
+// single-workout path. Joins workouts to the plan via plan_slot_id.
+func (r *Repo) PlannedWorkoutsInScope(ctx context.Context, planID uuid.UUID, kind string, week *int, from, to *string) ([]uuid.UUID, error) {
+	q := `
+        SELECT w.id
+        FROM workouts w
+        JOIN plan_slots s ON s.id = w.plan_slot_id
+        JOIN plan_weeks wk ON wk.id = s.plan_week_id
+        WHERE wk.plan_id = $1 AND w.status = 'planned'`
+	args := []any{planID}
+	switch kind {
+	case "week":
+		q += ` AND wk.ordinal = $2`
+		args = append(args, *week)
+	case "range":
+		q += ` AND w.started_at >= $2::date AND w.started_at < ($3::date + INTERVAL '1 day')`
+		args = append(args, *from, *to)
+	case "all":
+		// no extra filter
+	default:
+		return nil, ErrScopeInvalid
+	}
+	q += ` ORDER BY w.started_at ASC`
+	rows, err := r.q.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("planned workouts in scope: %w", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // materializeSlot is one slot joined with its week ordinal and template detail,
 // everything Materialize needs to compute a planned workout.
 type materializeSlot struct {

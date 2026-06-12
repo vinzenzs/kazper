@@ -116,6 +116,12 @@ type Workout struct {
 	TemplateID *uuid.UUID `json:"template_id,omitempty"`
 	PlanSlotID *uuid.UUID `json:"plan_slot_id,omitempty"`
 
+	// Garmin scheduling ids (per add-garmin-scheduling), both nullable opaque
+	// Garmin identifiers: the structured workout created in the Garmin library
+	// and the calendar entry scheduling it. Set on push, cleared on unschedule.
+	GarminWorkoutID  *string `json:"garmin_workout_id,omitempty"`
+	GarminScheduleID *string `json:"garmin_schedule_id,omitempty"`
+
 	Notes *string `json:"notes,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

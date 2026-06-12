@@ -1055,6 +1055,25 @@ get `403 forbidden`). When `GARMIN_API_TOKEN` is unset the integration is off
 and the endpoints return `503 garmin_disabled`. The backend never parses or
 interprets the blob.
 
+### Garmin scheduling (push the plan to the watch)
+
+When `GARMIN_BRIDGE_URL` is set, four endpoints drive the bridge's write plane —
+any authenticated identity (the athlete acting on their own calendar), unlike the
+garmin-identity-only token store:
+
+- `POST /garmin/schedule/workout` `{workout_id}` — compile a planned workout's
+  template into a structured Garmin workout, schedule it on the workout's date,
+  and store `garmin_workout_id` + `garmin_schedule_id` on the row. Re-pushing
+  unschedules the prior entry first.
+- `DELETE /garmin/schedule/workout/{id}` — unschedule and clear the ids (no-op if
+  unscheduled).
+- `POST /garmin/schedule/plan` `{plan_id, scope}` — push every planned workout in
+  the scope (all / week / range) via the single-workout path; per-workout results.
+- `GET /garmin/calendar?from&to` — read the Garmin calendar back, for reconciliation.
+
+All return `503 garmin_disabled` when `GARMIN_BRIDGE_URL` is unset. The
+`garminconnect` payload translation lives entirely in the bridge.
+
 ## API documentation (Swagger / OpenAPI)
 
 Annotated handlers generate an OpenAPI 2.0 spec, committed to `docs/`. When
@@ -1201,6 +1220,10 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `daily_context`               | `GET /context/daily?date=…&tz=…`       | One call returns adherence + totals + hydration + today's workouts + fuel + weight + phase + goal-override presence. Recommended first call of a session. |
 | `garmin_login`                | `POST /garmin/login`                   | Start re-linking Garmin (renews the ~yearly token). No args — the bridge holds the credentials. `{needs_mfa:true}` ⇒ ask the user for their authenticator code, then call `garmin_submit_mfa`. `503 garmin_disabled` when the integration is off. |
 | `garmin_submit_mfa`           | `POST /garmin/login/mfa`               | Complete a Garmin re-link with the 6-digit `code`. `{logged_in:true}` on success; `mfa_invalid` ⇒ restart with `garmin_login`. |
+| `garmin_schedule_workout`     | `POST /garmin/schedule/workout`        | Push one planned workout to the watch: compile its template, schedule it on its date, store the Garmin ids. Re-push replaces the prior entry. |
+| `garmin_unschedule_workout`   | `DELETE /garmin/schedule/workout/{id}` | Remove a workout from the Garmin calendar and clear its ids (no-op if unscheduled). |
+| `garmin_schedule_plan`        | `POST /garmin/schedule/plan`           | Push every planned workout in a plan scope (all / week / range); per-workout results, partial success. |
+| `garmin_list_scheduled`       | `GET /garmin/calendar?from=…&to=…`     | List the Garmin calendar entries in a date range (reconciliation). |
 
 **Re-link Garmin from chat.** The Garmin token expires roughly yearly (or on a
 password change / forced re-auth). To renew it without a `kubectl exec`, ask the
@@ -1210,6 +1233,17 @@ prompt, you read the 6-digit code from your authenticator, and it submits it via
 throwaway code does. These tools proxy to the garmin-bridge via the backend
 (`GARMIN_BRIDGE_URL`); they report `garmin_disabled` when the bridge isn't
 configured. See [`apps/garmin-bridge/README.md`](apps/garmin-bridge/README.md).
+
+**Push the plan to the watch.** Once the plan is materialized into planned
+workouts, the agent can schedule them on the Garmin calendar so the watch guides
+each session. `garmin_schedule_workout` pushes one; `garmin_schedule_plan` pushes
+a whole week or range in a single call (reporting per-workout results). The
+backend compiles the workout's template into a structured Garmin workout via the
+bridge, schedules it on the workout's date, and tracks the returned Garmin ids on
+the row — so re-pushing an edited session cleanly replaces its calendar entry and
+`garmin_unschedule_workout` removes it. `garmin_list_scheduled` reads the calendar
+back for reconciliation. The `garminconnect` payload shape never enters the
+backend — it lives only in the bridge.
 
 Write tools accept an optional `idempotency_key`. When omitted, the wrapper
 derives a stable key from the tool arguments so the agent's automatic retries

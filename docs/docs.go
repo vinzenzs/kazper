@@ -378,6 +378,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/garmin/calendar": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Read the Garmin calendar through the bridge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge calendar response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/garmin/login": {
             "post": {
                 "security": [
@@ -464,6 +523,211 @@ const docTemplate = `{
                     },
                     "502": {
                         "description": "garmin_bridge_unreachable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/schedule/plan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Resolves the planned workouts in the scope (all | week | range) and pushes each via the single-workout path. Per-workout failures are collected, not fatal.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Push every planned workout in a plan scope to the watch",
+                "parameters": [
+                    {
+                        "description": "{ plan_id, scope, week?, from?, to? }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/garmincontrol.schedulePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ results: [{workout_id, ok, error?}] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | scope_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "training_plan_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/schedule/workout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Compiles the workout's template into a structured Garmin workout (via the bridge), schedules it on the workout's date, and stores the returned Garmin ids. Re-pushing unschedules the prior entry first. Requires a planned workout with a template_id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Push a planned workout to the Garmin watch",
+                "parameters": [
+                    {
+                        "description": "{ workout_id }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/garmincontrol.scheduleWorkoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the updated workout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | workout_not_schedulable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/schedule/workout/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the scheduled entry via the bridge and clears the stored Garmin ids. No-op success when the workout was never scheduled.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Remove a workout from the Garmin calendar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the updated workout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -6171,6 +6435,34 @@ const docTemplate = `{
                 }
             }
         },
+        "garmincontrol.schedulePlanRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "week": {
+                    "type": "integer"
+                }
+            }
+        },
+        "garmincontrol.scheduleWorkoutRequest": {
+            "type": "object",
+            "properties": {
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
         "goals.Goals": {
             "type": "object",
             "properties": {
@@ -8451,6 +8743,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "external_id": {
+                    "type": "string"
+                },
+                "garmin_schedule_id": {
+                    "type": "string"
+                },
+                "garmin_workout_id": {
+                    "description": "Garmin scheduling ids (per add-garmin-scheduling), both nullable opaque\nGarmin identifiers: the structured workout created in the Garmin library\nand the calendar entry scheduling it. Set on push, cleared on unschedule.",
                     "type": "string"
                 },
                 "gi_distress_score": {

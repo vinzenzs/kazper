@@ -102,6 +102,36 @@ curl -X POST localhost:8080/sync -H 'Content-Type: application/json' -d '{"date"
 `207` on partial failure). With no stored token it returns `409 login_required`
 and writes nothing.
 
+### Scheduling (writing the plan to the watch)
+
+The bridge also writes structured workouts **to** Garmin (per
+`add-garmin-scheduling`). The backend sends only our step model; the bridge owns
+the `garminconnect` payload translation (`workout_builder.py`). All four read the
+stored token (no MFA) and return `409 login_required` if it's absent.
+
+```bash
+# Compile our step model into a Garmin structured workout and create it
+curl -X POST localhost:8080/workouts -H 'Content-Type: application/json' \
+    -d '{"sport":"run","name":"VO2","steps":[{"type":"step","intent":"warmup","duration":{"kind":"time","seconds":600},"target":{"kind":"hr_zone","low":1,"high":2}}]}'
+# → {"garmin_workout_id":"<id>"}
+
+# Schedule it on a date → returns the calendar entry id
+curl -X POST localhost:8080/schedule -H 'Content-Type: application/json' \
+    -d '{"garmin_workout_id":"<id>","date":"2026-06-12"}'
+# → {"garmin_schedule_id":"<id>"}
+
+# Unschedule (idempotent — an already-gone id is a no-op success)
+curl -X DELETE "localhost:8080/schedule?schedule_id=<id>"      # → {"unscheduled":true}
+
+# Read the calendar for a range (for reconciliation)
+curl "localhost:8080/calendar?from=2026-06-01&to=2026-06-30"   # → {"from","to","items":[…]}
+```
+
+These are driven by the backend's `garmin-control` endpoints
+(`/garmin/schedule/workout`, `/garmin/schedule/plan`, `/garmin/calendar`) and the
+matching MCP tools — see the repo-root README. The `garminconnect` payload shape
+never leaves the bridge.
+
 ## Tests
 
 ```bash

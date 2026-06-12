@@ -140,6 +140,79 @@ def fetch_day(api, date: str) -> dict[str, Any]:
     return raw
 
 
+# --- structured-workout write/read (per add-garmin-scheduling) ----------
+#
+# These hit Garmin's workout-service / calendar-service through the garth
+# client. Like fetch_day, they touch Garmin's churning private API and can't be
+# unit-tested here; the payload they send is built by the pure, tested
+# workout_builder module.
+
+
+def create_workout(api, payload: dict[str, Any]) -> str:
+    """Create a structured workout in the Garmin library; return its id."""
+    resp = _garth(api).connectapi("/workout-service/workout", method="POST", json=payload)
+    wid = (resp or {}).get("workoutId")
+    if wid is None:
+        raise RuntimeError("garmin did not return a workoutId")
+    return str(wid)
+
+
+def schedule_workout(api, workout_id: str, date: str) -> str:
+    """Place a Garmin workout on a calendar date; return the schedule id."""
+    resp = _garth(api).connectapi(
+        f"/workout-service/schedule/{workout_id}", method="POST", json={"date": date}
+    )
+    sid = (resp or {}).get("id")
+    if sid is None:
+        raise RuntimeError("garmin did not return a schedule id")
+    return str(sid)
+
+
+def unschedule_workout(api, schedule_id: str) -> None:
+    """Remove a scheduled calendar entry. A missing id is treated as a no-op."""
+    try:
+        _garth(api).connectapi(f"/workout-service/schedule/{schedule_id}", method="DELETE")
+    except Exception as exc:  # noqa: BLE001
+        # Idempotent unschedule: a 404 (already gone) is success.
+        if "404" in str(exc) or "not found" in str(exc).lower():
+            logger.info("schedule %s already absent; treating as no-op", schedule_id)
+            return
+        raise
+
+
+def get_calendar(api, from_date: str, to_date: str) -> dict[str, Any]:
+    """Return scheduled calendar items in [from_date, to_date] (YYYY-MM-DD).
+
+    Garmin's calendar API is month-keyed, so we fetch each month the range spans
+    and merge the items, then filter to the range.
+    """
+    from datetime import date as _date
+
+    start = _date.fromisoformat(from_date)
+    end = _date.fromisoformat(to_date)
+    items: list[Any] = []
+    seen_months: set[tuple[int, int]] = set()
+    cur = start
+    while cur <= end:
+        key = (cur.year, cur.month)
+        if key not in seen_months:
+            seen_months.add(key)
+            # Garmin month index is 0-based.
+            resp = _garth(api).connectapi(
+                f"/calendar-service/year/{cur.year}/month/{cur.month - 1}"
+            )
+            for it in (resp or {}).get("calendarItems", []) or []:
+                d = it.get("date")
+                if d is None or (from_date <= d <= to_date):
+                    items.append(it)
+        # Advance to the first of next month.
+        if cur.month == 12:
+            cur = _date(cur.year + 1, 1, 1)
+        else:
+            cur = _date(cur.year, cur.month + 1, 1)
+    return {"from": from_date, "to": to_date, "items": items}
+
+
 def _classify(exc: Exception) -> LoginError:
     """Map a garminconnect exception to a typed, log-safe LoginError.
 

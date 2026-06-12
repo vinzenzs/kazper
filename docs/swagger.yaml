@@ -340,6 +340,24 @@ definitions:
       vo2max_running:
         type: number
     type: object
+  garmincontrol.schedulePlanRequest:
+    properties:
+      from:
+        type: string
+      plan_id:
+        type: string
+      scope:
+        type: string
+      to:
+        type: string
+      week:
+        type: integer
+    type: object
+  garmincontrol.scheduleWorkoutRequest:
+    properties:
+      workout_id:
+        type: string
+    type: object
   goals.Goals:
     properties:
       calcium_mg:
@@ -1924,6 +1942,14 @@ definitions:
         type: string
       external_id:
         type: string
+      garmin_schedule_id:
+        type: string
+      garmin_workout_id:
+        description: |-
+          Garmin scheduling ids (per add-garmin-scheduling), both nullable opaque
+          Garmin identifiers: the structured workout created in the Garmin library
+          and the calendar entry scheduling it. Set on push, cleared on unschedule.
+        type: string
       gi_distress_score:
         type: integer
       id:
@@ -2317,6 +2343,44 @@ paths:
       summary: Get the fitness snapshot for a date
       tags:
       - fitness-metrics
+  /garmin/calendar:
+    get:
+      parameters:
+      - description: Inclusive lower bound YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive upper bound YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge calendar response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read the Garmin calendar through the bridge
+      tags:
+      - garmin
   /garmin/login:
     post:
       description: 'Forwards to the garmin-bridge''s POST /login, returning its response
@@ -2388,6 +2452,144 @@ paths:
       security:
       - BearerAuth: []
       summary: Submit the Garmin bridge MFA code (proxy)
+      tags:
+      - garmin
+  /garmin/schedule/plan:
+    post:
+      consumes:
+      - application/json
+      description: Resolves the planned workouts in the scope (all | week | range)
+        and pushes each via the single-workout path. Per-workout failures are collected,
+        not fatal.
+      parameters:
+      - description: '{ plan_id, scope, week?, from?, to? }'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/garmincontrol.schedulePlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ results: [{workout_id, ok, error?}] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid_json | scope_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: training_plan_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Push every planned workout in a plan scope to the watch
+      tags:
+      - garmin
+  /garmin/schedule/workout:
+    post:
+      consumes:
+      - application/json
+      description: Compiles the workout's template into a structured Garmin workout
+        (via the bridge), schedules it on the workout's date, and stores the returned
+        Garmin ids. Re-pushing unschedules the prior entry first. Requires a planned
+        workout with a template_id.
+      parameters:
+      - description: '{ workout_id }'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/garmincontrol.scheduleWorkoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the updated workout
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid_json | workout_not_schedulable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: workout_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Push a planned workout to the Garmin watch
+      tags:
+      - garmin
+  /garmin/schedule/workout/{id}:
+    delete:
+      description: Deletes the scheduled entry via the bridge and clears the stored
+        Garmin ids. No-op success when the workout was never scheduled.
+      parameters:
+      - description: Workout UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the updated workout
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: workout_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a workout from the Garmin calendar
       tags:
       - garmin
   /garmin/token:

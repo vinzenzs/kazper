@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, notes, created_at, updated_at`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, notes, created_at, updated_at`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -343,6 +343,23 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	return nil
 }
 
+// SetGarminIDs sets (or clears, when nil) the two Garmin scheduling ids on a
+// workout row. Used by the scheduling orchestration after a push/unschedule.
+// Returns ErrNotFound if no row matched.
+func (r *Repo) SetGarminIDs(ctx context.Context, id uuid.UUID, garminWorkoutID, garminScheduleID *string) error {
+	tag, err := r.q.Exec(ctx,
+		`UPDATE workouts SET garmin_workout_id = $2, garmin_schedule_id = $3, updated_at = now() WHERE id = $1`,
+		id, garminWorkoutID, garminScheduleID,
+	)
+	if err != nil {
+		return fmt.Errorf("set garmin ids: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Delete removes a workout. Returns ErrNotFound if no row matched.
 func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.q.Exec(ctx, `DELETE FROM workouts WHERE id = $1`, id)
@@ -409,6 +426,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&w.RPE, &w.GIDistressScore,
 		&w.DistanceM, &w.AvgPowerW, &w.TemperatureC, &w.SweatLossML, &w.SessionGroup,
 		&w.TemplateID, &w.PlanSlotID,
+		&w.GarminWorkoutID, &w.GarminScheduleID,
 		&w.Notes,
 		&w.CreatedAt, &w.UpdatedAt,
 	)

@@ -36,6 +36,12 @@ const maxBodyBytes = 16 * 1024
 type Handlers struct {
 	bridgeURL string
 	client    *http.Client
+
+	// Scheduling dependencies (per add-garmin-scheduling), wired via
+	// SetSchedulingDeps. Nil until set — the login proxy needs none of them.
+	workoutsRepo  workoutsRepo
+	templatesRepo templatesRepo
+	planSvc       planService
 }
 
 // NewHandlers builds the proxy. An empty bridgeURL disables it.
@@ -46,9 +52,21 @@ func NewHandlers(bridgeURL string) *Handlers {
 	}
 }
 
+// SetSchedulingDeps wires the repos/service the scheduling endpoints need.
+func (h *Handlers) SetSchedulingDeps(w workoutsRepo, t templatesRepo, p planService) {
+	h.workoutsRepo = w
+	h.templatesRepo = t
+	h.planSvc = p
+}
+
 func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/garmin/login", h.login)
 	rg.POST("/garmin/login/mfa", h.loginMFA)
+
+	rg.POST("/garmin/schedule/workout", h.scheduleWorkout)
+	rg.DELETE("/garmin/schedule/workout/:id", h.unscheduleWorkout)
+	rg.POST("/garmin/schedule/plan", h.schedulePlan)
+	rg.GET("/garmin/calendar", h.calendar)
 }
 
 func (h *Handlers) enabled() bool { return h.bridgeURL != "" }

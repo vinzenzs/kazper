@@ -342,6 +342,18 @@ func inScope(scope Scope, weekOrdinal int, date time.Time) bool {
 	return false
 }
 
+// PlannedWorkoutsInScope validates the scope and returns the planned workout ids
+// the Garmin scheduling push should act on (delegates to the repo join).
+func (s *Service) PlannedWorkoutsInScope(ctx context.Context, planID uuid.UUID, scope Scope) ([]uuid.UUID, error) {
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetPlan(ctx, planID); err != nil {
+		return nil, err
+	}
+	return s.repo.PlannedWorkoutsInScope(ctx, planID, scope.Kind, scope.Week, scope.From, scope.To)
+}
+
 // ----- validators -----
 
 func validateScope(s Scope) error {

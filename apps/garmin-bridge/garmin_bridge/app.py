@@ -17,11 +17,11 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from . import garmin_client, logging_setup, sync
+from . import garmin_client, logging_setup, sync, workout_builder
 from .backend import Backend, BackendError, TokenNotFound
 from .config import Config
 
@@ -34,6 +34,17 @@ class MFARequest(BaseModel):
 
 class SyncRequest(BaseModel):
     date: str | None = None
+
+
+class CreateWorkoutRequest(BaseModel):
+    sport: str
+    name: str
+    steps: list[dict[str, Any]]
+
+
+class ScheduleRequest(BaseModel):
+    garmin_workout_id: str
+    date: str
 
 
 def _today(tz: str) -> str:
@@ -128,6 +139,92 @@ def create_app(
 
         status = 200 if summary.get("ok") else 207
         return JSONResponse(status_code=status, content=summary)
+
+    # --- structured-workout write/read plane (add-garmin-scheduling) ----
+    #
+    # Each reads the stored token (no MFA), then calls Garmin. A missing token
+    # returns 409 login_required, matching /sync.
+
+    def _with_api():
+        """Yield a (backend, api) pair or a JSONResponse error to return."""
+        backend = backend_factory()
+        try:
+            token = backend.get_token()
+        except TokenNotFound:
+            backend.close()
+            return None, JSONResponse(status_code=409, content={"error": "login_required"})
+        api = gc.load_api(token.decode("utf-8"))
+        return (backend, api), None
+
+    @app.post("/workouts")
+    def create_workout(req: CreateWorkoutRequest) -> JSONResponse:
+        """Compile our step model to a Garmin payload and create it in the library."""
+        try:
+            payload = workout_builder.build_payload(req.sport, req.name, req.steps)
+        except workout_builder.BuildError as exc:
+            return JSONResponse(status_code=400, content={"error": "invalid_steps", "message": str(exc)})
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            workout_id = gc.create_workout(api, payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("create workout failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"garmin_workout_id": workout_id})
+
+    @app.post("/schedule")
+    def schedule(req: ScheduleRequest) -> JSONResponse:
+        """Place a Garmin workout on a date; return the schedule id."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            schedule_id = gc.schedule_workout(api, req.garmin_workout_id, req.date)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("schedule failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"garmin_schedule_id": schedule_id})
+
+    @app.delete("/schedule")
+    def unschedule(schedule_id: str) -> JSONResponse:
+        """Remove a scheduled entry (idempotent: an absent id is a no-op)."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            gc.unschedule_workout(api, schedule_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("unschedule failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"unscheduled": True})
+
+    @app.get("/calendar")
+    def calendar(from_: str = Query("", alias="from"), to: str = "") -> JSONResponse:
+        """List scheduled items in a date range for reconciliation."""
+        if not from_ or not to:
+            return JSONResponse(status_code=400, content={"error": "range_required"})
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            result = gc.get_calendar(api, from_, to)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("calendar read failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content=result)
 
     return app
 
