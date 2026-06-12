@@ -8,7 +8,7 @@ Define a persisted catalogue of training sessions with the minimum metadata nutr
 
 ### Requirement: Workouts are stored in a dedicated table
 
-The system SHALL persist workouts in a `workouts` table independent of meals, hydration, and products. Each row holds a sport, a time window (`started_at`, `ended_at`), provenance metadata, a `status` (`planned` or `completed`), optional intensity/burn signals, optional ingestion metrics (distance, average power, ambient temperature, estimated sweat loss), an optional session-group key linking the legs of a brick/multisport session, and audit timestamps. The table is the data shape that external writers — initially `garmin.py`, in future potentially Apple Health, Strava, or a manual UI — target via the REST endpoints.
+The system SHALL persist workouts in a `workouts` table independent of meals, hydration, and products. Each row holds a sport, a time window (`started_at`, `ended_at`), provenance metadata, a `status` (`planned` or `completed`), optional intensity/burn signals, optional ingestion metrics (distance, average power, ambient temperature, estimated sweat loss), an optional session-group key linking the legs of a brick/multisport session, optional links to a `workout-template` and a training-plan `plan_slot` (for planned workouts originating from a plan), and audit timestamps. The table is the data shape that external writers — initially `garmin.py`, in future potentially Apple Health, Strava, or a manual UI — target via the REST endpoints, and that the training-plan materializer targets for planned sessions.
 
 #### Scenario: Table is created with the documented columns
 
@@ -32,6 +32,8 @@ The system SHALL persist workouts in a `workouts` table independent of meals, hy
   - `temperature_c` (NUMERIC(4, 1) NULL, CHECK `temperature_c IS NULL OR (temperature_c BETWEEN -40 AND 60)`)
   - `sweat_loss_ml` (NUMERIC(10, 1) NULL, CHECK `sweat_loss_ml IS NULL OR sweat_loss_ml > 0`)
   - `session_group` (TEXT NULL)
+  - `template_id` (UUID NULL, REFERENCES `workout_templates(id)` ON DELETE SET NULL)
+  - `plan_slot_id` (UUID NULL, REFERENCES `plan_slots(id)` ON DELETE SET NULL)
   - `notes` (TEXT NULL)
   - `created_at` (TIMESTAMPTZ NOT NULL DEFAULT now())
   - `updated_at` (TIMESTAMPTZ NOT NULL DEFAULT now())
@@ -39,6 +41,7 @@ The system SHALL persist workouts in a `workouts` table independent of meals, hy
 - **AND** an index `workouts_started_at_idx` exists on `(started_at)`
 - **AND** a partial UNIQUE index exists on `(external_id) WHERE external_id IS NOT NULL`
 - **AND** a partial (non-unique) index `workouts_session_group_idx` exists on `(session_group) WHERE session_group IS NOT NULL`
+- **AND** a partial UNIQUE index `workouts_plan_slot_id_key` exists on `(plan_slot_id) WHERE plan_slot_id IS NOT NULL`
 - **AND** there is NO `intensity` column (TSS is the intensity signal; downstream tools derive bands at call time)
 
 #### Scenario: rpe and gi_distress_score are nullable per session
@@ -638,3 +641,55 @@ The system SHALL treat `status` as a mutable workout field with values `planned`
 - **THEN** it contributes nothing to energy-availability burn sums (it has no `kcal_burned`)
 - **AND** it does not appear inside any `GET /workouts/{id}/fueling` window for a real (completed) session
 - **AND** read paths that must exclude plans filter on `status = 'completed'`
+
+### Requirement: Planned workouts can originate from a training-plan slot via a slot-keyed upsert
+
+The system SHALL support upserting a planned workout from a training-plan slot,
+keyed on `plan_slot_id`. Such a row SHALL carry `status='planned'`, the slot's
+template's `sport` and `name`, a `template_id`, and a `plan_slot_id`. Because the
+key is `plan_slot_id` and imported activities never carry one, this path is
+disjoint from the existing `external_id` UPSERT path: the two never collide.
+Repeated upserts on the same slot SHALL update the same row rather than create a
+new one. The upsert's update SHALL apply only where the existing row's `status`
+is `planned`, so a workout already marked `completed` is never reverted or
+overwritten by re-materialization.
+
+#### Scenario: The slot upsert does not overwrite a completed workout
+
+- **WHEN** a planned workout for a slot has been marked `completed` and the slot
+  is upserted again
+- **THEN** the existing completed row is left unchanged (the update is guarded by
+  `status='planned'`)
+
+#### Scenario: A planned workout upserts by slot, not external_id
+
+- **WHEN** the training-plan materializer upserts a planned workout for a given
+  `plan_slot_id` twice
+- **THEN** exactly one planned `workouts` row exists for that slot, updated in place
+
+#### Scenario: The slot-keyed and external_id paths do not collide
+
+- **WHEN** a completed activity (with `external_id`, no `plan_slot_id`) and a
+  planned workout (with `plan_slot_id`, no `external_id`) exist for the same date
+- **THEN** both rows persist independently, each addressable by its own key
+
+### Requirement: Workouts track Garmin scheduling identifiers
+
+The system SHALL add two nullable columns to `workouts`: `garmin_workout_id`
+(the id of the structured workout created in the Garmin library) and
+`garmin_schedule_id` (the id of the calendar entry that schedules it). Both are
+opaque Garmin identifiers — stored and echoed, never parsed. They are populated
+when a planned workout is pushed to the watch and cleared when it is
+unscheduled, enabling clean unschedule and re-push without double-creating in the
+Garmin library.
+
+#### Scenario: Columns exist after migration
+
+- **WHEN** the migration set is applied to a clean database
+- **THEN** `workouts` has `garmin_workout_id` (TEXT NULL) and `garmin_schedule_id` (TEXT NULL)
+
+#### Scenario: Ids are set on push and cleared on unschedule
+
+- **WHEN** a planned workout is pushed to the watch and later unscheduled
+- **THEN** both ids are populated by the push
+- **AND** both ids are null after the unschedule

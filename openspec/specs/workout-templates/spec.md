@@ -1,7 +1,9 @@
 # workout-templates Specification
 
 ## Purpose
-TBD - created by archiving change add-workout-templates. Update Purpose after archive.
+
+Define a catalogue of reusable, first-party-authored workout templates — the structured "what to do" of a session, independent of any date or athlete instance. A template carries a sport, a name, optional metadata, and an ordered, validated step program (executable steps and bounded repeat groups, each with an intent, exactly one duration, and a target). Templates are the building block that training plans reference per slot and that the Garmin bridge compiles into structured calendar workouts; they hold no scheduling, provenance, or completion state of their own. The capability exposes CRUD over REST (mirrored 1:1 by MCP tools) and validates the step structure at the service layer so malformed programs never reach the database.
+
 ## Requirements
 ### Requirement: Workout templates are stored in a dedicated table
 
