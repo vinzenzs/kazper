@@ -1,0 +1,160 @@
+# training-plan — delta for add-training-plan
+
+## ADDED Requirements
+
+### Requirement: A training plan is stored as plan → weeks → slots
+
+The system SHALL persist a training plan across three tables: `training_plans`
+(name, optional `race_id`, `start_date` = the Monday of week 1, optional notes),
+`plan_weeks` (an `ordinal >= 1` unique within the plan, an optional `phase_id`,
+notes), and `plan_slots` (a `weekday` 0–6 where 0=Monday, an `ordinal` ordering
+sessions within a day, a required `template_id`, and an optional `time_of_day`).
+Weeks cascade-delete with their plan and slots with their week. A slot's
+`template_id` SHALL be `ON DELETE RESTRICT` so a referenced template cannot be
+deleted.
+
+#### Scenario: Tables are created with the documented shape
+
+- **WHEN** the migration set is applied to a clean database
+- **THEN** `training_plans`, `plan_weeks`, and `plan_slots` exist with the
+  documented columns and foreign keys
+- **AND** `plan_weeks` has a UNIQUE constraint on `(plan_id, ordinal)`
+- **AND** `plan_weeks.ordinal` and `plan_slots.weekday` carry CHECK constraints
+  (`ordinal >= 1`, `weekday BETWEEN 0 AND 6`)
+- **AND** `plan_slots.template_id` references `workout_templates(id)` ON DELETE RESTRICT
+
+### Requirement: REST surface for plan, week, and slot management
+
+The system SHALL expose plan CRUD (`POST /training-plans`, `GET /training-plans`,
+`GET /training-plans/{id}`, `PATCH /training-plans/{id}`,
+`DELETE /training-plans/{id}`), week sub-resources
+(`POST /training-plans/{id}/weeks`, `PATCH /training-plans/{id}/weeks/{weekId}`,
+`DELETE /training-plans/{id}/weeks/{weekId}`), and slot sub-resources
+(`POST /training-plans/{id}/weeks/{weekId}/slots`,
+`PATCH /training-plans/{id}/slots/{slotId}`,
+`DELETE /training-plans/{id}/slots/{slotId}`), behind the standard auth +
+idempotency middleware. `GET /training-plans/{id}` SHALL return the full nested
+tree (weeks, each with its ordered slots). Writes are per-resource so slot ids
+remain stable across edits.
+
+#### Scenario: Get returns the nested plan tree
+
+- **WHEN** a client creates a plan, adds a week, adds two slots to that week, and
+  `GET`s the plan by id
+- **THEN** the response contains the plan with its week, and the week with its
+  two slots in `ordinal` order
+
+#### Scenario: Slot ids are stable across edits
+
+- **WHEN** a slot's `template_id` is changed via `PATCH …/slots/{slotId}`
+- **THEN** the slot retains its `id`
+- **AND** a subsequent materialize updates the same planned workout rather than
+  creating a new one
+
+#### Scenario: A referenced template cannot be deleted
+
+- **WHEN** a client attempts to delete a `workout-template` still referenced by a
+  slot
+- **THEN** the delete is rejected (RESTRICT), leaving the slot intact
+
+#### Scenario: Deleting a plan cascades weeks and slots
+
+- **WHEN** a client `DELETE`s a plan
+- **THEN** its weeks and slots are removed
+- **AND** any planned workouts that referenced its slots have their `plan_slot_id`
+  set null (the workout rows are preserved)
+
+### Requirement: Materialize expands the plan into planned workouts idempotently
+
+The system SHALL expose `POST /training-plans/{id}/materialize` accepting a scope
+of a single week (`{scope:"week",week:N}`), a date range
+(`{scope:"range",from,to}`), or the whole plan (`{scope:"all"}`). For each
+in-scope slot it SHALL compute the date as
+`plan.start_date + (week.ordinal-1) weeks + slot.weekday`, derive a time window
+from `slot.time_of_day` (or a default stacked by `slot.ordinal`) and the
+template's `estimated_duration_sec` (or a one-hour fallback), and UPSERT a
+`workouts` row with `status='planned'`, the slot's template's sport and name,
+`template_id`, and `plan_slot_id`. The upsert SHALL be keyed on `plan_slot_id`
+so re-running updates the same rows, and its update SHALL apply only where the
+existing row's `status` is `planned` so a workout already marked `completed`
+(e.g. fulfilled by a later Garmin import) is never reverted or overwritten. When
+a (week, weekday) has more than one slot, the materialized workouts SHALL share
+a generated `session_group`. The response SHALL return the planned workouts
+created or updated.
+
+#### Scenario: Materializing a week creates planned workouts on the right dates
+
+- **WHEN** a plan with `start_date` = a Monday has a week 1 with a slot on weekday 2
+  (Wednesday) and the client materializes week 1
+- **THEN** a planned `workouts` row exists dated that Wednesday with the template's
+  sport and name and `status='planned'`
+
+#### Scenario: Re-materializing is idempotent
+
+- **WHEN** the same week is materialized twice
+- **THEN** no duplicate planned workouts are created (the slot-keyed rows are
+  updated in place)
+
+#### Scenario: Editing a slot then re-materializing moves the planned workout
+
+- **WHEN** a slot's weekday or template is changed and the week is re-materialized
+- **THEN** the existing planned workout (same `plan_slot_id`) is retargeted, not
+  duplicated
+
+#### Scenario: Shifting start_date moves all materialized dates
+
+- **WHEN** `plan.start_date` is changed and the plan is re-materialized
+- **THEN** the existing planned workouts move to the new dates without duplication
+
+#### Scenario: A multi-session day is grouped as a brick
+
+- **WHEN** a weekday has two slots (e.g. swim + run) and is materialized
+- **THEN** both planned workouts share one `session_group` value
+
+#### Scenario: Materialize never touches completed activities
+
+- **WHEN** a completed Garmin activity (with `external_id`, no `plan_slot_id`)
+  exists on a date the plan also covers
+- **THEN** materialize creates/updates only the planned (`plan_slot_id`) row and
+  leaves the completed activity untouched
+
+#### Scenario: Materialize never reverts a fulfilled planned workout
+
+- **WHEN** a planned workout has been marked `completed` (carrying its
+  `plan_slot_id`) and its plan is re-materialized
+- **THEN** the slot-keyed update is skipped for that row (guarded by
+  `status='planned'`) and the completed workout and its actuals are unchanged
+
+### Requirement: A plan may anchor to a race and weeks to phases
+
+The system SHALL allow a `training_plans` row to reference a `race` via
+`race_id` and a `plan_weeks` row to reference a `training-phase` via `phase_id`,
+both `ON DELETE SET NULL`. These links are contextual (target race; per-week
+nutrition/intent) and SHALL NOT affect materialization dates, which are computed
+solely from `start_date` and ordinals.
+
+#### Scenario: Deleting a referenced race detaches the plan
+
+- **WHEN** a race referenced by a plan is deleted
+- **THEN** the plan's `race_id` becomes null and the plan is otherwise unchanged
+
+### Requirement: MCP tools mirror the training-plan REST surface
+
+The MCP server SHALL expose `create_training_plan`, `list_training_plans`,
+`get_training_plan`, `patch_training_plan`, `delete_training_plan`,
+`add_plan_week`, `patch_plan_week`, `delete_plan_week`, `add_plan_slot`,
+`patch_plan_slot`, `delete_plan_slot`, and `materialize_training_plan`, each
+issuing exactly one HTTP call to the corresponding endpoint and forwarding the
+response verbatim. Write tools SHALL auto-derive an idempotency key when none is
+supplied. The MCP integration expected-tools list SHALL include all of them.
+
+#### Scenario: materialize_training_plan issues one POST
+
+- **WHEN** the agent calls `materialize_training_plan` with `{id, scope:"week", week:5}`
+- **THEN** the MCP server issues exactly one `POST /training-plans/{id}/materialize`
+- **AND** the tool result is the REST response verbatim
+
+#### Scenario: Expected-tools list includes the training-plan tools
+
+- **WHEN** the MCP integration test enumerates registered tools
+- **THEN** all twelve training-plan tools are present
