@@ -166,6 +166,15 @@ garminBridge:
   # -- IANA timezone the daily sync resolves "today" in (the user's local day).
   syncTz: UTC
 
+  # -- Rolling-window lookback for the dateless daily sync. Each cron run POSTs
+  #    /sync with no date, which re-pulls today + this many prior days (default
+  #    2 → a 3-day window). A same-day-only sync misses a day's own completed
+  #    activities (they happen after the 05:00 run) and Garmin's later-computed
+  #    training-load / VO2max / race-predictor metrics (recomputed once activities
+  #    process); re-pulling recent days lets those late signals land. Date-keyed
+  #    upserts + external_id workout dedup make the re-pull safe. 0 = today only.
+  syncLookbackDays: 2
+
   # -- Backend base URL the bridge POSTs to. Empty → the in-cluster backend
   #    Service DNS (http://<fullname>:<service.port>).
   nutritionApiUrl: ""

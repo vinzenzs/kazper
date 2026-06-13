@@ -144,6 +144,40 @@ def _upsert_each(
     summary["results"][key] = f"{ok}/{len(items)} upserted"
 
 
+def _sync_one_day(backend: Backend, gc: Any, api: Any, dstr: str) -> dict[str, Any]:
+    """Fetch and sync a single day, never raising: a failing day is returned as
+    ``{date, ok:false, error}`` so a multi-day caller can record it and proceed."""
+    try:
+        raw = gc.fetch_day(api, dstr)
+        return sync_day(backend, raw, dstr)
+    except Exception as exc:  # noqa: BLE001 — one bad day must not abort the caller
+        logger.warning("sync day %s failed: %s", dstr, exc)
+        return {"date": dstr, "ok": False, "error": str(exc)}
+
+
+def _window_result(days: list[dict[str, Any]]) -> dict[str, Any]:
+    ok = sum(1 for d in days if d.get("ok"))
+    return {
+        "days": days,
+        "days_total": len(days),
+        "days_ok": ok,
+        "days_failed": len(days) - ok,
+    }
+
+
+def run_window(backend: Backend, gc: Any, api: Any, dates: list[str]) -> dict[str, Any]:
+    """Sync each date in ``dates`` (pre-ordered YYYY-MM-DD strings, oldest-first).
+
+    The steady-state rolling window the daily cron drives: each day runs the same
+    ``gc.fetch_day`` + ``sync_day`` path as a single ``POST /sync``, a failing day
+    is recorded ``{date, ok:false, error}`` and the rest of the window proceeds.
+    Unlike ``run_backfill`` there is no inter-day pacing — the window is a handful
+    of days, so Garmin rate limits are a non-issue.
+    """
+    days = [_sync_one_day(backend, gc, api, dstr) for dstr in dates]
+    return _window_result(days)
+
+
 def run_backfill(
     backend: Backend,
     gc: Any,
@@ -162,30 +196,15 @@ def run_backfill(
     ``sleeper`` is injectable so tests need not actually wait.
     """
     days: list[dict[str, Any]] = []
-    ok = 0
     first = True
     cur = start
     while cur <= end:
         if not first and day_delay_seconds > 0:
             sleeper(day_delay_seconds)
         first = False
-        dstr = cur.isoformat()
-        try:
-            raw = gc.fetch_day(api, dstr)
-            summary = sync_day(backend, raw, dstr)
-            if summary.get("ok"):
-                ok += 1
-            days.append(summary)
-        except Exception as exc:  # noqa: BLE001 — one bad day must not abort the range
-            logger.warning("backfill day %s failed: %s", dstr, exc)
-            days.append({"date": dstr, "ok": False, "error": str(exc)})
+        days.append(_sync_one_day(backend, gc, api, cur.isoformat()))
         cur += timedelta(days=1)
-    return {
-        "days": days,
-        "days_total": len(days),
-        "days_ok": ok,
-        "days_failed": len(days) - ok,
-    }
+    return _window_result(days)
 
 
 def _attempt(

@@ -31,6 +31,13 @@ class Config:
     sync_tz
         IANA timezone the daily sync resolves "today" in (the user's local
         day, not UTC, so a late-evening workout lands on the right date).
+    sync_lookback_days
+        How many days *before* today a dateless ``POST /sync`` also re-pulls
+        (per add-garmin-sync-rolling-lookback). Default 2 → a 3-day rolling
+        window (today + 2 prior), so a day's own activities and Garmin's
+        later-computed load/VO2max/race-predictor metrics land once available;
+        date-keyed upserts + external_id dedup make the re-pull safe. 0 collapses
+        the window to today only. An explicit ``date`` in the request ignores it.
     """
 
     garmin_email: str
@@ -38,6 +45,7 @@ class Config:
     nutrition_api_url: str
     garmin_api_token: str
     sync_tz: str
+    sync_lookback_days: int = 2
 
     # History-backfill pacing (per add-garmin-history-backfill). The backfill
     # sleeps `backfill_day_delay_seconds` between days to stay friendly to
@@ -83,6 +91,7 @@ def load(env: dict[str, str] | None = None) -> Config:
         nutrition_api_url=url,
         garmin_api_token=src["GARMIN_API_TOKEN"].strip(),
         sync_tz=src.get("SYNC_TZ", "UTC").strip() or "UTC",
+        sync_lookback_days=_int_env(src, "SYNC_LOOKBACK_DAYS", 2, minimum=0),
         backfill_day_delay_seconds=_int_env(src, "BACKFILL_DAY_DELAY_SECONDS", 3, minimum=0),
         backfill_max_days=_int_env(src, "BACKFILL_MAX_DAYS", 120, minimum=1),
     )

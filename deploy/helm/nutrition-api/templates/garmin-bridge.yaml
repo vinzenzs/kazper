@@ -66,6 +66,8 @@ spec:
               value: {{ include "garmin-bridge.nutritionApiUrl" . | quote }}
             - name: SYNC_TZ
               value: {{ .Values.garminBridge.syncTz | quote }}
+            - name: SYNC_LOOKBACK_DAYS
+              value: {{ .Values.garminBridge.syncLookbackDays | int | quote }}
             - name: BACKFILL_DAY_DELAY_SECONDS
               value: {{ .Values.garminBridge.backfill.dayDelaySeconds | int | quote }}
             - name: BACKFILL_MAX_DAYS
@@ -156,9 +158,12 @@ spec:
                   BASE="http://{{ include "garmin-bridge.fullname" . }}"
                   BACKFILL={{ .Values.garminBridge.cron.backfillDays | int }}
                   if [ "$BACKFILL" -gt 0 ]; then
-                    # First-run backfill: POST /sync for each of the last N days
-                    # (today .. today-N+1). Date-upsert + external_id dedup make
-                    # this safe to re-run.
+                    # First-run-only import: POST /sync for each of the last N
+                    # days (today .. today-N+1). Date-upsert + external_id dedup
+                    # make this safe to re-run. Steady state leaves this at 0 —
+                    # the dateless /sync below already re-pulls a rolling window
+                    # (SYNC_LOOKBACK_DAYS), so no per-day loop is needed for the
+                    # daily run; this branch is just the bulk initial backfill.
                     NOW=$(date -u +%s)
                     i=0
                     while [ "$i" -lt "$BACKFILL" ]; do
@@ -168,6 +173,10 @@ spec:
                       i=$((i+1))
                     done
                   else
+                    # Steady state: a dateless /sync syncs the rolling window
+                    # (today + SYNC_LOOKBACK_DAYS prior days) so a day's own
+                    # activities and Garmin's later-computed load/VO2max land
+                    # once available. The cron stays a dumb trigger.
                     curl -fsS -X POST "$BASE/sync"
                   fi
 {{- end }}

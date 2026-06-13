@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import types
 
 from fastapi.testclient import TestClient
@@ -11,11 +12,20 @@ from garmin_bridge.app import create_app
 from tests.conftest import FakeBackend, FakeResponse
 
 
-def _gc_stub(raw_day):
-    """Stub gc whose load_api/fetch_day return the recorded fixture."""
+def _gc_stub(raw_day, *, fail_dates=()):
+    """Stub gc whose load_api/fetch_day return the recorded fixture, recording
+    the dates fetched and optionally raising for ``fail_dates``."""
     stub = types.SimpleNamespace()
+    stub.fetched: list[str] = []
     stub.load_api = lambda token_b64: object()
-    stub.fetch_day = lambda api, date: raw_day
+
+    def fetch_day(api, date):
+        stub.fetched.append(date)
+        if date in fail_dates:
+            raise RuntimeError(f"garmin boom on {date}")
+        return raw_day
+
+    stub.fetch_day = fetch_day
     return stub
 
 
@@ -87,9 +97,12 @@ def test_sync_endpoint_missing_token_returns_login_required(config, raw_day):
     assert backend.posts == []
 
 
-def test_sync_endpoint_happy_path(config, raw_day):
+def test_sync_endpoint_explicit_date_syncs_one_day(config, raw_day):
+    """An explicit date syncs exactly that day with no lookback window — the
+    single-day summary shape, and fetch_day called once for that date."""
     backend = FakeBackend(token=b"stored-blob")
-    app = create_app(config, gc=_gc_stub(raw_day), backend_factory=lambda: backend)
+    gc = _gc_stub(raw_day)
+    app = create_app(config, gc=gc, backend_factory=lambda: backend)
     client = TestClient(app)
 
     resp = client.post("/sync", json={"date": "2026-06-12"})
@@ -97,17 +110,64 @@ def test_sync_endpoint_happy_path(config, raw_day):
     body = resp.json()
     assert body["ok"] is True
     assert body["date"] == "2026-06-12"
+    assert "days" not in body  # single-day shape, not a window
+    assert gc.fetched == ["2026-06-12"]
 
 
-def test_sync_defaults_to_today_when_no_date(config, raw_day):
+def test_sync_dateless_syncs_rolling_window(config, raw_day):
+    """Dateless sync with the default lookback (2) syncs today + 2 prior days,
+    oldest-first, as a per-day window result."""
     backend = FakeBackend(token=b"stored-blob")
+    gc = _gc_stub(raw_day)
     app = create_app(
-        config,
-        gc=_gc_stub(raw_day),
-        backend_factory=lambda: backend,
-        now=lambda tz: "2026-06-11",
+        config, gc=gc, backend_factory=lambda: backend, now=lambda tz: "2026-06-13"
     )
     client = TestClient(app)
+
     resp = client.post("/sync")
     assert resp.status_code == 200
-    assert resp.json()["date"] == "2026-06-11"
+    body = resp.json()
+    assert body["days_total"] == 3
+    assert body["days_failed"] == 0
+    assert [d["date"] for d in body["days"]] == ["2026-06-11", "2026-06-12", "2026-06-13"]
+    assert gc.fetched == ["2026-06-11", "2026-06-12", "2026-06-13"]
+
+
+def test_sync_window_one_bad_day_does_not_sink_the_rest(config, raw_day):
+    """A single failing day is recorded failed and the window still syncs the
+    others; the response reports 207 with the per-day outcome."""
+    backend = FakeBackend(token=b"stored-blob")
+    gc = _gc_stub(raw_day, fail_dates={"2026-06-12"})
+    app = create_app(
+        config, gc=gc, backend_factory=lambda: backend, now=lambda tz: "2026-06-13"
+    )
+    client = TestClient(app)
+
+    resp = client.post("/sync")
+    assert resp.status_code == 207
+    body = resp.json()
+    assert body["days_total"] == 3
+    assert body["days_failed"] == 1
+    bad = next(d for d in body["days"] if d["date"] == "2026-06-12")
+    assert bad["ok"] is False
+    assert "boom" in bad["error"]
+    # The other two days still synced.
+    assert {d["date"] for d in body["days"] if d.get("ok")} == {"2026-06-11", "2026-06-13"}
+
+
+def test_sync_lookback_zero_collapses_to_today(config, raw_day):
+    """SYNC_LOOKBACK_DAYS=0 → the dateless window is today only."""
+    backend = FakeBackend(token=b"stored-blob")
+    gc = _gc_stub(raw_day)
+    cfg = dataclasses.replace(config, sync_lookback_days=0)
+    app = create_app(
+        cfg, gc=gc, backend_factory=lambda: backend, now=lambda tz: "2026-06-13"
+    )
+    client = TestClient(app)
+
+    resp = client.post("/sync")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["days_total"] == 1
+    assert [d["date"] for d in body["days"]] == ["2026-06-13"]
+    assert gc.fetched == ["2026-06-13"]

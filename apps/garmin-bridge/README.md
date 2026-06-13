@@ -24,8 +24,17 @@ LOGIN (rare, interactive)                   SYNC (daily, headless)
   persists the minted `garth` token blob to the backend (`PUT /garmin/token`).
   The blob is **never** returned to the caller or logged.
 - **Sync** (`POST /sync`) reads the stored token (`GET /garmin/token`), refreshes
-  the short-lived OAuth2 access token (no MFA, no human), fetches the day, maps
-  it, and POSTs to the existing REST endpoints under `GARMIN_API_TOKEN`.
+  the short-lived OAuth2 access token (no MFA, no human), fetches the day(s), maps
+  them, and POSTs to the existing REST endpoints under `GARMIN_API_TOKEN`.
+  - With an explicit `{"date":"YYYY-MM-DD"}` body it syncs **exactly that day**.
+  - With **no body** it syncs a **rolling window** — today plus the previous
+    `SYNC_LOOKBACK_DAYS` days (default `2` → a 3-day window). A same-day-only sync
+    misses a day's own completed activities (they happen after the 05:00 cron) and
+    Garmin's later-computed training-load / VO2max / race-predictor metrics
+    (recomputed once activities process); re-pulling recent days lets those late
+    signals land. Date-keyed upserts + `external_id` workout dedup make the
+    re-pull safe, and each day is independent — one failing day never sinks the
+    window.
 
 The token lives in the backend (Postgres, via `add-garmin-auth-token`), so the
 bridge holds **no durable state** — a restart or k8s reschedule resumes by
@@ -55,6 +64,7 @@ is safe for everything.
 | `GARMIN_API_TOKEN`  | yes      | Bearer token for the backend's `garmin` identity       |
 | `NUTRITION_API_URL` | yes      | Backend base URL, e.g. `http://nutrition-api`          |
 | `SYNC_TZ`           | no       | IANA tz "today" resolves in (default `UTC`)            |
+| `SYNC_LOOKBACK_DAYS`| no       | Dateless `/sync` rolling-window lookback (default `2` → today + 2 prior; `0` = today only) |
 | `PORT`              | no       | Listen port (default `8080`)                           |
 | `LOG_LEVEL`         | no       | `INFO` (default), `DEBUG`, …                           |
 
@@ -94,13 +104,15 @@ returns `{"logged_in": true}`.
 ### Manual sync
 
 ```bash
-curl -X POST localhost:8080/sync                                  # today (SYNC_TZ)
-curl -X POST localhost:8080/sync -H 'Content-Type: application/json' -d '{"date":"2026-06-10"}'
+curl -X POST localhost:8080/sync                                  # rolling window: today + SYNC_LOOKBACK_DAYS prior
+curl -X POST localhost:8080/sync -H 'Content-Type: application/json' -d '{"date":"2026-06-10"}'  # exactly that day
 ```
 
-`POST /sync` returns a per-capability summary (`200` when all writes landed,
-`207` on partial failure). With no stored token it returns `409 login_required`
-and writes nothing.
+A dateless `POST /sync` returns a per-day window result (`days`, `days_total`,
+`days_ok`, `days_failed`); an explicit `date` returns that day's per-capability
+summary. Status is `200` when every synced day/capability landed and `207` on any
+partial failure. With no stored token it returns `409 login_required` and writes
+nothing.
 
 ### Scheduling (writing the plan to the watch)
 

@@ -22,6 +22,15 @@ def test_load_ok_strips_trailing_slash():
     assert cfg.sync_tz == "UTC"
 
 
+def test_sync_lookback_days_default_and_overrides():
+    assert config.load(_full_env()).sync_lookback_days == 2  # default → 3-day window
+    assert config.load({**_full_env(), "SYNC_LOOKBACK_DAYS": "5"}).sync_lookback_days == 5
+    assert config.load({**_full_env(), "SYNC_LOOKBACK_DAYS": "0"}).sync_lookback_days == 0
+    # negative clamps to the floor; invalid falls back to default.
+    assert config.load({**_full_env(), "SYNC_LOOKBACK_DAYS": "-3"}).sync_lookback_days == 0
+    assert config.load({**_full_env(), "SYNC_LOOKBACK_DAYS": "x"}).sync_lookback_days == 2
+
+
 @pytest.mark.parametrize("missing", ["GARMIN_EMAIL", "GARMIN_PASSWORD", "NUTRITION_API_URL", "GARMIN_API_TOKEN"])
 def test_missing_required_raises(missing):
     env = _full_env()

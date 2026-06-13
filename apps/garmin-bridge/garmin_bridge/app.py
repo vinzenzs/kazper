@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -69,6 +69,13 @@ class RenameActivityRequest(BaseModel):
 
 def _today(tz: str) -> str:
     return datetime.now(ZoneInfo(tz)).strftime("%Y-%m-%d")
+
+
+def _window_dates(today: str, lookback_days: int) -> list[str]:
+    """[today - lookback_days, …, today] as YYYY-MM-DD strings, oldest-first."""
+    end = date.fromisoformat(today)
+    n = max(0, lookback_days)
+    return [(end - timedelta(days=i)).isoformat() for i in range(n, -1, -1)]
 
 
 def create_app(
@@ -135,8 +142,14 @@ def create_app(
 
     @app.post("/sync")
     def do_sync(req: SyncRequest | None = None) -> JSONResponse:
-        """Headless: read the stored token, fetch the day, map and POST it."""
-        date = (req.date if req and req.date else None) or now(config.sync_tz)
+        """Headless sync. An explicit ``date`` in the body syncs exactly that one
+        day (no lookback) — preserving targeted/manual calls and the cron's
+        first-run backfill loop. With no date, syncs a rolling window — today plus
+        the previous ``sync_lookback_days`` days, oldest-first — so a day's own
+        activities and Garmin's later-computed load/VO2max/race predictors land
+        once available; date-keyed upserts + external_id dedup make the re-pull
+        safe. Each day is independent: one failing day never sinks the window."""
+        explicit = req.date if req and req.date else None
 
         try:
             with backend_factory() as backend:
@@ -148,8 +161,12 @@ def create_app(
                         content={"error": "login_required", "message": "no stored Garmin token; run POST /login first"},
                     )
                 api = gc.load_api(token.decode("utf-8"))
-                raw = gc.fetch_day(api, date)
-                summary = sync.sync_day(backend, raw, date)
+                if explicit is not None:
+                    summary = sync.sync_day(backend, gc.fetch_day(api, explicit), explicit)
+                    status = 200 if summary.get("ok") else 207
+                    return JSONResponse(status_code=status, content=summary)
+                dates = _window_dates(now(config.sync_tz), config.sync_lookback_days)
+                result = sync.run_window(backend, gc, api, dates)
         except BackendError as exc:
             logger.error("sync backend error: %s", exc)
             return JSONResponse(status_code=502, content={"error": "backend_error", "message": str(exc)})
@@ -157,8 +174,8 @@ def create_app(
             logger.error("sync failed: %s", exc)
             return JSONResponse(status_code=500, content={"error": "sync_failed", "message": str(exc)})
 
-        status = 200 if summary.get("ok") else 207
-        return JSONResponse(status_code=status, content=summary)
+        status = 200 if result["days_failed"] == 0 else 207
+        return JSONResponse(status_code=status, content=result)
 
     @app.post("/sync/backfill")
     def do_backfill(req: BackfillRequest) -> JSONResponse:
