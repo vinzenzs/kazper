@@ -171,6 +171,79 @@ func handleGarminExportActivity(ctx context.Context, c *apiClient, args GarminEx
 	return toToolResult(status, resp, err)
 }
 
+// ----- activity-level control operations (add-garmin-misc-mirror) -----
+
+type GarminGetActivityGearArgs struct {
+	ActivityID string `json:"activity_id" jsonschema:"the Garmin activity id whose linked gear to read"`
+}
+
+type GarminDownloadWorkoutArgs struct {
+	GarminWorkoutID string `json:"garmin_workout_id" jsonschema:"the Garmin workout object id to download"`
+	Format          string `json:"format,omitempty" jsonschema:"fit (default) | …"`
+}
+
+type GarminUploadActivityArgs struct {
+	Filename       string `json:"filename" jsonschema:"the FIT file name (e.g. ride.fit)"`
+	ContentBase64  string `json:"content_base64" jsonschema:"the FIT file bytes, base64-encoded"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; derived when omitted"`
+}
+
+type GarminRenameActivityArgs struct {
+	ActivityID     string `json:"activity_id" jsonschema:"the Garmin activity id to rename"`
+	Name           string `json:"name" jsonschema:"the new activity name"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; derived when omitted"`
+}
+
+type GarminDeleteActivityArgs struct {
+	ActivityID     string `json:"activity_id" jsonschema:"the Garmin activity id to delete"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; derived when omitted"`
+}
+
+func handleGarminGetActivityGear(ctx context.Context, c *apiClient, args GarminGetActivityGearArgs) *mcp.CallToolResult {
+	status, resp, err := c.Get(ctx, "/garmin/activity/"+url.PathEscape(args.ActivityID)+"/gear", nil)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminDownloadWorkout(ctx context.Context, c *apiClient, args GarminDownloadWorkoutArgs) *mcp.CallToolResult {
+	q := url.Values{}
+	if args.Format != "" {
+		q.Set("format", args.Format)
+	}
+	status, resp, err := c.Get(ctx, "/garmin/workout/"+url.PathEscape(args.GarminWorkoutID)+"/download", q)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminUploadActivity(ctx context.Context, c *apiClient, args GarminUploadActivityArgs) *mcp.CallToolResult {
+	body, err := json.Marshal(struct {
+		Filename      string `json:"filename"`
+		ContentBase64 string `json:"content_base64"`
+	}{args.Filename, args.ContentBase64})
+	if err != nil {
+		return toToolResult(0, nil, &transportError{inner: err})
+	}
+	key := effectiveIdempotencyKey(args.IdempotencyKey, "garmin_upload_activity", args)
+	status, resp, err := c.Post(ctx, "/garmin/activity/upload", nil, body, key)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminRenameActivity(ctx context.Context, c *apiClient, args GarminRenameActivityArgs) *mcp.CallToolResult {
+	body, err := json.Marshal(struct {
+		Name string `json:"name"`
+	}{args.Name})
+	if err != nil {
+		return toToolResult(0, nil, &transportError{inner: err})
+	}
+	key := effectiveIdempotencyKey(args.IdempotencyKey, "garmin_rename_activity", args)
+	status, resp, err := c.Patch(ctx, "/garmin/activity/"+url.PathEscape(args.ActivityID), body, key)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminDeleteActivity(ctx context.Context, c *apiClient, args GarminDeleteActivityArgs) *mcp.CallToolResult {
+	key := effectiveIdempotencyKey(args.IdempotencyKey, "garmin_delete_activity", args)
+	status, resp, err := c.Delete(ctx, "/garmin/activity/"+url.PathEscape(args.ActivityID), key)
+	return toToolResult(status, resp, err)
+}
+
 func registerGarminTools(server *mcp.Server, c *apiClient) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "garmin_login",
@@ -268,5 +341,44 @@ func registerGarminTools(server *mcp.Server, c *apiClient) {
 			"Read-only; upload is not supported.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminExportActivityArgs) (*mcp.CallToolResult, any, error) {
 		return handleGarminExportActivity(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "garmin_get_activity_gear",
+		Description: "Read the gear (shoes/bike) Garmin has linked to a specific activity.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminGetActivityGearArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminGetActivityGear(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_download_workout",
+		Description: "Download a structured workout's file (FIT by default) as a base64 blob inside a JSON envelope " +
+			"{garmin_workout_id, format, filename, content_base64}. The structured-workout analogue of " +
+			"garmin_export_activity. Read-only.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminDownloadWorkoutArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminDownloadWorkout(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_upload_activity",
+		Description: "Upload a FIT activity file TO Garmin (base64-encoded). A write from this system to Garmin — " +
+			"invoke only on explicit request; nothing uploads automatically.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminUploadActivityArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminUploadActivity(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "garmin_rename_activity",
+		Description: "Rename a Garmin activity (e.g. set a descriptive title like \"Evening Z2 ride\").",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminRenameActivityArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminRenameActivity(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_delete_activity",
+		Description: "Delete a Garmin activity. Idempotent — an already-absent activity is a no-op success. A " +
+			"destructive write; invoke only on explicit request.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminDeleteActivityArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminDeleteActivity(ctx, c, args), nil, nil
 	})
 }

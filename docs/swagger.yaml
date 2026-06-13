@@ -1,5 +1,45 @@
 basePath: /
 definitions:
+  achievements.Achievement:
+    properties:
+      created_at:
+        type: string
+      earned_at:
+        type: string
+      external_id:
+        type: string
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/achievements.Kind'
+      name:
+        type: string
+      progress_pct:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  achievements.Kind:
+    enum:
+    - badge
+    - challenge
+    type: string
+    x-enum-varnames:
+    - KindBadge
+    - KindChallenge
+  achievements.upsertRequest:
+    properties:
+      earned_at:
+        type: string
+      external_id:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      progress_pct:
+        type: number
+    type: object
   athleteconfig.AthleteConfig:
     properties:
       created_at:
@@ -357,6 +397,42 @@ definitions:
       vigorous_intensity_minutes:
         type: integer
     type: object
+  devices.Device:
+    properties:
+      battery_pct:
+        type: number
+      created_at:
+        type: string
+      display_name:
+        type: string
+      external_id:
+        type: string
+      firmware_version:
+        type: string
+      id:
+        type: string
+      last_sync_at:
+        type: string
+      model:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  devices.upsertRequest:
+    properties:
+      battery_pct:
+        type: number
+      display_name:
+        type: string
+      external_id:
+        type: string
+      firmware_version:
+        type: string
+      last_sync_at:
+        type: string
+      model:
+        type: string
+    type: object
   energy.Availability:
     properties:
       composition:
@@ -565,6 +641,31 @@ definitions:
         type: number
       min:
         type: number
+    type: object
+  healthvitals.Snapshot:
+    properties:
+      bp_diastolic:
+        type: integer
+      bp_pulse:
+        type: integer
+      bp_systolic:
+        type: integer
+      created_at:
+        type: string
+      date:
+        type: string
+      max_hr:
+        type: integer
+      min_hr:
+        type: integer
+      resting_hr:
+        type: integer
+      stress_avg:
+        type: integer
+      stress_max:
+        type: integer
+      updated_at:
+        type: string
     type: object
   hydration.Daily:
     properties:
@@ -2431,6 +2532,65 @@ info:
   title: Nutrition API
   version: 0.1.0
 paths:
+  /achievements:
+    get:
+      parameters:
+      - description: 'Filter by kind: badge | challenge'
+        in: query
+        name: kind
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ achievements: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List achievements
+      tags:
+      - achievements
+    post:
+      consumes:
+      - application/json
+      description: Creates or updates an earned badge or ad-hoc challenge, upserting
+        by `external_id`. Coaching context only; never feeds nutrition computation.
+        Personal records live in the separate personal-records capability.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Achievement
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/achievements.upsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (external_id already present)
+          schema:
+            $ref: '#/definitions/achievements.Achievement'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/achievements.Achievement'
+        "400":
+          description: external_id_required | kind_invalid | name_required | progress_pct_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert an achievement (by Garmin badge/challenge id)
+      tags:
+      - achievements
   /athlete-config:
     get:
       description: Returns the single athlete-config row (FTP, thresholds, max HR,
@@ -2841,6 +3001,86 @@ paths:
       summary: Get the daily-summary snapshot for a date
       tags:
       - daily-summary
+  /devices:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ devices: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List device records
+      tags:
+      - devices
+    post:
+      consumes:
+      - application/json
+      description: Creates or updates a paired Garmin device, upserting by `external_id`.
+        Slowly-changing inventory — a fresh sync advances last_sync_at/battery. Reference
+        context only; never feeds nutrition computation.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Device record
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/devices.upsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (external_id already present)
+          schema:
+            $ref: '#/definitions/devices.Device'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/devices.Device'
+        "400":
+          description: external_id_required | display_name_required | battery_pct_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a device record (by Garmin device id)
+      tags:
+      - devices
+  /devices/{id}:
+    get:
+      parameters:
+      - description: Device UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/devices.Device'
+        "404":
+          description: device_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a device record by id
+      tags:
+      - devices
   /energy/availability:
     get:
       description: 'Per-day EA values + window aggregate, computed from meals (intake),
@@ -3012,6 +3252,88 @@ paths:
       summary: Get the fitness snapshot for a date
       tags:
       - fitness-metrics
+  /garmin/activity/{activity_id}:
+    delete:
+      description: Forwards to the bridge, which deletes the Garmin activity. An already-absent
+        activity is a no-op success.
+      parameters:
+      - description: Garmin activity id
+        in: path
+        name: activity_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a Garmin activity (idempotent)
+      tags:
+      - garmin
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Garmin activity id
+        in: path
+        name: activity_id
+        required: true
+        type: string
+      - description: '{ name }'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: name_required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rename a Garmin activity
+      tags:
+      - garmin
   /garmin/activity/{activity_id}/export:
     get:
       description: Forwards to the bridge, returning `{activity_id, format, filename,
@@ -3050,6 +3372,79 @@ paths:
       security:
       - BearerAuth: []
       summary: Export an activity's FIT/GPX/TCX file (base64 envelope)
+      tags:
+      - garmin
+  /garmin/activity/{activity_id}/gear:
+    get:
+      parameters:
+      - description: Garmin activity id
+        in: path
+        name: activity_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge activity-gear response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read the gear linked to a Garmin activity
+      tags:
+      - garmin
+  /garmin/activity/upload:
+    post:
+      consumes:
+      - application/json
+      description: Forwards a base64-wrapped FIT payload `{filename, content_base64}`
+        to the bridge, which uploads it via Garmin. Writes FROM this API TO Garmin
+        — explicit-request only.
+      parameters:
+      - description: '{ filename, content_base64 }'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge upload response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload a FIT activity to Garmin (opt-in write)
       tags:
       - garmin
   /garmin/calendar:
@@ -3482,6 +3877,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Read one Garmin library workout through the bridge
+      tags:
+      - garmin
+  /garmin/workout/{garmin_workout_id}/download:
+    get:
+      description: 'The structured-workout analogue of the activity export: forwards
+        to the bridge and returns `{garmin_workout_id, format, filename, content_base64}`
+        verbatim. `format` defaults to `fit`.'
+      parameters:
+      - description: Garmin workout object id
+        in: path
+        name: garmin_workout_id
+        required: true
+        type: string
+      - description: fit (default) | …
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ garmin_workout_id, format, filename, content_base64 }'
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download a structured workout's FIT blob (base64 envelope)
       tags:
       - garmin
   /garmin/workout/{workout_id}:
@@ -3940,6 +4375,105 @@ paths:
       summary: Upsert a daily goal override
       tags:
       - goals
+  /health-vitals:
+    get:
+      parameters:
+      - description: Inclusive lower bound YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive upper bound YYYY-MM-DD; max 92-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ health_vitals: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: window_required | window_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List health-vitals snapshots in a date window
+      tags:
+      - health-vitals
+    post:
+      consumes:
+      - application/json
+      description: Creates or full-replaces the health-vitals snapshot (blood pressure
+        + all-day HR/stress) for a calendar date. "POST every day you see" — re-pushing
+        the same date updates in place, omitted fields reset to NULL. Distinct from
+        recovery-metrics; reference context only, never feeds nutrition computation.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Health vitals (date required; metrics optional)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/healthvitals.Snapshot'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UPDATE (date already present)
+          schema:
+            $ref: '#/definitions/healthvitals.Snapshot'
+        "201":
+          description: INSERT
+          schema:
+            $ref: '#/definitions/healthvitals.Snapshot'
+        "400":
+          description: date_invalid | bp_systolic_invalid | bp_diastolic_invalid |
+            bp_pulse_invalid | resting_hr_invalid | min_hr_invalid | max_hr_invalid
+            | stress_avg_invalid | stress_max_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a daily health-vitals snapshot (by date)
+      tags:
+      - health-vitals
+  /health-vitals/{date}:
+    get:
+      parameters:
+      - description: Date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/healthvitals.Snapshot'
+        "404":
+          description: health_vitals_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the health-vitals snapshot for a date
+      tags:
+      - health-vitals
   /hydration:
     get:
       parameters:

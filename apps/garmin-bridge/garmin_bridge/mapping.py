@@ -596,6 +596,135 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
     return cfg or None
 
 
+# --- catch-all mirror mappers (devices, health-vitals, achievements) ----
+
+
+def map_devices(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Garmin device inventory → /devices upsert items.
+
+    last_sync_at is joined from get_device_last_used (only the most-recently-used
+    device carries it). Defensive: a device without an id or display name is
+    skipped; absent fields are omitted.
+    """
+    last_used = raw.get("device_last_used") or {}
+    last_id = last_used.get("lastUsedDeviceId")
+    last_ts = _epoch_ms_to_rfc3339(_as_int(last_used.get("lastUsedDeviceUploadTime")))
+    out: list[dict[str, Any]] = []
+    for d in raw.get("devices") or []:
+        did = d.get("deviceId")
+        name = _as_str(d.get("displayName")) or _as_str(d.get("productDisplayName"))
+        if did is None or name is None:
+            continue
+        out.append(
+            _prune(
+                {
+                    "external_id": f"garmin-device-{did}",
+                    "display_name": name,
+                    "model": _as_str(d.get("productDisplayName")) or _as_str(d.get("partNumber")),
+                    "last_sync_at": last_ts if str(did) == str(last_id) else None,
+                    "battery_pct": _as_float(d.get("batteryLevel")),
+                    "firmware_version": _as_str(d.get("softwareVersion"))
+                    or _as_str(d.get("currentFirmwareVersion")),
+                }
+            )
+        )
+    return out
+
+
+def _latest_bp_measurement(bp: Any) -> dict[str, Any]:
+    """Pull the most recent {systolic, diastolic, pulse} from a BP payload."""
+    if not isinstance(bp, dict):
+        return {}
+    summaries = bp.get("measurementSummaries") or bp.get("bloodPressureSummaries") or []
+    for s in reversed(summaries):
+        measures = (s or {}).get("measurements") or []
+        if measures:
+            return measures[-1]
+    if any(k in bp for k in ("systolic", "diastolic", "pulse")):
+        return bp
+    return {}
+
+
+def map_health_vitals(raw: dict[str, Any], date: str) -> dict[str, Any] | None:
+    """Garmin BP + all-day HR/stress → /health-vitals date-keyed snapshot."""
+    bp = _latest_bp_measurement(raw.get("blood_pressure"))
+    hr = raw.get("heart_rates") or {}
+    stress = raw.get("all_day_stress") or {}
+    snap = _prune(
+        {
+            "date": date,
+            "bp_systolic": _as_int(bp.get("systolic")),
+            "bp_diastolic": _as_int(bp.get("diastolic")),
+            "bp_pulse": _as_int(bp.get("pulse")),
+            "resting_hr": _as_int(hr.get("restingHeartRate")),
+            "min_hr": _as_int(hr.get("minHeartRate")),
+            "max_hr": _as_int(hr.get("maxHeartRate")),
+            "stress_avg": _as_int(stress.get("avgStressLevel")),
+            "stress_max": _as_int(stress.get("maxStressLevel")),
+        }
+    )
+    return snap if _has_metrics(snap) else None
+
+
+def _achievement_ts(value: Any) -> str | None:
+    """Earned/completion timestamp → RFC3339 (epoch ms, ISO datetime, or date)."""
+    ms = _as_int(value)
+    if ms is not None and ms > 100_000_000_000:  # epoch-ms heuristic
+        return _epoch_ms_to_rfc3339(ms)
+    if isinstance(value, str):
+        v = value.strip()
+        if "T" in v:
+            return v.split(".")[0].rstrip("Z") + "Z"
+        if len(v) >= 10 and v[4] == "-" and v[7] == "-":
+            return v[:10] + "T00:00:00Z"
+    return None
+
+
+def map_achievements(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Garmin earned badges + ad-hoc challenges → /achievements upsert items.
+
+    external_id is namespaced by kind (`badge:<id>` / `challenge:<id>`) so a
+    badge and a challenge that happen to share a numeric id never collide.
+    """
+    out: list[dict[str, Any]] = []
+    for b in raw.get("earned_badges") or []:
+        bid = b.get("badgeId") or b.get("uuid")
+        name = _as_str(b.get("badgeName")) or _as_str(b.get("name"))
+        if bid is None or name is None:
+            continue
+        out.append(
+            _prune(
+                {
+                    "external_id": f"badge:{bid}",
+                    "kind": "badge",
+                    "name": name,
+                    "earned_at": _achievement_ts(b.get("badgeEarnedDate") or b.get("earnedDate")),
+                    "progress_pct": _as_float(b.get("badgeProgressValue")),
+                }
+            )
+        )
+    challenges = raw.get("adhoc_challenges")
+    if isinstance(challenges, dict):
+        challenges = challenges.get("adHocChallenges") or challenges.get("challenges") or []
+    for ch in challenges or []:
+        cid = ch.get("uuid") or ch.get("adHocChallengeId") or ch.get("challengeId")
+        name = _as_str(ch.get("title")) or _as_str(ch.get("challengeName")) or _as_str(ch.get("name"))
+        if cid is None or name is None:
+            continue
+        out.append(
+            _prune(
+                {
+                    "external_id": f"challenge:{cid}",
+                    "kind": "challenge",
+                    "name": name,
+                    "earned_at": _achievement_ts(ch.get("completionDate") or ch.get("endDate")),
+                    "progress_pct": _as_float(ch.get("progress") or ch.get("userRankProgress")),
+                }
+            )
+        )
+    return out
+
+
 def map_day(raw: dict[str, Any], date: str) -> dict[str, Any]:
     """Map a full raw Garmin day into the per-capability request bodies."""
     return {
@@ -608,6 +737,9 @@ def map_day(raw: dict[str, Any], date: str) -> dict[str, Any]:
         "gear": map_gear(raw),
         "personal_records": map_personal_records(raw),
         "athlete_config": map_athlete_config(raw),
+        "devices": map_devices(raw),
+        "health_vitals": map_health_vitals(raw, date),
+        "achievements": map_achievements(raw),
     }
 
 

@@ -128,6 +128,37 @@
       "prStartTimeGmtFormatted": "2026-04-12T09:00:00.0"
     }
   ],
+  "devices": [
+    {
+      "deviceId": 111,
+      "displayName": "Fenix 7",
+      "productDisplayName": "fenix7",
+      "softwareVersion": "19.20",
+      "batteryLevel": 86.4
+    },
+    {
+      "deviceId": 222,
+      "displayName": "HRM-Pro",
+      "productDisplayName": "hrm-pro"
+    }
+  ],
+  "device_last_used": {
+    "lastUsedDeviceId": 111,
+    "lastUsedDeviceUploadTime": 1781222400000
+  },
+  "blood_pressure": {
+    "measurementSummaries": [
+      { "measurements": [ { "systolic": 118, "diastolic": 74, "pulse": 52 } ] }
+    ]
+  },
+  "heart_rates": { "restingHeartRate": 48, "minHeartRate": 42, "maxHeartRate": 171 },
+  "all_day_stress": { "avgStressLevel": 26, "maxStressLevel": 88 },
+  "earned_badges": [
+    { "badgeId": 900, "badgeName": "100 Rides", "badgeEarnedDate": "2026-05-30T12:00:00.0" }
+  ],
+  "adhoc_challenges": [
+    { "uuid": "ch-1", "title": "June Climb", "progress": 80.0 }
+  ],
   "weigh_ins": {
     "dailyWeightSummaries": [
       {

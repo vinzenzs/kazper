@@ -24,6 +24,7 @@ _SNAPSHOT_ROUTES = {
     "fitness": "/fitness-metrics",
     "hydration_balance": "/hydration-balance",
     "daily_summary": "/daily-summary",
+    "health_vitals": "/health-vitals",
 }
 
 
@@ -110,6 +111,10 @@ def sync_day(backend: Backend, raw: dict[str, Any], date: str) -> dict[str, Any]
         mapped.get("personal_records") or [],
         "personal_records",
         summary,
+    )
+    _upsert_each(backend, "/devices", mapped.get("devices") or [], "devices", summary)
+    _upsert_each(
+        backend, "/achievements", mapped.get("achievements") or [], "achievements", summary
     )
 
     summary["ok"] = not summary["errors"]

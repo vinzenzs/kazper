@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS achievements;
+DROP TABLE IF EXISTS health_vitals;
+DROP TABLE IF EXISTS devices;

@@ -74,6 +74,13 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/garmin/workout/:id", h.getGarminWorkout)
 	rg.POST("/garmin/hydration", h.pushHydration)
 	rg.GET("/garmin/activity/:activity_id/export", h.exportActivity)
+
+	// Activity-level control operations (add-garmin-misc-mirror).
+	rg.GET("/garmin/activity/:activity_id/gear", h.activityGear)
+	rg.GET("/garmin/workout/:id/download", h.downloadWorkout)
+	rg.POST("/garmin/activity/upload", h.uploadActivity)
+	rg.PATCH("/garmin/activity/:activity_id", h.renameActivity)
+	rg.DELETE("/garmin/activity/:activity_id", h.deleteActivity)
 }
 
 func (h *Handlers) enabled() bool { return h.bridgeURL != "" }

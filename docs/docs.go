@@ -15,6 +15,97 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/achievements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "achievements"
+                ],
+                "summary": "List achievements",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by kind: badge | challenge",
+                        "name": "kind",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ achievements: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or updates an earned badge or ad-hoc challenge, upserting by ` + "`" + `external_id` + "`" + `. Coaching context only; never feeds nutrition computation. Personal records live in the separate personal-records capability.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "achievements"
+                ],
+                "summary": "Upsert an achievement (by Garmin badge/challenge id)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Achievement",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/achievements.upsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (external_id already present)",
+                        "schema": {
+                            "$ref": "#/definitions/achievements.Achievement"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/achievements.Achievement"
+                        }
+                    },
+                    "400": {
+                        "description": "external_id_required | kind_invalid | name_required | progress_pct_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/athlete-config": {
             "get": {
                 "security": [
@@ -611,6 +702,131 @@ const docTemplate = `{
                 }
             }
         },
+        "/devices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "List device records",
+                "responses": {
+                    "200": {
+                        "description": "{ devices: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or updates a paired Garmin device, upserting by ` + "`" + `external_id` + "`" + `. Slowly-changing inventory — a fresh sync advances last_sync_at/battery. Reference context only; never feeds nutrition computation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Upsert a device record (by Garmin device id)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Device record",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/devices.upsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (external_id already present)",
+                        "schema": {
+                            "$ref": "#/definitions/devices.Device"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/devices.Device"
+                        }
+                    },
+                    "400": {
+                        "description": "external_id_required | display_name_required | battery_pct_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Get a device record by id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/devices.Device"
+                        }
+                    },
+                    "404": {
+                        "description": "device_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/energy/availability": {
             "get": {
                 "security": [
@@ -859,6 +1075,190 @@ const docTemplate = `{
                 }
             }
         },
+        "/garmin/activity/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards a base64-wrapped FIT payload ` + "`" + `{filename, content_base64}` + "`" + ` to the bridge, which uploads it via Garmin. Writes FROM this API TO Garmin — explicit-request only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Upload a FIT activity to Garmin (opt-in write)",
+                "parameters": [
+                    {
+                        "description": "{ filename, content_base64 }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge upload response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/activity/{activity_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards to the bridge, which deletes the Garmin activity. An already-absent activity is a no-op success.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Delete a Garmin activity (idempotent)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin activity id",
+                        "name": "activity_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Rename a Garmin activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin activity id",
+                        "name": "activity_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "{ name }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "name_required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/garmin/activity/{activity_id}/export": {
             "get": {
                 "security": [
@@ -899,6 +1299,58 @@ const docTemplate = `{
                     },
                     "502": {
                         "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/activity/{activity_id}/gear": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Read the gear linked to a Garmin activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin activity id",
+                        "name": "activity_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge activity-gear response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1539,6 +1991,65 @@ const docTemplate = `{
                     },
                     "502": {
                         "description": "garmin_bridge_unreachable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/workout/{garmin_workout_id}/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The structured-workout analogue of the activity export: forwards to the bridge and returns ` + "`" + `{garmin_workout_id, format, filename, content_base64}` + "`" + ` verbatim. ` + "`" + `format` + "`" + ` defaults to ` + "`" + `fit` + "`" + `.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Download a structured workout's FIT blob (base64 envelope)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin workout object id",
+                        "name": "garmin_workout_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "fit (default) | …",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ garmin_workout_id, format, filename, content_base64 }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2235,6 +2746,154 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "override_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health-vitals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health-vitals"
+                ],
+                "summary": "List health-vitals snapshots in a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound YYYY-MM-DD; max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ health_vitals: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | window_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or full-replaces the health-vitals snapshot (blood pressure + all-day HR/stress) for a calendar date. \"POST every day you see\" — re-pushing the same date updates in place, omitted fields reset to NULL. Distinct from recovery-metrics; reference context only, never feeds nutrition computation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health-vitals"
+                ],
+                "summary": "Upsert a daily health-vitals snapshot (by date)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Health vitals (date required; metrics optional)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/healthvitals.Snapshot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UPDATE (date already present)",
+                        "schema": {
+                            "$ref": "#/definitions/healthvitals.Snapshot"
+                        }
+                    },
+                    "201": {
+                        "description": "INSERT",
+                        "schema": {
+                            "$ref": "#/definitions/healthvitals.Snapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | bp_systolic_invalid | bp_diastolic_invalid | bp_pulse_invalid | resting_hr_invalid | min_hr_invalid | max_hr_invalid | stress_avg_invalid | stress_max_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health-vitals/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health-vitals"
+                ],
+                "summary": "Get the health-vitals snapshot for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/healthvitals.Snapshot"
+                        }
+                    },
+                    "404": {
+                        "description": "health_vitals_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -7068,6 +7727,66 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "achievements.Achievement": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "earned_at": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/achievements.Kind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "progress_pct": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "achievements.Kind": {
+            "type": "string",
+            "enum": [
+                "badge",
+                "challenge"
+            ],
+            "x-enum-varnames": [
+                "KindBadge",
+                "KindChallenge"
+            ]
+        },
+        "achievements.upsertRequest": {
+            "type": "object",
+            "properties": {
+                "earned_at": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "progress_pct": {
+                    "type": "number"
+                }
+            }
+        },
         "athleteconfig.AthleteConfig": {
             "type": "object",
             "properties": {
@@ -7611,6 +8330,61 @@ const docTemplate = `{
                 }
             }
         },
+        "devices.Device": {
+            "type": "object",
+            "properties": {
+                "battery_pct": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "firmware_version": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_sync_at": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "devices.upsertRequest": {
+            "type": "object",
+            "properties": {
+                "battery_pct": {
+                    "type": "number"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "firmware_version": {
+                    "type": "string"
+                },
+                "last_sync_at": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                }
+            }
+        },
         "energy.Availability": {
             "type": "object",
             "properties": {
@@ -7925,6 +8699,44 @@ const docTemplate = `{
                 },
                 "min": {
                     "type": "number"
+                }
+            }
+        },
+        "healthvitals.Snapshot": {
+            "type": "object",
+            "properties": {
+                "bp_diastolic": {
+                    "type": "integer"
+                },
+                "bp_pulse": {
+                    "type": "integer"
+                },
+                "bp_systolic": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "min_hr": {
+                    "type": "integer"
+                },
+                "resting_hr": {
+                    "type": "integer"
+                },
+                "stress_avg": {
+                    "type": "integer"
+                },
+                "stress_max": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

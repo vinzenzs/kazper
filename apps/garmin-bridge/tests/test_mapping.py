@@ -215,6 +215,63 @@ def test_athlete_config_empty_yields_none():
     assert mapping.map_athlete_config({"userprofile_settings": {"userData": {}}}) is None
 
 
+def test_devices_mapping_joins_last_used(raw_day):
+    devices = mapping.map_devices(raw_day)
+    by_id = {d["external_id"]: d for d in devices}
+
+    fenix = by_id["garmin-device-111"]
+    assert fenix["display_name"] == "Fenix 7"
+    assert fenix["model"] == "fenix7"
+    assert fenix["firmware_version"] == "19.20"
+    assert fenix["battery_pct"] == 86.4
+    assert fenix["last_sync_at"] == "2026-06-12T00:00:00Z"  # joined from last-used
+
+    hrm = by_id["garmin-device-222"]
+    assert hrm["display_name"] == "HRM-Pro"
+    assert "last_sync_at" not in hrm  # not the last-used device
+    assert "battery_pct" not in hrm
+
+
+def test_health_vitals_mapping(raw_day):
+    hv = mapping.map_health_vitals(raw_day, "2026-06-12")
+    assert hv == {
+        "date": "2026-06-12",
+        "bp_systolic": 118,
+        "bp_diastolic": 74,
+        "bp_pulse": 52,
+        "resting_hr": 48,
+        "min_hr": 42,
+        "max_hr": 171,
+        "stress_avg": 26,
+        "stress_max": 88,
+    }
+
+
+def test_health_vitals_empty_yields_none():
+    assert mapping.map_health_vitals({}, "2026-06-12") is None
+
+
+def test_achievements_mapping_namespaces_external_id(raw_day):
+    achs = mapping.map_achievements(raw_day)
+    by_id = {a["external_id"]: a for a in achs}
+
+    badge = by_id["badge:900"]
+    assert badge["kind"] == "badge"
+    assert badge["name"] == "100 Rides"
+    assert badge["earned_at"] == "2026-05-30T12:00:00Z"
+
+    challenge = by_id["challenge:ch-1"]
+    assert challenge["kind"] == "challenge"
+    assert challenge["name"] == "June Climb"
+    assert challenge["progress_pct"] == 80.0
+    assert "earned_at" not in challenge
+
+
+def test_misc_mirror_empty_when_absent():
+    assert mapping.map_devices({}) == []
+    assert mapping.map_achievements({}) == []
+
+
 def test_weight_mapping_grams_to_kg(raw_day):
     weights = mapping.map_weights(raw_day)
     assert len(weights) == 1

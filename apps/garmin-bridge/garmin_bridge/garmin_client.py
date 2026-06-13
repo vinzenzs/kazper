@@ -200,7 +200,69 @@ def fetch_day(api, date: str) -> dict[str, Any]:
     raw["personal_records"] = safe(
         "personal_records", lambda: api.get_personal_record()
     )
+
+    # Catch-all mirror (per add-garmin-misc-mirror): device inventory, daily
+    # health vitals (BP + all-day HR/stress), and earned badges/challenges. Each
+    # guarded — one bad fetch never aborts the day.
+    raw["devices"] = safe("devices", lambda: api.get_devices())
+    raw["device_last_used"] = safe("device_last_used", lambda: api.get_device_last_used())
+    raw["blood_pressure"] = safe("blood_pressure", lambda: api.get_blood_pressure(date, date))
+    raw["heart_rates"] = safe("heart_rates", lambda: api.get_heart_rates(date))
+    raw["all_day_stress"] = safe("all_day_stress", lambda: api.get_all_day_stress(date))
+    raw["earned_badges"] = safe("earned_badges", lambda: api.get_earned_badges())
+    raw["adhoc_challenges"] = safe("adhoc_challenges", lambda: api.get_adhoc_challenges(0, 20))
     return raw
+
+
+# --- activity-level control operations (per add-garmin-misc-mirror) -------
+
+
+def get_activity_gear(api, activity_id: str) -> Any:
+    """Read the gear (shoes/bike) Garmin links to an activity."""
+    return api.get_activity_gear(activity_id)
+
+
+def download_workout(api, garmin_workout_id: str) -> bytes:
+    """Download a structured workout's FIT file as raw bytes."""
+    return api.download_workout(garmin_workout_id)
+
+
+def upload_activity(api, filename: str, data: bytes) -> Any:
+    """Upload a FIT activity to Garmin. garminconnect takes a file PATH, so the
+    decoded bytes are written to a short-lived temp file with the supplied name's
+    suffix and removed after the upload."""
+    import os
+    import tempfile
+
+    suffix = os.path.splitext(filename or "")[1] or ".fit"
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    try:
+        tmp.write(data)
+        tmp.close()
+        return api.upload_activity(tmp.name)
+    finally:
+        try:
+            os.remove(tmp.name)
+        except OSError:  # pragma: no cover - cleanup best-effort
+            pass
+
+
+def set_activity_name(api, activity_id: str, name: str) -> Any:
+    """Rename a Garmin activity."""
+    return api.set_activity_name(activity_id, name)
+
+
+def delete_activity(api, activity_id: str) -> bool:
+    """Delete a Garmin activity. Idempotent: a 404 / already-absent is no-op
+    success (returns False), matching delete_workout/unschedule_workout."""
+    try:
+        api.delete_activity(activity_id)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        if "404" in str(exc) or "not found" in str(exc).lower():
+            logger.info("activity %s already absent; treating as no-op", activity_id)
+            return False
+        raise
 
 
 def _user_profile_number(api) -> Any:

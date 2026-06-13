@@ -53,6 +53,15 @@ class HydrationRequest(BaseModel):
     date: str
 
 
+class UploadActivityRequest(BaseModel):
+    filename: str
+    content_base64: str
+
+
+class RenameActivityRequest(BaseModel):
+    name: str
+
+
 def _today(tz: str) -> str:
     return datetime.now(ZoneInfo(tz)).strftime("%Y-%m-%d")
 
@@ -325,6 +334,104 @@ def create_app(
                 "content_base64": content_b64,
             },
         )
+
+    # --- activity-level control operations (add-garmin-misc-mirror) -----
+
+    @app.get("/activity/{activity_id}/gear")
+    def activity_gear(activity_id: str) -> JSONResponse:
+        """Read the gear Garmin links to an activity, verbatim."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            result = gc.get_activity_gear(api, activity_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("activity gear read failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content=result)
+
+    @app.get("/workout/{garmin_workout_id}/download")
+    def download_workout(garmin_workout_id: str, format: str = "fit") -> JSONResponse:
+        """Download a structured workout's FIT file as a base64 envelope."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            data = gc.download_workout(api, garmin_workout_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("download workout failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        fmt = (format or "fit").strip().lower()
+        content_b64 = base64.b64encode(data or b"").decode("ascii")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "garmin_workout_id": garmin_workout_id,
+                "format": fmt,
+                "filename": f"{garmin_workout_id}.{fmt}",
+                "content_base64": content_b64,
+            },
+        )
+
+    @app.post("/activity/upload")
+    def upload_activity(req: UploadActivityRequest) -> JSONResponse:
+        """Upload a base64-wrapped FIT activity to Garmin (opt-in write)."""
+        try:
+            data = base64.b64decode(req.content_base64)
+        except Exception:  # noqa: BLE001
+            return JSONResponse(status_code=400, content={"error": "invalid_base64"})
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            result = gc.upload_activity(api, req.filename, data)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("upload activity failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"uploaded": True, "result": result})
+
+    @app.patch("/activity/{activity_id}")
+    def rename_activity(activity_id: str, req: RenameActivityRequest) -> JSONResponse:
+        """Rename a Garmin activity."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            gc.set_activity_name(api, activity_id, req.name)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("rename activity failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"renamed": True, "name": req.name})
+
+    @app.delete("/activity/{activity_id}")
+    def delete_activity(activity_id: str) -> JSONResponse:
+        """Delete a Garmin activity (idempotent: already-absent is a no-op)."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            deleted = gc.delete_activity(api, activity_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("delete activity failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        if deleted:
+            return JSONResponse(status_code=200, content={"deleted": True})
+        return JSONResponse(status_code=200, content={"deleted": False, "already_absent": True})
 
     return app
 

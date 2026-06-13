@@ -89,9 +89,12 @@ type bridgeStub struct {
 	mu             sync.Mutex
 	createCalls    int
 	schedCalls     int
-	unschedIDs     []string
-	deleteWorkouts []string
-	hydrationBody  string
+	unschedIDs       []string
+	deleteWorkouts   []string
+	hydrationBody    string
+	uploadBody       string
+	renameBody       string
+	deleteActivities []string
 }
 
 func newBridgeStub(t *testing.T) *bridgeStub {
@@ -124,8 +127,23 @@ func newBridgeStub(t *testing.T) *bridgeStub {
 			body, _ := io.ReadAll(r.Body)
 			b.hydrationBody = string(body)
 			_, _ = io.WriteString(w, `{"pushed":true}`)
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/activity/"):
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/export"):
 			_, _ = io.WriteString(w, `{"activity_id":"act-1","format":"`+r.URL.Query().Get("format")+`","content_base64":"Rk9P"}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/gear"):
+			_, _ = io.WriteString(w, `{"gear":[{"uuid":"gear-shoes-1"}]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/download"):
+			_, _ = io.WriteString(w, `{"garmin_workout_id":"gw-1","format":"`+r.URL.Query().Get("format")+`","content_base64":"V09SS09VVA=="}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/activity/upload":
+			body, _ := io.ReadAll(r.Body)
+			b.uploadBody = string(body)
+			_, _ = io.WriteString(w, `{"uploaded":true}`)
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/activity/"):
+			body, _ := io.ReadAll(r.Body)
+			b.renameBody = string(body)
+			_, _ = io.WriteString(w, `{"renamed":true}`)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/activity/"):
+			b.deleteActivities = append(b.deleteActivities, strings.TrimPrefix(r.URL.Path, "/activity/"))
+			_, _ = io.WriteString(w, `{"deleted":true}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -375,6 +393,72 @@ func TestGarminExportActivity_Passthrough(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"content_base64":"Rk9P"`)
 	assert.Contains(t, rec.Body.String(), `"format":"gpx"`)
+}
+
+// ----- activity-level control operations (add-garmin-misc-mirror) -----
+
+func TestActivityGear_Passthrough(t *testing.T) {
+	bridge := newBridgeStub(t)
+	r := newEngine(bridge.server.URL, newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+	rec := req(t, r, http.MethodGet, "/garmin/activity/act-1/gear", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"gear-shoes-1"`)
+}
+
+func TestDownloadWorkout_Passthrough(t *testing.T) {
+	bridge := newBridgeStub(t)
+	r := newEngine(bridge.server.URL, newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+	rec := req(t, r, http.MethodGet, "/garmin/workout/gw-1/download?format=fit", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"content_base64":"V09SS09VVA=="`)
+	assert.Contains(t, rec.Body.String(), `"format":"fit"`)
+}
+
+func TestUploadActivity_Forwards(t *testing.T) {
+	bridge := newBridgeStub(t)
+	r := newEngine(bridge.server.URL, newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+	rec := req(t, r, http.MethodPost, "/garmin/activity/upload", `{"filename":"ride.fit","content_base64":"Rk9P"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"uploaded":true`)
+	assert.Contains(t, bridge.uploadBody, `"ride.fit"`)
+}
+
+func TestRenameActivity_ForwardsAndRequiresName(t *testing.T) {
+	bridge := newBridgeStub(t)
+	r := newEngine(bridge.server.URL, newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+
+	ok := req(t, r, http.MethodPatch, "/garmin/activity/act-1", `{"name":"Evening Z2 ride"}`)
+	require.Equal(t, http.StatusOK, ok.Code, ok.Body.String())
+	assert.Contains(t, ok.Body.String(), `"renamed":true`)
+	assert.Contains(t, bridge.renameBody, "Evening Z2 ride")
+
+	bad := req(t, r, http.MethodPatch, "/garmin/activity/act-1", `{}`)
+	require.Equal(t, http.StatusBadRequest, bad.Code)
+	assert.JSONEq(t, `{"error":"name_required"}`, bad.Body.String())
+}
+
+func TestDeleteActivity_Forwards(t *testing.T) {
+	bridge := newBridgeStub(t)
+	r := newEngine(bridge.server.URL, newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+	rec := req(t, r, http.MethodDelete, "/garmin/activity/act-1", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"deleted":true`)
+	assert.Equal(t, []string{"act-1"}, bridge.deleteActivities)
+}
+
+func TestActivityOps_DisabledWhenBridgeUnset(t *testing.T) {
+	r := newEngine("", newFakeWorkouts(), &fakeTemplates{}, &fakePlan{})
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodGet, "/garmin/activity/act-1/gear", ""},
+		{http.MethodGet, "/garmin/workout/gw-1/download", ""},
+		{http.MethodPost, "/garmin/activity/upload", `{"filename":"r.fit","content_base64":"Rk9P"}`},
+		{http.MethodPatch, "/garmin/activity/act-1", `{"name":"x"}`},
+		{http.MethodDelete, "/garmin/activity/act-1", ""},
+	} {
+		rec := req(t, r, tc.method, tc.path, tc.body)
+		assert.Equal(t, http.StatusServiceUnavailable, rec.Code, tc.path)
+		assert.Contains(t, rec.Body.String(), "garmin_disabled", tc.path)
+	}
 }
 
 func TestCalendar_PassesThrough(t *testing.T) {
