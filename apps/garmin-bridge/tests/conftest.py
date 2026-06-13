@@ -45,6 +45,7 @@ class FakeBackend:
         self._token = token
         self.put_calls: list[bytes] = []
         self.posts: list[tuple[str, dict]] = []
+        self.puts: list[tuple[str, dict]] = []
         self.responses: dict[str, FakeResponse] = {}
         self.closed = False
 
@@ -72,4 +73,8 @@ class FakeBackend:
     # capability writes
     def post_json(self, path: str, body: dict) -> FakeResponse:
         self.posts.append((path, body))
+        return self.responses.get(path, FakeResponse(200, {"results": []}))
+
+    def put_json(self, path: str, body: dict) -> FakeResponse:
+        self.puts.append((path, body))
         return self.responses.get(path, FakeResponse(200, {"results": []}))
