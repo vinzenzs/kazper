@@ -12,6 +12,7 @@ the blocking work never stalls the event loop.
 
 from __future__ import annotations
 
+import base64
 import logging
 from datetime import datetime
 from typing import Any
@@ -44,6 +45,11 @@ class CreateWorkoutRequest(BaseModel):
 
 class ScheduleRequest(BaseModel):
     garmin_workout_id: str
+    date: str
+
+
+class HydrationRequest(BaseModel):
+    value_ml: float
     date: str
 
 
@@ -225,6 +231,100 @@ def create_app(
         finally:
             backend.close()
         return JSONResponse(status_code=200, content=result)
+
+    # --- workout-library management + blob export (garmin-workout-library-mgmt)
+
+    @app.delete("/workouts/{garmin_workout_id}")
+    def delete_workout(garmin_workout_id: str) -> JSONResponse:
+        """Delete a structured workout OBJECT from the library (idempotent)."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            deleted = gc.delete_workout(api, garmin_workout_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("delete workout failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        if deleted:
+            return JSONResponse(status_code=200, content={"deleted": True})
+        return JSONResponse(status_code=200, content={"deleted": False, "already_absent": True})
+
+    @app.get("/workouts")
+    def list_workouts(start: int = 0, limit: int = 20) -> JSONResponse:
+        """List structured workouts in the Garmin library, verbatim."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            result = gc.get_workouts(api, start, limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("list workouts failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content=result)
+
+    @app.get("/workouts/{garmin_workout_id}")
+    def get_workout(garmin_workout_id: str) -> JSONResponse:
+        """Fetch one structured workout from the Garmin library, verbatim."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            result = gc.get_workout_by_id(api, garmin_workout_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("get workout failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content=result)
+
+    @app.post("/hydration")
+    def push_hydration(req: HydrationRequest) -> JSONResponse:
+        """Push a logged hydration value (ml) for a date TO Garmin (opt-in write)."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            gc.add_hydration_data(api, req.value_ml, req.date)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("push hydration failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        return JSONResponse(status_code=200, content={"pushed": True, "value_ml": req.value_ml, "date": req.date})
+
+    @app.get("/activity/{activity_id}/export")
+    def export_activity(activity_id: str, format: str = "fit") -> JSONResponse:
+        """Export an activity's file as a base64 blob inside a JSON envelope."""
+        pair, errResp = _with_api()
+        if errResp is not None:
+            return errResp
+        backend, api = pair
+        try:
+            data = gc.download_activity(api, activity_id, format)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("export activity failed: %s", exc)
+            return JSONResponse(status_code=502, content={"error": "garmin_error", "message": str(exc)})
+        finally:
+            backend.close()
+        fmt = (format or "fit").strip().lower()
+        content_b64 = base64.b64encode(data or b"").decode("ascii")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "activity_id": activity_id,
+                "format": fmt,
+                "filename": f"{activity_id}.{fmt}",
+                "content_base64": content_b64,
+            },
+        )
 
     return app
 

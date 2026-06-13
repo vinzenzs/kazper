@@ -22,7 +22,76 @@ def _gc_stub():
     stub.calls = {"unschedule": []}
     stub.unschedule_workout = lambda api, sid: stub.calls["unschedule"].append(sid)
     stub.get_calendar = lambda api, f, t: {"from": f, "to": t, "items": [{"date": f, "garminScheduleId": "s1"}]}
+    # workout-library management + export (garmin-workout-library-mgmt)
+    stub.calls["delete"] = []
+    stub.calls["hydration"] = []
+    stub.delete_workout = lambda api, wid: (stub.calls["delete"].append(wid), True)[1]
+    stub.get_workouts = lambda api, start, limit: {"workouts": [{"workoutId": 1}], "start": start, "limit": limit}
+    stub.get_workout_by_id = lambda api, wid: {"workoutId": wid, "name": "Library Workout"}
+    stub.add_hydration_data = lambda api, ml, date: stub.calls["hydration"].append((ml, date))
+    stub.download_activity = lambda api, aid, fmt: b"FITBYTES"
     return stub
+
+
+def test_delete_workout_returns_deleted(config):
+    gc = _gc_stub()
+    app = create_app(config, gc=gc, backend_factory=lambda: FakeBackend())
+    client = TestClient(app)
+    resp = client.delete("/workouts/gw-7")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": True}
+    assert gc.calls["delete"] == ["gw-7"]
+
+
+def test_delete_workout_already_absent(config):
+    gc = _gc_stub()
+    gc.delete_workout = lambda api, wid: False
+    app = create_app(config, gc=gc, backend_factory=lambda: FakeBackend())
+    client = TestClient(app)
+    resp = client.delete("/workouts/gw-gone")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": False, "already_absent": True}
+
+
+def test_list_and_get_workouts_passthrough(config):
+    app = create_app(config, gc=_gc_stub(), backend_factory=lambda: FakeBackend())
+    client = TestClient(app)
+    lst = client.get("/workouts", params={"start": 5, "limit": 3})
+    assert lst.status_code == 200
+    assert lst.json()["start"] == 5 and lst.json()["limit"] == 3
+    one = client.get("/workouts/gw-7")
+    assert one.status_code == 200
+    assert one.json()["workoutId"] == "gw-7"
+
+
+def test_push_hydration(config):
+    gc = _gc_stub()
+    app = create_app(config, gc=gc, backend_factory=lambda: FakeBackend())
+    client = TestClient(app)
+    resp = client.post("/hydration", json={"value_ml": 750.0, "date": "2026-06-13"})
+    assert resp.status_code == 200
+    assert resp.json()["pushed"] is True
+    assert gc.calls["hydration"] == [(750.0, "2026-06-13")]
+
+
+def test_export_activity_base64_envelope(config):
+    import base64
+
+    app = create_app(config, gc=_gc_stub(), backend_factory=lambda: FakeBackend())
+    client = TestClient(app)
+    resp = client.get("/activity/act-1/export")
+    assert resp.status_code == 200
+    env = resp.json()
+    assert env["activity_id"] == "act-1"
+    assert env["format"] == "fit"
+    assert env["filename"] == "act-1.fit"
+    assert base64.b64decode(env["content_base64"]) == b"FITBYTES"
+
+
+def test_export_activity_missing_token_409(config):
+    app = create_app(config, gc=_gc_stub(), backend_factory=lambda: FakeBackend(token=None))
+    client = TestClient(app)
+    assert client.get("/activity/act-1/export").status_code == 409
 
 
 def test_create_workout_returns_id(config):

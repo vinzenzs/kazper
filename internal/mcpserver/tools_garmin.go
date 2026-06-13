@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strconv"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -98,6 +99,78 @@ func handleGarminListScheduled(ctx context.Context, c *apiClient, args GarminLis
 	return toToolResult(status, resp, err)
 }
 
+// ----- workout-library management + blob export (garmin-workout-library-mgmt) -----
+
+type GarminDeleteWorkoutArgs struct {
+	WorkoutID      string `json:"workout_id" jsonschema:"the backend workout UUID whose Garmin library object should be deleted"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; derived when omitted"`
+}
+
+type GarminListWorkoutsArgs struct {
+	Start *int `json:"start,omitempty" jsonschema:"optional pagination start offset"`
+	Limit *int `json:"limit,omitempty" jsonschema:"optional pagination limit"`
+}
+
+type GarminGetWorkoutArgs struct {
+	GarminWorkoutID string `json:"garmin_workout_id" jsonschema:"the Garmin workout object id to fetch from the library"`
+}
+
+type GarminPushHydrationArgs struct {
+	ValueML        float64 `json:"value_ml" jsonschema:"the day's TOTAL hydration in millilitres (sets/replaces the day on Garmin, not a delta)"`
+	Date           string  `json:"date" jsonschema:"the calendar day YYYY-MM-DD to set hydration for"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key; derived when omitted"`
+}
+
+type GarminExportActivityArgs struct {
+	ActivityID string `json:"activity_id" jsonschema:"the Garmin activity id to export"`
+	Format     string `json:"format,omitempty" jsonschema:"fit (default) | gpx | tcx | kml | csv"`
+}
+
+func handleGarminDeleteWorkout(ctx context.Context, c *apiClient, args GarminDeleteWorkoutArgs) *mcp.CallToolResult {
+	key := effectiveIdempotencyKey(args.IdempotencyKey, "garmin_delete_workout", args)
+	status, resp, err := c.Delete(ctx, "/garmin/workout/"+url.PathEscape(args.WorkoutID), key)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminListWorkouts(ctx context.Context, c *apiClient, args GarminListWorkoutsArgs) *mcp.CallToolResult {
+	q := url.Values{}
+	if args.Start != nil {
+		q.Set("start", strconv.Itoa(*args.Start))
+	}
+	if args.Limit != nil {
+		q.Set("limit", strconv.Itoa(*args.Limit))
+	}
+	status, resp, err := c.Get(ctx, "/garmin/workouts", q)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminGetWorkout(ctx context.Context, c *apiClient, args GarminGetWorkoutArgs) *mcp.CallToolResult {
+	status, resp, err := c.Get(ctx, "/garmin/workout/"+url.PathEscape(args.GarminWorkoutID), nil)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminPushHydration(ctx context.Context, c *apiClient, args GarminPushHydrationArgs) *mcp.CallToolResult {
+	body, err := json.Marshal(struct {
+		ValueML float64 `json:"value_ml"`
+		Date    string  `json:"date"`
+	}{args.ValueML, args.Date})
+	if err != nil {
+		return toToolResult(0, nil, &transportError{inner: err})
+	}
+	key := effectiveIdempotencyKey(args.IdempotencyKey, "garmin_push_hydration", args)
+	status, resp, err := c.Post(ctx, "/garmin/hydration", nil, body, key)
+	return toToolResult(status, resp, err)
+}
+
+func handleGarminExportActivity(ctx context.Context, c *apiClient, args GarminExportActivityArgs) *mcp.CallToolResult {
+	q := url.Values{}
+	if args.Format != "" {
+		q.Set("format", args.Format)
+	}
+	status, resp, err := c.Get(ctx, "/garmin/activity/"+url.PathEscape(args.ActivityID)+"/export", q)
+	return toToolResult(status, resp, err)
+}
+
 func registerGarminTools(server *mcp.Server, c *apiClient) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "garmin_login",
@@ -131,8 +204,10 @@ func registerGarminTools(server *mcp.Server, c *apiClient) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "garmin_unschedule_workout",
-		Description: "Remove a workout from the Garmin calendar and clear its stored Garmin ids. No-op success if it " +
-			"was never scheduled.",
+		Description: "Remove a workout from the Garmin calendar AND delete its structured workout object from the " +
+			"library (the full teardown — closes the library-orphan leak), then clear its stored Garmin ids. No-op " +
+			"success if it was never scheduled. To delete only a stray library object (without touching a calendar " +
+			"entry), use garmin_delete_workout instead.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminUnscheduleWorkoutArgs) (*mcp.CallToolResult, any, error) {
 		return handleGarminUnscheduleWorkout(ctx, c, args), nil, nil
 	})
@@ -150,5 +225,48 @@ func registerGarminTools(server *mcp.Server, c *apiClient) {
 		Description: "List the workouts scheduled on the Garmin calendar in a date range, for reconciliation.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminListScheduledArgs) (*mcp.CallToolResult, any, error) {
 		return handleGarminListScheduled(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_delete_workout",
+		Description: "Delete a workout's structured object from the Garmin library (reconciliation cleanup for an " +
+			"orphan you found). Clears the stored garmin_workout_id but leaves any calendar entry — use " +
+			"garmin_unschedule_workout for the full teardown. Idempotent: success even if already gone.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminDeleteWorkoutArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminDeleteWorkout(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_list_workouts",
+		Description: "List the structured workouts in the Garmin library (optional start/limit pagination). Use to " +
+			"reconcile what's actually on the watch against what the plan thinks is scheduled.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminListWorkoutsArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminListWorkouts(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "garmin_get_workout",
+		Description: "Fetch one structured workout from the Garmin library by its Garmin workout object id.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminGetWorkoutArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminGetWorkout(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_push_hydration",
+		Description: "Push logged hydration back TO Garmin for a date — the ONLY write from this system to Garmin, " +
+			"and opt-in: invoke it deliberately (e.g. \"sync today's water to my watch\"); nothing pushes " +
+			"automatically. value_ml is the day's TOTAL (Garmin sets/replaces the day, it does not append), so read " +
+			"the day's total from the hydration summary first and pass that.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminPushHydrationArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminPushHydration(ctx, c, args), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "garmin_export_activity",
+		Description: "Export an activity's file (FIT by default; gpx/tcx/kml/csv) as a base64 blob inside a JSON " +
+			"envelope {activity_id, format, filename, content_base64}. Decode content_base64 to save the file. " +
+			"Read-only; upload is not supported.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args GarminExportActivityArgs) (*mcp.CallToolResult, any, error) {
+		return handleGarminExportActivity(ctx, c, args), nil, nil
 	})
 }

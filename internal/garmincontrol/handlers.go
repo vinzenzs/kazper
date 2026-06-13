@@ -67,6 +67,13 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.DELETE("/garmin/schedule/workout/:id", h.unscheduleWorkout)
 	rg.POST("/garmin/schedule/plan", h.schedulePlan)
 	rg.GET("/garmin/calendar", h.calendar)
+
+	// Workout-library management + blob export (garmin-workout-library-mgmt).
+	rg.DELETE("/garmin/workout/:id", h.deleteWorkoutObject)
+	rg.GET("/garmin/workouts", h.listGarminWorkouts)
+	rg.GET("/garmin/workout/:id", h.getGarminWorkout)
+	rg.POST("/garmin/hydration", h.pushHydration)
+	rg.GET("/garmin/activity/:activity_id/export", h.exportActivity)
 }
 
 func (h *Handlers) enabled() bool { return h.bridgeURL != "" }

@@ -852,6 +852,65 @@
                 }
             }
         },
+        "/garmin/activity/{activity_id}/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards to the bridge, returning `{activity_id, format, filename, content_base64}` verbatim — the file bytes base64-encoded in JSON. `format` defaults to `fit`. Upload is out of scope.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Export an activity's FIT/GPX/TCX file (base64 envelope)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin activity id",
+                        "name": "activity_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "fit (default) | gpx | tcx | kml | csv",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ activity_id, format, filename, content_base64 }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/garmin/calendar": {
             "get": {
                 "security": [
@@ -892,6 +951,65 @@
                     },
                     "502": {
                         "description": "garmin_bridge_unreachable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/hydration": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards `{value_ml, date}` to the bridge, which sets/replaces that day's hydration on Garmin. The only write FROM us TO Garmin — invoked deliberately, nothing pushes automatically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Push logged hydration back to Garmin (opt-in write)",
+                "parameters": [
+                    {
+                        "description": "{ value_ml, date }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1166,7 +1284,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes the scheduled entry via the bridge and clears the stored Garmin ids. No-op success when the workout was never scheduled.",
+                "description": "Deletes the scheduled calendar entry AND the structured workout object via the bridge (closing the library-orphan leak), then clears both stored Garmin ids. No-op success when the workout was never scheduled.",
                 "produces": [
                     "application/json"
                 ],
@@ -1362,6 +1480,177 @@
                     },
                     "404": {
                         "description": "garmin_token_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/workout/{garmin_workout_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Read one Garmin library workout through the bridge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Garmin workout object id",
+                        "name": "garmin_workout_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge workout response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/workout/{workout_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Looks up the workout, deletes its stored Garmin workout OBJECT from the library via the bridge, and clears `garmin_workout_id` (leaving `garmin_schedule_id` — deleting the object does not remove a still-present calendar entry; use unschedule for the full teardown). Idempotent: no-op success when no object id is stored or the object is already gone.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Delete a workout's structured Garmin object (reconciliation reap)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "workout_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ deleted, workout }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/workouts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "List the Garmin workout library through the bridge",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Pagination start offset (passthrough)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination limit (passthrough)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the bridge workout-library response verbatim",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

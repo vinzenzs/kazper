@@ -293,6 +293,63 @@ def get_calendar(api, from_date: str, to_date: str) -> dict[str, Any]:
     return {"from": from_date, "to": to_date, "items": items}
 
 
+# --- workout-library management + blob export (per garmin-workout-library-mgmt)
+
+
+def delete_workout(api, workout_id: str) -> bool:
+    """Delete a structured workout OBJECT from the Garmin library by its id.
+
+    Returns True when an object was deleted, False when it was already absent
+    (a 404 is treated as no-op success, mirroring unschedule_workout) so the
+    re-push and unschedule reap paths stay safe to retry.
+    """
+    try:
+        _garth(api).connectapi(f"/workout-service/workout/{workout_id}", method="DELETE")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        if "404" in str(exc) or "not found" in str(exc).lower():
+            logger.info("workout object %s already absent; treating as no-op", workout_id)
+            return False
+        raise
+
+
+def get_workouts(api, start: int = 0, limit: int = 20) -> Any:
+    """List structured workouts in the Garmin library (paginated)."""
+    return _garth(api).connectapi(
+        f"/workout-service/workouts?start={int(start)}&limit={int(limit)}"
+    )
+
+
+def get_workout_by_id(api, workout_id: str) -> Any:
+    """Fetch one structured workout object from the Garmin library."""
+    return _garth(api).connectapi(f"/workout-service/workout/{workout_id}")
+
+
+def add_hydration_data(api, value_ml: float, date: str) -> Any:
+    """Push a hydration value (ml) for a date TO Garmin (set/replace the day)."""
+    return api.add_hydration_data(value_in_ml=value_ml, cdate=date)
+
+
+def download_activity(api, activity_id: str, fmt: str = "fit") -> bytes:
+    """Download an activity's file (FIT/GPX/TCX/...) as raw bytes.
+
+    ``fmt`` is a case-insensitive string; "fit"/"original" map to Garmin's
+    ORIGINAL (the uploaded FIT). Unknown formats fall back to ORIGINAL.
+    """
+    from garminconnect import Garmin
+
+    fmt_map = {
+        "fit": Garmin.ActivityDownloadFormat.ORIGINAL,
+        "original": Garmin.ActivityDownloadFormat.ORIGINAL,
+        "tcx": Garmin.ActivityDownloadFormat.TCX,
+        "gpx": Garmin.ActivityDownloadFormat.GPX,
+        "kml": Garmin.ActivityDownloadFormat.KML,
+        "csv": Garmin.ActivityDownloadFormat.CSV,
+    }
+    dl_fmt = fmt_map.get((fmt or "fit").strip().lower(), Garmin.ActivityDownloadFormat.ORIGINAL)
+    return api.download_activity(activity_id, dl_fmt=dl_fmt)
+
+
 def _classify(exc: Exception) -> LoginError:
     """Map a garminconnect exception to a typed, log-safe LoginError.
 

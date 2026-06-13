@@ -88,7 +88,7 @@ func (h *Handlers) scheduleWorkout(c *gin.Context) {
 
 // unscheduleWorkout godoc
 // @Summary      Remove a workout from the Garmin calendar
-// @Description  Deletes the scheduled entry via the bridge and clears the stored Garmin ids. No-op success when the workout was never scheduled.
+// @Description  Deletes the scheduled calendar entry AND the structured workout object via the bridge (closing the library-orphan leak), then clears both stored Garmin ids. No-op success when the workout was never scheduled.
 // @Tags         garmin
 // @Produce      json
 // @Param        id  path  string  true  "Workout UUID"
@@ -122,6 +122,15 @@ func (h *Handlers) unscheduleWorkout(c *gin.Context) {
 	if err := h.bridgeUnschedule(ctx, *w.GarminScheduleID); err != nil {
 		h.respondScheduleErr(c, err)
 		return
+	}
+	// Reap the workout object too, so it doesn't orphan in the library. A
+	// failed object delete leaves both ids intact so a retry re-attempts it
+	// (the prior unschedule's already-gone entry is a no-op).
+	if w.GarminWorkoutID != nil {
+		if err := h.bridgeDeleteWorkout(ctx, *w.GarminWorkoutID); err != nil {
+			h.respondScheduleErr(c, err)
+			return
+		}
 	}
 	if err := h.workoutsRepo.SetGarminIDs(ctx, id, nil, nil); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
@@ -262,6 +271,14 @@ func (h *Handlers) pushOne(ctx context.Context, id uuid.UUID) (*workouts.Workout
 			return nil, err
 		}
 	}
+	// And delete the prior workout OBJECT — unscheduling only removes the
+	// calendar entry; without this the object orphans in the Garmin library on
+	// every re-push. Order: unschedule old entry → delete old object → create.
+	if w.GarminWorkoutID != nil {
+		if err := h.bridgeDeleteWorkout(ctx, *w.GarminWorkoutID); err != nil {
+			return nil, err
+		}
+	}
 	garminWorkoutID, err := h.bridgeCreateWorkout(ctx, tmpl.Sport, tmpl.Name, prog.Steps)
 	if err != nil {
 		return nil, err
@@ -303,6 +320,13 @@ func (h *Handlers) bridgeSchedule(ctx context.Context, garminWorkoutID, date str
 
 func (h *Handlers) bridgeUnschedule(ctx context.Context, scheduleID string) error {
 	return h.bridgeJSON(ctx, http.MethodDelete, "/schedule?schedule_id="+url.QueryEscape(scheduleID), nil, nil)
+}
+
+// bridgeDeleteWorkout deletes a structured workout OBJECT from the Garmin
+// library by its id. Idempotent: the bridge returns 2xx for an already-absent
+// object (404 → no-op), so re-push and unschedule reaps stay safe to retry.
+func (h *Handlers) bridgeDeleteWorkout(ctx context.Context, garminWorkoutID string) error {
+	return h.bridgeJSON(ctx, http.MethodDelete, "/workouts/"+url.PathEscape(garminWorkoutID), nil, nil)
 }
 
 // bridgeJSON issues a request to the bridge and decodes a JSON response into out

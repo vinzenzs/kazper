@@ -87,3 +87,76 @@ def test_classify_maps_known_errors():
     assert gc._classify(Exception("Too many login attempts")).code == "locked_out"
     assert gc._classify(Exception("401 bad credential")).code == "bad_credentials"
     assert gc._classify(Exception("weird")).code == "login_failed"
+
+
+# --- workout-library management + export (garmin-workout-library-mgmt) ----
+
+
+class RecordingGarth:
+    """A garth stub that records connectapi calls and can raise a 404."""
+
+    def __init__(self, raise_404_on_delete=False):
+        self.calls: list[tuple[str, str]] = []
+        self._raise_404 = raise_404_on_delete
+
+    def connectapi(self, path, method="GET", **kwargs):
+        self.calls.append((method, path))
+        if method == "DELETE" and self._raise_404:
+            raise Exception("Error 404: not found")
+        if method == "GET" and "/workouts?" in path:
+            return {"workouts": [{"workoutId": 1}]}
+        if method == "GET":
+            return {"workoutId": 99}
+        return None
+
+
+class ApiWithGarth:
+    def __init__(self, garth):
+        self.client = garth
+        self.hydration_calls: list[dict] = []
+        self.download_calls: list[tuple] = []
+
+    def add_hydration_data(self, value_in_ml, timestamp=None, cdate=None):
+        self.hydration_calls.append({"value_in_ml": value_in_ml, "cdate": cdate})
+        return {"ok": True}
+
+    def download_activity(self, activity_id, dl_fmt=None):
+        self.download_calls.append((activity_id, dl_fmt))
+        return b"FITBYTES"
+
+
+def test_delete_workout_issues_delete():
+    api = ApiWithGarth(RecordingGarth())
+    assert gc.delete_workout(api, "gw-1") is True
+    assert api.client.calls == [("DELETE", "/workout-service/workout/gw-1")]
+
+
+def test_delete_workout_404_is_noop():
+    api = ApiWithGarth(RecordingGarth(raise_404_on_delete=True))
+    assert gc.delete_workout(api, "gw-gone") is False
+
+
+def test_get_workouts_and_by_id_paths():
+    api = ApiWithGarth(RecordingGarth())
+    assert gc.get_workouts(api, start=10, limit=5) == {"workouts": [{"workoutId": 1}]}
+    assert gc.get_workout_by_id(api, "gw-7") == {"workoutId": 99}
+    assert ("GET", "/workout-service/workouts?start=10&limit=5") in api.client.calls
+    assert ("GET", "/workout-service/workout/gw-7") in api.client.calls
+
+
+def test_add_hydration_data_passes_value_and_date():
+    api = ApiWithGarth(RecordingGarth())
+    gc.add_hydration_data(api, 750.0, "2026-06-13")
+    assert api.hydration_calls == [{"value_in_ml": 750.0, "cdate": "2026-06-13"}]
+
+
+def test_download_activity_maps_format():
+    from garminconnect import Garmin
+
+    api = ApiWithGarth(RecordingGarth())
+    data = gc.download_activity(api, "act-1", "fit")
+    assert data == b"FITBYTES"
+    assert api.download_calls[0][0] == "act-1"
+    assert api.download_calls[0][1] == Garmin.ActivityDownloadFormat.ORIGINAL
+    gc.download_activity(api, "act-1", "gpx")
+    assert api.download_calls[1][1] == Garmin.ActivityDownloadFormat.GPX

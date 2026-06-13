@@ -85,11 +85,13 @@ func (f *fakePlan) EffectiveProgram(_ context.Context, workoutID uuid.UUID) (*tr
 // --- stub bridge ---
 
 type bridgeStub struct {
-	server      *httptest.Server
-	mu          sync.Mutex
-	createCalls int
-	schedCalls  int
-	unschedIDs  []string
+	server         *httptest.Server
+	mu             sync.Mutex
+	createCalls    int
+	schedCalls     int
+	unschedIDs     []string
+	deleteWorkouts []string
+	hydrationBody  string
 }
 
 func newBridgeStub(t *testing.T) *bridgeStub {
@@ -111,6 +113,19 @@ func newBridgeStub(t *testing.T) *bridgeStub {
 			_, _ = io.WriteString(w, `{"unscheduled":true}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/calendar":
 			_, _ = io.WriteString(w, `{"from":"`+r.URL.Query().Get("from")+`","items":[{"garminScheduleId":"gs-1"}]}`)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workouts/"):
+			b.deleteWorkouts = append(b.deleteWorkouts, strings.TrimPrefix(r.URL.Path, "/workouts/"))
+			_, _ = io.WriteString(w, `{"deleted":true}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/workouts":
+			_, _ = io.WriteString(w, `{"workouts":[{"workoutId":"gw-1"}],"start":"`+r.URL.Query().Get("start")+`"}`)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workouts/"):
+			_, _ = io.WriteString(w, `{"workoutId":"`+strings.TrimPrefix(r.URL.Path, "/workouts/")+`"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/hydration":
+			body, _ := io.ReadAll(r.Body)
+			b.hydrationBody = string(body)
+			_, _ = io.WriteString(w, `{"pushed":true}`)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/activity/"):
+			_, _ = io.WriteString(w, `{"activity_id":"act-1","format":"`+r.URL.Query().Get("format")+`","content_base64":"Rk9P"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -185,6 +200,7 @@ func TestRePush_UnschedulesPriorFirst(t *testing.T) {
 	rec := req(t, r, http.MethodPost, "/garmin/schedule/workout", `{"workout_id":"`+w.ID.String()+`"}`)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, []string{"gs-old"}, bridge.unschedIDs, "prior entry unscheduled before re-create")
+	assert.Equal(t, []string{"gw-old"}, bridge.deleteWorkouts, "prior object reaped before re-create (no orphan)")
 	assert.Equal(t, "gs-1", *fw.rows[w.ID].GarminScheduleID, "ids updated to the new entry")
 }
 
@@ -200,6 +216,7 @@ func TestUnschedule_ClearsIDs(t *testing.T) {
 	rec := req(t, r, http.MethodDelete, "/garmin/schedule/workout/"+w.ID.String(), "")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, []string{"gs-x"}, bridge.unschedIDs)
+	assert.Equal(t, []string{"gw-x"}, bridge.deleteWorkouts, "unschedule also reaps the workout object")
 	assert.Nil(t, fw.rows[w.ID].GarminScheduleID)
 	assert.Nil(t, fw.rows[w.ID].GarminWorkoutID)
 }
@@ -269,11 +286,95 @@ func TestScheduling_DisabledWhenBridgeUnset(t *testing.T) {
 		{http.MethodPost, "/garmin/schedule/plan", `{"plan_id":"` + uuid.New().String() + `","scope":"all"}`},
 		{http.MethodGet, "/garmin/calendar?from=2026-06-01&to=2026-06-30", ""},
 		{http.MethodDelete, "/garmin/schedule/workout/" + uuid.New().String(), ""},
+		{http.MethodDelete, "/garmin/workout/" + uuid.New().String(), ""},
+		{http.MethodGet, "/garmin/workouts", ""},
+		{http.MethodGet, "/garmin/workout/gw-1", ""},
+		{http.MethodPost, "/garmin/hydration", `{"value_ml":750,"date":"2026-06-13"}`},
+		{http.MethodGet, "/garmin/activity/act-1/export", ""},
 	} {
 		rec := req(t, r, tc.method, tc.path, tc.body)
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code, tc.path)
 		assert.Contains(t, rec.Body.String(), "garmin_disabled", tc.path)
 	}
+}
+
+// ----- workout-library management + export (garmin-workout-library-mgmt) -----
+
+func TestDeleteWorkoutObject_ReapsAndClearsWorkoutID(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	w := plannedWorkout(uuid.New())
+	gw, gs := "gw-keep", "gs-keep"
+	w.GarminWorkoutID, w.GarminScheduleID = &gw, &gs
+	fw.rows[w.ID] = w
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+
+	rec := req(t, r, http.MethodDelete, "/garmin/workout/"+w.ID.String(), "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, []string{"gw-keep"}, bridge.deleteWorkouts)
+	assert.Nil(t, fw.rows[w.ID].GarminWorkoutID, "workout id cleared")
+	require.NotNil(t, fw.rows[w.ID].GarminScheduleID, "schedule id left intact (object delete ≠ unschedule)")
+	assert.Equal(t, "gs-keep", *fw.rows[w.ID].GarminScheduleID)
+}
+
+func TestDeleteWorkoutObject_NoopWhenNoID(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	w := plannedWorkout(uuid.New())
+	fw.rows[w.ID] = w
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+
+	rec := req(t, r, http.MethodDelete, "/garmin/workout/"+w.ID.String(), "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"deleted":false`)
+	assert.Empty(t, bridge.deleteWorkouts, "no object to delete → no bridge call")
+}
+
+func TestDeleteWorkoutObject_UnknownWorkout404(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+	rec := req(t, r, http.MethodDelete, "/garmin/workout/"+uuid.New().String(), "")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "workout_not_found")
+}
+
+func TestGarminLibrary_ListAndGetPassthrough(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+
+	lst := req(t, r, http.MethodGet, "/garmin/workouts?start=5&limit=3", "")
+	require.Equal(t, http.StatusOK, lst.Code, lst.Body.String())
+	assert.Contains(t, lst.Body.String(), `"workoutId":"gw-1"`)
+	assert.Contains(t, lst.Body.String(), `"start":"5"`)
+
+	one := req(t, r, http.MethodGet, "/garmin/workout/gw-42", "")
+	require.Equal(t, http.StatusOK, one.Code, one.Body.String())
+	assert.Contains(t, one.Body.String(), `"workoutId":"gw-42"`)
+}
+
+func TestGarminPushHydration_Forwards(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+
+	rec := req(t, r, http.MethodPost, "/garmin/hydration", `{"value_ml":750,"date":"2026-06-13"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"pushed":true`)
+	assert.Contains(t, bridge.hydrationBody, `"value_ml":750`)
+	assert.Contains(t, bridge.hydrationBody, `"date":"2026-06-13"`)
+}
+
+func TestGarminExportActivity_Passthrough(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{})
+
+	rec := req(t, r, http.MethodGet, "/garmin/activity/act-1/export?format=gpx", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"content_base64":"Rk9P"`)
+	assert.Contains(t, rec.Body.String(), `"format":"gpx"`)
 }
 
 func TestCalendar_PassesThrough(t *testing.T) {

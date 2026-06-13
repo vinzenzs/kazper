@@ -3012,6 +3012,46 @@ paths:
       summary: Get the fitness snapshot for a date
       tags:
       - fitness-metrics
+  /garmin/activity/{activity_id}/export:
+    get:
+      description: Forwards to the bridge, returning `{activity_id, format, filename,
+        content_base64}` verbatim — the file bytes base64-encoded in JSON. `format`
+        defaults to `fit`. Upload is out of scope.
+      parameters:
+      - description: Garmin activity id
+        in: path
+        name: activity_id
+        required: true
+        type: string
+      - description: fit (default) | gpx | tcx | kml | csv
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ activity_id, format, filename, content_base64 }'
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export an activity's FIT/GPX/TCX file (base64 envelope)
+      tags:
+      - garmin
   /garmin/calendar:
     get:
       parameters:
@@ -3048,6 +3088,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Read the Garmin calendar through the bridge
+      tags:
+      - garmin
+  /garmin/hydration:
+    post:
+      consumes:
+      - application/json
+      description: Forwards `{value_ml, date}` to the bridge, which sets/replaces
+        that day's hydration on Garmin. The only write FROM us TO Garmin — invoked
+        deliberately, nothing pushes automatically.
+      parameters:
+      - description: '{ value_ml, date }'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Push logged hydration back to Garmin (opt-in write)
       tags:
       - garmin
   /garmin/login:
@@ -3222,8 +3302,9 @@ paths:
       - garmin
   /garmin/schedule/workout/{id}:
     delete:
-      description: Deletes the scheduled entry via the bridge and clears the stored
-        Garmin ids. No-op success when the workout was never scheduled.
+      description: Deletes the scheduled calendar entry AND the structured workout
+        object via the bridge (closing the library-orphan leak), then clears both
+        stored Garmin ids. No-op success when the workout was never scheduled.
       parameters:
       - description: Workout UUID
         in: path
@@ -3368,6 +3449,119 @@ paths:
       security:
       - BearerAuth: []
       summary: Store the garmin-bridge auth token blob
+      tags:
+      - garmin
+  /garmin/workout/{garmin_workout_id}:
+    get:
+      parameters:
+      - description: Garmin workout object id
+        in: path
+        name: garmin_workout_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge workout response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read one Garmin library workout through the bridge
+      tags:
+      - garmin
+  /garmin/workout/{workout_id}:
+    delete:
+      description: 'Looks up the workout, deletes its stored Garmin workout OBJECT
+        from the library via the bridge, and clears `garmin_workout_id` (leaving `garmin_schedule_id`
+        — deleting the object does not remove a still-present calendar entry; use
+        unschedule for the full teardown). Idempotent: no-op success when no object
+        id is stored or the object is already gone.'
+      parameters:
+      - description: Workout UUID
+        in: path
+        name: workout_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ deleted, workout }'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: workout_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a workout's structured Garmin object (reconciliation reap)
+      tags:
+      - garmin
+  /garmin/workouts:
+    get:
+      parameters:
+      - description: Pagination start offset (passthrough)
+        in: query
+        name: start
+        type: integer
+      - description: Pagination limit (passthrough)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: the bridge workout-library response verbatim
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: garmin_bridge_unreachable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List the Garmin workout library through the bridge
       tags:
       - garmin
   /gear:
