@@ -1,11 +1,21 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-12 by the `roadmap` skill._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-13 by the `roadmap` skill ("mirror everything" Garmin arc complete, 8/8; queue empty)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-13 | add-garmin-history-backfill | Bounded, paced, idempotent `POST /sync/backfill` + `garmin_backfill` MCP tool replaying the enriched sync over a historical range; houses the arc's Garmin call-budget pacing. | Vinzenz Stadtmueller | [`e97e942`](https://github.com/vinzenzs/nutrition-api/commit/e97e942) |
+| 2026-06-13 | add-garmin-misc-mirror | Catch-all tail: `devices`, `health-vitals` (BP + all-day HR/stress), `achievements`, plus activity ops (gear-link, export, FIT upload, rename/delete). | Vinzenz Stadtmueller | [`0c7cb0e`](https://github.com/vinzenzs/nutrition-api/commit/0c7cb0e) |
+| 2026-06-13 | garmin-workout-library-mgmt | Garmin workout-library control plane; fixes the orphan-workout leak on unschedule/re-push; push-hydration-back + activity FIT-export tools. | Vinzenz Stadtmueller | [`630cebd`](https://github.com/vinzenzs/nutrition-api/commit/630cebd) |
+| 2026-06-13 | add-garmin-athlete-config | Singleton `athlete-config`: FTP / threshold HR & pace / max HR / HR-zone boundaries from the Garmin profile — makes workout-detail's power/zone data interpretable. | Vinzenz Stadtmueller | [`64e4629`](https://github.com/vinzenzs/nutrition-api/commit/64e4629) |
+| 2026-06-13 | add-garmin-gear-and-prs | Two inventory-shaped capabilities: `gear` (shoe/bike mileage + retirement) and `personal-records`. | Vinzenz Stadtmueller | [`e991134`](https://github.com/vinzenzs/nutrition-api/commit/e991134) |
+| 2026-06-12 | add-garmin-workout-detail | Mirror Garmin per-activity detail: time-in-HR-zone / elevation / normalized power columns, per-lap splits + strength sets as child tables, weather for sweat-rate; nested-write on `/workouts/bulk`. | Vinzenz Stadtmueller | [`6967118`](https://github.com/vinzenzs/nutrition-api/commit/6967118) |
+| 2026-06-12 | add-garmin-daily-energy | New `daily-summary` capability mapping Garmin TDEE (active/resting/total kcal, steps, floors, intensity minutes) as an EA context signal — Loucks formula untouched. | Vinzenz Stadtmueller | [`b740059`](https://github.com/vinzenzs/nutrition-api/commit/b740059) |
+| 2026-06-12 | extend-recovery-fitness | Additive columns on the recovery/fitness snapshots: SpO2, respiration, sleep stages, endurance/hill score, fitness age, `training_status`. | Vinzenz Stadtmueller | [`9d27c3c`](https://github.com/vinzenzs/nutrition-api/commit/9d27c3c) |
+| 2026-06-12 | fix-chat-tool-status-chips | Fix the companion chat tool chips: the `tool` SSE event carries the `tool_use` id, the app coalesces by it (one chip per call, running→done) and labels by tool name. | Vinzenz Stadtmueller | [`4c39f3c`](https://github.com/vinzenzs/nutrition-api/commit/4c39f3c) |
+| 2026-06-12 | add-workout-reconciliation | Merge a completed Garmin import into its matching planned workout (planned→completed in place, keeping the prescription), with `needs_link` + fulfill/unfulfill. | Vinzenz Stadtmueller | [`ccc2b08`](https://github.com/vinzenzs/nutrition-api/commit/ccc2b08) |
 | 2026-06-12 | add-companion-session-list | Flutter chat session-history screen — list, resume, and start conversations against the session-backed `/chat`. | Vinzenz Stadtmueller | [`c98f72d`](https://github.com/vinzenzs/nutrition-api/commit/c98f72d) |
 | 2026-06-12 | add-plan-slot-targets | Per-slot target overrides so one template progresses across the plan (e.g. a tempo run at 7:30→7:15→7:00); `GET /workouts/{id}/program` exposes resolved steps. | Vinzenz Stadtmueller | [`4d62851`](https://github.com/vinzenzs/nutrition-api/commit/4d62851) |
 | 2026-06-12 | add-chat-sessions | Make `/chat` stateful: conversations persist as resumable server-side sessions instead of every client carrying the full transcript. | Vinzenz Stadtmueller | [`1931ca4`](https://github.com/vinzenzs/nutrition-api/commit/1931ca4) |
@@ -56,9 +66,7 @@ _Generated from OpenSpec changes. Last refreshed: 2026-06-12 by the `roadmap` sk
 
 ## Planned
 
-| Change | Summary | Proposed by | Proposed |
-|---|---|---|---|
-| add-workout-reconciliation | Merge a completed Garmin import into its matching planned workout (planned→completed in place), with fulfill/unfulfill. | Vinzenz Stadtmueller | 2026-06-12 |
+_None — every proposed change has been implemented and archived (the "mirror everything" Garmin arc is complete, 8/8). New work starts with `/opsx:propose`._
 
 ---
 _To regenerate: ask Claude "update the roadmap"._
