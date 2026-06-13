@@ -4,11 +4,11 @@
 
 ### Requirement: The bridge refreshes the athlete physiology config each sync
 
-The bridge SHALL, on each daily sync, fetch the athlete's Garmin physiology configuration — FTP and thresholds from the user profile (`get_user_profile` / `get_userprofile_settings`) and HR-zone (and any power-zone) boundaries from `get_heart_rate_zones` — map them to the `athlete-config` shape, and write them to the backend via `PUT /athlete-config`. Because this configuration is slowly-changing physiology and NOT a date-keyed snapshot, the refresh is a single in-place singleton upsert (not one row per day): the same `PUT /athlete-config` is re-issued each sync and overwrites the prior config (Garmin is source-of-truth). Each config fetch SHALL be individually guarded by the existing `safe()` pattern so a failing, throttled, or account-unavailable Garmin endpoint yields absent config for that sync — never an aborted day. The mapper SHALL attach whatever fields are present and omit what is absent.
+The bridge SHALL, on each daily sync, fetch the athlete's Garmin physiology configuration — FTP, thresholds, max HR, and HR-zone (and any power-zone) boundaries — from the user-profile and user-settings payloads (`get_user_profile` / `get_userprofile_settings`, the source endpoints actually exposed by the Garmin client; the zone boundaries ride in the user-settings payload), map them to the `athlete-config` shape, and write them to the backend via `PUT /athlete-config`. Because this configuration is slowly-changing physiology and NOT a date-keyed snapshot, the refresh is a single in-place singleton upsert (not one row per day): the same `PUT /athlete-config` is re-issued each sync and overwrites the prior config (Garmin is source-of-truth). Each config fetch SHALL be individually guarded by the existing `safe()` pattern so a failing, throttled, or account-unavailable Garmin endpoint yields absent config for that sync — never an aborted day. The mapper SHALL attach whatever fields are present and omit what is absent.
 
 #### Scenario: Config is fetched, mapped, and written via the singleton PUT
 
-- **WHEN** a daily sync runs and Garmin's profile carries FTP and threshold HR and `get_heart_rate_zones` carries five HR-zone boundaries
+- **WHEN** a daily sync runs and Garmin's profile/settings payload carries FTP and threshold HR and five HR-zone boundaries
 - **THEN** the bridge maps them and issues `PUT /athlete-config` with `ftp_watts`, `threshold_hr`, and `hr_zone_1_max..hr_zone_5_max`
 - **AND** a field absent from Garmin's response is simply omitted from the request body
 
@@ -34,28 +34,41 @@ obtains a fresh access token without any interactive step, fetches the day's
 Garmin data, and writes it to the existing nutrition REST API under
 `GARMIN_API_TOKEN`. The mapping SHALL be: sleep/HRV/RHR/stress →
 `/recovery-metrics`; VO2max/training-load → `/fitness-metrics`; sweat loss →
-`/hydration-balance`; weigh-ins → `/weight`; activities → `/workouts`
-(`source = "garmin"`); and the athlete's physiology configuration (FTP,
+`/hydration-balance`; whole-day energy/activity totals → `/daily-summary`;
+weigh-ins → `/weight`; activities → `/workouts` (`source = "garmin"`), where
+each activity additionally carries the scalar performance and HR-zone fields
+plus nested `splits`/`sets` detail when Garmin provides them; gear inventory →
+`/gear` (upsert by Garmin gear id); personal records → `/personal-records`
+(upsert by Garmin PR id); and the athlete's physiology configuration (FTP,
 thresholds, max HR, lactate-threshold HR, HR-zone and optional power-zone
 boundaries) → `PUT /athlete-config` as a non-date-keyed singleton refresh
 (in-place overwrite, Garmin source-of-truth), guarded so its fetch failure does
-not abort the day. Sync SHALL require no MFA or human interaction.
+not abort the day. Gear and personal records are slowly-changing inventory
+refreshed via idempotent upsert on each sync, not date-keyed snapshots. Sync
+SHALL require no MFA or human interaction.
 
 #### Scenario: Daily sync writes a day's data
 
 - **WHEN** `POST /sync` runs with a valid stored token
 - **THEN** the bridge refreshes its access token without prompting for MFA
-- **AND** posts the day's recovery, fitness, hydration-balance, weight, and
-  activity data to their respective endpoints under the garmin identity
+- **AND** posts the day's recovery, fitness, hydration-balance, daily-summary,
+  weight, and activity data to their respective endpoints under the garmin
+  identity
+- **AND** each activity item carries the available scalar/zone/split/set detail
+- **AND** upserts the current gear and personal-record inventory to `/gear` and
+  `/personal-records`
 - **AND** refreshes the athlete physiology config via `PUT /athlete-config` when
   Garmin provides it
 
 #### Scenario: Re-running a day is idempotent
 
 - **WHEN** `POST /sync` is run twice for the same date
-- **THEN** the date-keyed metrics are upserted (not duplicated)
+- **THEN** the date-keyed metrics (including `/daily-summary`) are upserted (not duplicated)
 - **AND** activities are deduped by `external_id = "garmin:<activity_id>"` via the
   existing `/workouts` UPSERT (no new field or migration)
+- **AND** each activity's nested splits and sets are replaced (not duplicated) on the second run
+- **AND** gear and personal records are upserted by their Garmin external id
+  (re-observing the same item updates it in place, no duplicate)
 - **AND** the athlete config is re-written in place via the singleton `PUT`
   (no per-day config rows accumulate)
 
