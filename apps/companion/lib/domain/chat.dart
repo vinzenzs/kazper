@@ -1,5 +1,5 @@
-// Chat domain types: transcript messages and the four streamed event types the
-// backend `POST /chat` SSE emits (text | tool | done | error).
+// Chat domain types: transcript messages and the five streamed event types the
+// backend `POST /chat` SSE emits (text | tool | proposal | done | error).
 
 enum ChatRole { user, assistant }
 
@@ -44,11 +44,58 @@ class ChatToolEvent extends ChatEvent {
   bool get isError => status == 'error';
 }
 
+/// One pending write-confirm call the coach proposed: a server-composed,
+/// honest preview (never the model's prose) plus its identity and tier.
+class ChatPendingCall {
+  final String toolId;
+  final String name;
+  final String tier;
+  final String preview;
+  ChatPendingCall({
+    required this.toolId,
+    required this.name,
+    required this.tier,
+    required this.preview,
+  });
+
+  factory ChatPendingCall.fromJson(Map<String, dynamic> j) => ChatPendingCall(
+        toolId: j['tool_id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        tier: j['tier'] as String? ?? '',
+        preview: j['preview'] as String? ?? '',
+      );
+}
+
+/// A paused turn awaiting the user's per-call decision. The same shape arrives
+/// live (the `proposal` SSE event) and on cold-open (`pending_confirmation` in
+/// the session detail), so one card renders both.
+class ChatPending {
+  final String turnId;
+  final List<ChatPendingCall> calls;
+  ChatPending({required this.turnId, required this.calls});
+
+  factory ChatPending.fromJson(Map<String, dynamic> j) => ChatPending(
+        turnId: j['turn_id'] as String? ?? '',
+        calls: [
+          for (final c in (j['calls'] as List? ?? const []))
+            if (c is Map<String, dynamic>) ChatPendingCall.fromJson(c),
+        ],
+      );
+}
+
+/// The loop paused awaiting confirmation: it lists the pending write-confirm
+/// calls. Followed by a done event with stop_reason "awaiting_confirmation".
+class ChatProposalEvent extends ChatEvent {
+  final ChatPending pending;
+  ChatProposalEvent(this.pending);
+}
+
 /// Terminates a successful stream with the full final message.
 class ChatDoneEvent extends ChatEvent {
   final String message;
   final String stopReason;
   ChatDoneEvent({required this.message, required this.stopReason});
+  bool get awaitingConfirmation => stopReason == 'awaiting_confirmation';
 }
 
 /// Terminates the stream with a typed code (e.g. chat_unavailable).
@@ -66,11 +113,16 @@ class ChatSessionSummary {
   final DateTime lastMessageAt;
   final DateTime createdAt;
 
+  /// True when this session's trailing turn is paused awaiting a write
+  /// confirmation — the history list badges it so the user can return and act.
+  final bool awaitingConfirmation;
+
   ChatSessionSummary({
     required this.id,
     this.title,
     required this.lastMessageAt,
     required this.createdAt,
+    this.awaitingConfirmation = false,
   });
 
   factory ChatSessionSummary.fromJson(Map<String, dynamic> j) =>
@@ -80,14 +132,18 @@ class ChatSessionSummary {
         lastMessageAt:
             DateTime.parse(j['last_message_at'] as String).toLocal(),
         createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+        awaitingConfirmation: j['awaiting_confirmation'] as bool? ?? false,
       );
 }
 
-/// A reopened session: its header plus the reconstructed visible transcript.
+/// A reopened session: its header, the reconstructed visible transcript, and —
+/// when the session is paused — the pending proposal so the card is rebuilt on
+/// cold-open (D9).
 class ChatSessionDetail {
   final ChatSessionSummary summary;
   final List<ChatMessage> messages;
-  ChatSessionDetail({required this.summary, required this.messages});
+  final ChatPending? pending;
+  ChatSessionDetail({required this.summary, required this.messages, this.pending});
 }
 
 /// A typed failure from the `/chat/sessions` read/manage calls.

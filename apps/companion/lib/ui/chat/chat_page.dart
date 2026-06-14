@@ -105,18 +105,22 @@ class _Transcript extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (chat.messages.isEmpty && !chat.streaming) {
+    if (chat.messages.isEmpty && !chat.streaming && chat.pending == null) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
           child: Text(
-            'Ask what to eat today or the next few days, plan meals, and build a shopping list.',
+            'Your coach for fuelling and training — ask about meals, sessions, '
+            'recovery, or race prep, and plan the week.',
             textAlign: TextAlign.center,
           ),
         ),
       );
     }
-    final itemCount = chat.messages.length + (chat.streaming ? 1 : 0);
+    // At most one trailing item: the streaming bubble while a turn is in flight,
+    // or the proposal card while paused awaiting confirmation.
+    final hasTrailer = chat.streaming || chat.pending != null;
+    final itemCount = chat.messages.length + (hasTrailer ? 1 : 0);
     return ListView.builder(
       controller: scroll,
       padding: const EdgeInsets.all(12),
@@ -125,8 +129,10 @@ class _Transcript extends StatelessWidget {
         if (i < chat.messages.length) {
           return _Bubble(message: chat.messages[i]);
         }
-        // Streaming assistant bubble + tool chips + (error retry below).
-        return _StreamingBubble(text: chat.streamingText ?? '', tools: chat.tools);
+        if (chat.streaming) {
+          return _StreamingBubble(text: chat.streamingText ?? '', tools: chat.tools);
+        }
+        return _ProposalCard(pending: chat.pending!);
       },
     );
   }
@@ -237,6 +243,87 @@ class _ToolChip extends StatelessWidget {
   static String _humanize(String name) => name.replaceAll('_', ' ');
 }
 
+/// The approve/reject card for a paused write-confirm proposal. Each pending
+/// call has its own toggle (default approved); "Apply" sends the per-call
+/// decisions to the confirm endpoint and the loop resumes, "Reject all" declines
+/// every call. The card renders identically whether the proposal arrived live or
+/// was reconstructed on cold-open.
+class _ProposalCard extends ConsumerStatefulWidget {
+  final ChatPending pending;
+  const _ProposalCard({required this.pending});
+
+  @override
+  ConsumerState<_ProposalCard> createState() => _ProposalCardState();
+}
+
+class _ProposalCardState extends ConsumerState<_ProposalCard> {
+  late final Map<String, bool> _approve = {
+    for (final c in widget.pending.calls) c.toolId: true,
+  };
+
+  void _apply() => ref.read(chatProvider.notifier).confirm(Map.of(_approve));
+
+  void _rejectAll() => ref.read(chatProvider.notifier).confirm(
+        {for (final c in widget.pending.calls) c.toolId: false},
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final anyApproved = _approve.values.any((v) => v);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.92),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.fact_check_outlined, size: 18, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Text('Confirm these changes',
+                      style: Theme.of(context).textTheme.titleSmall),
+                ],
+              ),
+            ),
+            for (final c in widget.pending.calls)
+              SwitchListTile(
+                dense: true,
+                value: _approve[c.toolId] ?? true,
+                onChanged: (v) => setState(() => _approve[c.toolId] = v),
+                title: Text(c.preview.isNotEmpty ? c.preview : c.name),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: _rejectAll, child: const Text('Reject all')),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    onPressed: anyApproved ? _apply : _rejectAll,
+                    child: Text(anyApproved ? 'Apply selected' : 'Reject all'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Composer extends ConsumerWidget {
   final TextEditingController controller;
   final bool online;
@@ -294,7 +381,7 @@ class _Composer extends ConsumerWidget {
                     textInputAction: TextInputAction.send,
                     onSubmitted: disabled ? null : (_) => onSend(),
                     decoration: InputDecoration(
-                      hintText: online ? 'Ask about meals…' : 'Offline',
+                      hintText: online ? 'Ask your coach…' : 'Offline',
                       border: const OutlineInputBorder(),
                       isDense: true,
                     ),

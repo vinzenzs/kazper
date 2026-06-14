@@ -32,15 +32,15 @@
 
 ## 4. Companion UI
 
-- [ ] 4.1 Add `ChatProposalEvent` to the `ChatEvent` sealed union and a `pending` field to `ChatState`; on `done` with `stop_reason: "awaiting_confirmation"`, finalize the text bubble but keep the card pending (composer stays usable).
-- [ ] 4.2 Render the card in-transcript with **per-item toggles** + "Apply selected" + reject; one rendering path fed by either a live `proposal` event or `pending_confirmation` from session detail.
-- [ ] 4.3 Wire "Apply selected" to `POST /chat/sessions/{id}/confirm` with per-call decisions and resume `_runStream` on the returned SSE; card collapses to a compact resolved record as resumed tool chips/`done` arrive.
-- [ ] 4.4 Typing a new message while a card is pending sends normally (server implicitly rejects); reconstruct the card on session (re)open from `pending_confirmation`; badge awaiting sessions in the history list.
-- [ ] 4.5 Drop the "scoped to nutrition planning" copy/affordances; chat is the coach.
-- [ ] 4.6 Manual on-device e2e: coaching question → per-item card → apply subset → only selected writes land; type-to-reject path; kill-app-then-reopen reconstructs the card; continuation-died→reopen recovers.
+- [x] 4.1 Added `ChatProposalEvent` + `ChatPending`/`ChatPendingCall` to the union (parsed in `chat_client`); `ChatState.pending` + `_finalizePaused` keeps the card pending on `done{awaiting_confirmation}` with the composer re-enabled.
+- [x] 4.2 `_ProposalCard` renders in-transcript with per-item `SwitchListTile` toggles + "Apply selected" + "Reject all"; one widget fed by either a live `proposal` event or `pending_confirmation` from session detail.
+- [x] 4.3 "Apply selected" → `ChatNotifier.confirm(approvals)` → `ChatClient.confirm` (`POST /chat/sessions/{id}/confirm`) and resumes the shared `_runStream`; the card clears as the resumed tool chips/text stream in.
+- [x] 4.4 Typing while pending sends normally and drops the card optimistically (server implicitly rejects); `openSession` rebuilds the card from `pending_confirmation`; history tiles badge `awaiting_confirmation`. (Covered by `chat_pending_test` + the cold-open provider test.)
+- [x] 4.5 Dropped the "scoped to nutrition planning" copy — empty-state + composer hint now frame chat as the coach.
+- [ ] 4.6 Manual on-device e2e (**owner: user** — cannot run a device here): coaching question → per-item card → apply subset → only selected writes land; type-to-reject path; kill-app-then-reopen reconstructs the card; continuation-died→reopen recovers.
 
 ## 5. Cross-cutting
 
-- [ ] 5.1 `task test` green across `internal/chat`, `internal/mcpserver`, and any new package.
-- [ ] 5.2 `task vet` + `task swag`.
+- [x] 5.1 `task test` green across `internal/chat`, `internal/mcpserver`, `internal/agenttools`, `internal/coachcontext`, `internal/chatsessions` (+ full suite; the lone `goals` failure was testcontainers parallel-boot contention, green when re-run alone per CLAUDE.md). Companion `flutter test` + `flutter analyze` green.
+- [x] 5.2 `task vet` clean + `task swag` regenerated.
 - [ ] 5.3 Update `openspec/specs/` deltas on archive; bump the MCP expected-tools list only if names moved.

@@ -75,4 +75,31 @@ void main() {
     expect(events, hasLength(1));
     expect((events.single as ChatTextEvent).text, 'ok');
   });
+
+  test('proposal event then awaiting_confirmation done', () async {
+    final events = await parseSseLines(_lines([
+      'event: text',
+      'data: {"text":"I will schedule your ride."}',
+      '',
+      'event: proposal',
+      'data: {"turn_id":"turn_abc","calls":[{"tool_id":"c1","name":"schedule_workout","tier":"write-confirm","preview":"Schedule a ride on 2026-06-20"}]}',
+      '',
+      'event: done',
+      'data: {"message":"I will schedule your ride.","stop_reason":"awaiting_confirmation"}',
+      '',
+    ])).toList();
+
+    expect(events, hasLength(3));
+    final proposal = events[1] as ChatProposalEvent;
+    expect(proposal.pending.turnId, 'turn_abc');
+    expect(proposal.pending.calls, hasLength(1));
+    final call = proposal.pending.calls.single;
+    expect(call.toolId, 'c1');
+    expect(call.name, 'schedule_workout');
+    expect(call.tier, 'write-confirm');
+    expect(call.preview, 'Schedule a ride on 2026-06-20');
+
+    final done = events[2] as ChatDoneEvent;
+    expect(done.awaitingConfirmation, isTrue);
+  });
 }

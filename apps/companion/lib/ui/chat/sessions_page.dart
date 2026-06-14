@@ -77,7 +77,20 @@ class _SessionTile extends ConsumerWidget {
           ref.read(sessionsProvider.notifier).delete(session.id),
       child: ListTile(
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(_relativeTime(session.lastMessageAt)),
+        subtitle: Row(
+          children: [
+            Text(_relativeTime(session.lastMessageAt)),
+            if (session.awaitingConfirmation) ...[
+              const SizedBox(width: 8),
+              Icon(Icons.fact_check_outlined,
+                  size: 14, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 2),
+              Text('Awaiting confirmation',
+                  style: TextStyle(
+                      fontSize: 12, color: Theme.of(context).colorScheme.primary)),
+            ],
+          ],
+        ),
         onTap: () => _open(context, ref),
         trailing: PopupMenuButton<String>(
           onSelected: (v) {

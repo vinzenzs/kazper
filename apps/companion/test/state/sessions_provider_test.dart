@@ -148,6 +148,27 @@ void main() {
     expect(c.read(chatProvider).messages.single.content, 'hi');
   });
 
+  test('openSession rebuilds a pending proposal card on cold-open', () async {
+    final client = FakeChatClient()
+      ..detail = ChatSessionDetail(
+        summary: _summary('a', title: 'Paused'),
+        messages: const [],
+        pending: ChatPending(turnId: 'turn_1', calls: [
+          ChatPendingCall(
+              toolId: 'c1',
+              name: 'schedule_workout',
+              tier: 'write-confirm',
+              preview: 'Schedule a ride on 2026-06-20'),
+        ]),
+      );
+    final c = _container(client);
+
+    await c.read(chatProvider.notifier).openSession(_summary('a'));
+    final pending = c.read(chatProvider).pending;
+    expect(pending, isNotNull);
+    expect(pending!.calls.single.preview, 'Schedule a ride on 2026-06-20');
+  });
+
   test('deleting the active session resets the chat', () async {
     final client = FakeChatClient()..sessions = [_summary('a')];
     final c = _container(client);

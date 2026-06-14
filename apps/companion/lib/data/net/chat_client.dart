@@ -67,9 +67,11 @@ class ChatClient {
       throw ChatSessionException('http_${resp.statusCode}');
     }
     final j = jsonDecode(resp.body) as Map<String, dynamic>;
+    final pc = j['pending_confirmation'];
     return ChatSessionDetail(
       summary: ChatSessionSummary.fromJson(j),
       messages: reconstructTranscript((j['messages'] as List?) ?? const []),
+      pending: pc is Map<String, dynamic> ? ChatPending.fromJson(pc) : null,
     );
   }
 
@@ -120,6 +122,35 @@ class ChatClient {
   Stream<ChatEvent> stream({
     required String sessionId,
     required String message,
+  }) {
+    return _streamPost(
+      path: '/chat',
+      body: {'session_id': sessionId, 'message': message},
+    );
+  }
+
+  /// Resumes a session paused on a write-confirm proposal: posts the per-call
+  /// [decisions] (tool_id → approve) to `POST /chat/sessions/{id}/confirm` and
+  /// streams the continuation with the same event contract as [stream].
+  Stream<ChatEvent> confirm({
+    required String sessionId,
+    required Map<String, bool> decisions,
+  }) {
+    return _streamPost(
+      path: '/chat/sessions/$sessionId/confirm',
+      body: {
+        'decisions': [
+          for (final e in decisions.entries) {'tool_id': e.key, 'approve': e.value},
+        ],
+      },
+    );
+  }
+
+  /// Posts a JSON body to an SSE endpoint and yields the parsed events. Shared
+  /// by [stream] and [confirm] — both speak the same five-event contract.
+  Stream<ChatEvent> _streamPost({
+    required String path,
+    required Map<String, dynamic> body,
   }) async* {
     final baseUrl = await tokenStore.getBaseUrl();
     final token = await tokenStore.getToken();
@@ -127,11 +158,11 @@ class ChatClient {
       yield ChatErrorEvent(code: 'not_paired', message: 'Not paired');
       return;
     }
-    final req = http.Request('POST', Uri.parse('$baseUrl/chat'))
+    final req = http.Request('POST', Uri.parse('$baseUrl$path'))
       ..headers['Authorization'] = 'Bearer $token'
       ..headers['Content-Type'] = 'application/json'
       ..headers['Accept'] = 'text/event-stream'
-      ..body = jsonEncode({'session_id': sessionId, 'message': message});
+      ..body = jsonEncode(body);
 
     http.StreamedResponse resp;
     try {
@@ -143,13 +174,13 @@ class ChatClient {
 
     if (resp.statusCode != 200) {
       // Non-stream errors come back as JSON {"error": "<code>"}.
-      final body = await resp.stream.bytesToString();
+      final respBody = await resp.stream.bytesToString();
       var code = 'http_${resp.statusCode}';
       try {
-        final j = jsonDecode(body);
+        final j = jsonDecode(respBody);
         if (j is Map && j['error'] is String) code = j['error'] as String;
       } catch (_) {}
-      yield ChatErrorEvent(code: code, message: body);
+      yield ChatErrorEvent(code: code, message: respBody);
       return;
     }
 
@@ -208,6 +239,8 @@ ChatEvent? _decodeEvent(String event, String data) {
         status: j['status'] as String? ?? '',
         summary: j['summary'] as String? ?? '',
       );
+    case 'proposal':
+      return ChatProposalEvent(ChatPending.fromJson(j));
     case 'done':
       return ChatDoneEvent(
         message: j['message'] as String? ?? '',

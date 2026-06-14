@@ -26,11 +26,17 @@ class ChatState {
   final List<ChatToolEvent> tools;
   final String? error;
 
+  /// A pending write-confirm proposal awaiting the user's decision. Non-null
+  /// while the session is paused; the composer stays usable (typing implicitly
+  /// rejects it server-side).
+  final ChatPending? pending;
+
   const ChatState({
     this.messages = const [],
     this.streamingText,
     this.tools = const [],
     this.error,
+    this.pending,
   });
 
   bool get streaming => streamingText != null;
@@ -42,12 +48,15 @@ class ChatState {
     List<ChatToolEvent>? tools,
     String? error,
     bool clearError = false,
+    ChatPending? pending,
+    bool clearPending = false,
   }) {
     return ChatState(
       messages: messages ?? this.messages,
       streamingText: clearStreaming ? null : (streamingText ?? this.streamingText),
       tools: tools ?? this.tools,
       error: clearError ? null : (error ?? this.error),
+      pending: clearPending ? null : (pending ?? this.pending),
     );
   }
 }
@@ -79,6 +88,10 @@ class ChatNotifier extends Notifier<ChatState> {
     state = const ChatState();
   }
 
+  /// The pending proposal awaiting confirmation, or null. Exposed so the card
+  /// can read it.
+  ChatPending? get pending => state.pending;
+
   /// Reopens a past session: loads its transcript, adopts its server
   /// `session_id`, and makes it the active conversation so new turns append to
   /// it. Returns false (leaving the current screen untouched) on a fetch
@@ -94,7 +107,8 @@ class ChatNotifier extends Notifier<ChatState> {
     _conversationId = newIdempotencyKey();
     _sessionId = session.id;
     _lastUserText = null;
-    state = ChatState(messages: detail.messages);
+    // Rebuild the proposal card from the persisted pending state (cold-open).
+    state = ChatState(messages: detail.messages, pending: detail.pending);
     return true;
   }
 
@@ -109,14 +123,33 @@ class ChatNotifier extends Notifier<ChatState> {
       createdAt: DateTime.now(),
     );
     _lastUserText = trimmed;
+    // Sending while a proposal is pending implicitly rejects it (the server
+    // appends declined tool_results and proceeds), so drop the card optimistically.
     state = state.copyWith(
       messages: [...state.messages, user],
       streamingText: '',
       tools: const [],
       clearError: true,
+      clearPending: true,
     );
     await _persist(user);
     await _runTurn(trimmed);
+  }
+
+  /// Resolves a pending proposal: applies the per-call [approvals] (tool_id →
+  /// approve) via the confirm endpoint and resumes streaming the continuation.
+  /// No-op when nothing is pending or a turn is already streaming.
+  Future<void> confirm(Map<String, bool> approvals) async {
+    if (state.pending == null || _sessionId == null || state.streaming) return;
+    state = state.copyWith(
+      streamingText: '',
+      tools: const [],
+      clearError: true,
+      clearPending: true,
+    );
+    await _runStream(
+      ref.read(chatClientProvider).confirm(sessionId: _sessionId!, decisions: approvals),
+    );
   }
 
   /// Re-runs the last user turn after a failure. The backend resumes from the
@@ -142,16 +175,18 @@ class ChatNotifier extends Notifier<ChatState> {
 
   Future<void> _runTurn(String message) async {
     if (!await _ensureSession()) return;
-    await _runStream(message);
+    await _runStream(ref.read(chatClientProvider).stream(sessionId: _sessionId!, message: message));
   }
 
-  Future<void> _runStream(String message) async {
+  /// Consumes a chat/confirm SSE event stream, driving the streaming bubble,
+  /// tool chips, and — when the loop pauses — the proposal card. Shared by the
+  /// send and confirm paths.
+  Future<void> _runStream(Stream<ChatEvent> events) async {
     final buffer = StringBuffer();
     final tools = <ChatToolEvent>[];
+    ChatPending? pending;
     try {
-      await for (final ev in ref
-          .read(chatClientProvider)
-          .stream(sessionId: _sessionId!, message: message)) {
+      await for (final ev in events) {
         switch (ev) {
           case ChatTextEvent(:final text):
             buffer.write(text);
@@ -159,8 +194,15 @@ class ChatNotifier extends Notifier<ChatState> {
           case ChatToolEvent():
             upsertToolEvent(tools, ev);
             state = state.copyWith(tools: List.of(tools));
-          case ChatDoneEvent(:final message):
-            await _finalize(message.isNotEmpty ? message : buffer.toString());
+          case ChatProposalEvent():
+            pending = ev.pending;
+          case ChatDoneEvent(:final message, :final awaitingConfirmation):
+            final content = message.isNotEmpty ? message : buffer.toString();
+            if (awaitingConfirmation) {
+              await _finalizePaused(content, pending);
+            } else {
+              await _finalize(content);
+            }
             return;
           case ChatErrorEvent(:final code):
             state = state.copyWith(clearStreaming: true, error: code);
@@ -187,9 +229,34 @@ class ChatNotifier extends Notifier<ChatState> {
       messages: [...state.messages, assistant],
       clearStreaming: true,
       tools: const [],
+      clearPending: true,
     );
     await _persist(assistant);
     await ref.read(appDatabaseProvider).chatMessagesDao.pruneConversations();
+  }
+
+  /// Finalizes a turn that paused awaiting confirmation: the assistant's text
+  /// (its narration of what it's about to do) becomes a bubble, the proposal
+  /// card is surfaced, and streaming stops so the composer re-enables. The
+  /// pending writes have NOT fired.
+  Future<void> _finalizePaused(String content, ChatPending? pending) async {
+    final messages = [...state.messages];
+    if (content.isNotEmpty) {
+      final assistant = ChatMessage(
+        id: newIdempotencyKey(),
+        role: ChatRole.assistant,
+        content: content,
+        createdAt: DateTime.now(),
+      );
+      messages.add(assistant);
+      await _persist(assistant);
+    }
+    state = state.copyWith(
+      messages: messages,
+      clearStreaming: true,
+      tools: const [],
+      pending: pending,
+    );
   }
 
   Future<void> _persist(ChatMessage m) {
