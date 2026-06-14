@@ -8,7 +8,7 @@
 - [x] 1.2 Add an optional typed schema source to `Spec` (DD2): `SchemaType any` added; the MCP server reflects it via `jsonschema.ForType(reflect.TypeOf(SchemaType), &ForOptions{})` — the exact call the SDK uses internally (server.go setSchema:436), which announces the unresolved schema, so parity is by construction. Hand-written `Schema` strings still drive the chat surface.
 - [x] 1.3 Golden test (`schema_golden_test.go`): for each `MCPRegistry()` entry the reflected schema MUST equal the frozen `testdata/announced_schemas.json` baseline (captured pre-port from the live surface via `golden_capture_test.go`, `-tags=goldengen`). Safety gate before deleting any bespoke registration. _(Note: the 3 pilot reads were moved verbatim and their baseline was captured post-move; the gate is fully independent for every domain the workflow ports next.)_
 - [x] 1.4 Confirmed `agenttools.EffectiveIdempotencyKey`/`DeriveIdempotencyKey` exist (landed in `expand-chat-to-coach` 1.5); added `agenttools.ExplicitIdempotencyKey(raw)` to read an agent-supplied key out of raw input (DD4).
-- [ ] 1.5 Split the registry into per-domain files (`registry_meals.go`, `registry_workouts.go`, …) concatenated by `Registry()` (DD-risk: big file). _(Pattern established: `registry_garmin_inventory.go` is the first; `mcpOnlySpecs()` concatenates per-domain slices. Remaining domains land in 3.1.)_
+- [x] 1.5 Registry split into per-domain files (`registry_meals.go`, `registry_workouts.go`, …) — one per ported domain, each self-registering via `init()` → `registerMCPDomain(...)`, which `mcpOnlySpecs()` collects (no big central file).
 
 ## 2. mcpserver: generic dispatch path
 
