@@ -269,6 +269,96 @@ definitions:
       title:
         type: string
     type: object
+  coachcontext.LoadSummary:
+    properties:
+      by_sport:
+        additionalProperties:
+          type: integer
+        type: object
+      count:
+        type: integer
+      total_duration_min:
+        type: number
+      total_kcal:
+        type: number
+    type: object
+  coachcontext.PhaseLite:
+    properties:
+      end_date:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      start_date:
+        type: string
+      type:
+        $ref: '#/definitions/trainingphases.PhaseType'
+    type: object
+  coachcontext.RecoveryContext:
+    properties:
+      date:
+        type: string
+      days:
+        type: integer
+      latest:
+        $ref: '#/definitions/recoverymetrics.Snapshot'
+      recent:
+        items:
+          $ref: '#/definitions/recoverymetrics.Snapshot'
+        type: array
+    type: object
+  coachcontext.TrainingContext:
+    properties:
+      acwr:
+        description: |-
+          ACWR is the acute:chronic load ratio, derived (acute ÷ chronic) only when
+          both loads are present; null otherwise. Never stored.
+        type: number
+      date:
+        type: string
+      fitness:
+        $ref: '#/definitions/fitnessmetrics.Snapshot'
+      lookahead_days:
+        type: integer
+      lookback_days:
+        type: integer
+      phase:
+        $ref: '#/definitions/coachcontext.PhaseLite'
+      recent_load:
+        $ref: '#/definitions/coachcontext.LoadSummary'
+      recent_workouts:
+        items:
+          $ref: '#/definitions/coachcontext.WorkoutLite'
+        type: array
+      tz:
+        type: string
+      upcoming_workouts:
+        items:
+          $ref: '#/definitions/coachcontext.WorkoutLite'
+        type: array
+    type: object
+  coachcontext.WorkoutLite:
+    properties:
+      duration_min:
+        type: number
+      ended_at:
+        type: string
+      id:
+        type: string
+      kcal_burned:
+        type: number
+      name:
+        type: string
+      sport:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      tss:
+        type: number
+    type: object
   dailycontext.AdherenceBlock:
     properties:
       adherence:
@@ -2994,6 +3084,98 @@ paths:
       summary: Daily context bundle
       tags:
       - daily-context
+  /context/recovery:
+    get:
+      description: 'One read for grounding recovery/readiness advice: the latest recovery
+        snapshot on/before the date (sleep, HRV, resting HR, body battery, training
+        readiness, …) plus the recent trend over `days` (default 7). Composition-only;
+        for per-day detail use list_recovery_metrics.'
+      parameters:
+      - description: Calendar date YYYY-MM-DD (defaults to today)
+        in: query
+        name: date
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      - description: Trend window in days (default 7, max 90)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/coachcontext.RecoveryContext'
+        "400":
+          description: date_invalid | tz_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: context_failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Recovery context bundle
+      tags:
+      - coach-context
+  /context/training:
+    get:
+      description: 'One read for grounding training advice: the covering training
+        phase, the latest fitness snapshot (VO2max, acute/chronic load, training status,
+        race predictors) with derived ACWR, a recent-load summary plus recent completed
+        workouts (lookback_days, default 14), and upcoming planned workouts (lookahead_days,
+        default 7). Composition-only over existing repos; for per-entry detail use
+        the dedicated tools (list_workouts, list_fitness_metrics, …).'
+      parameters:
+      - description: Calendar date YYYY-MM-DD (defaults to today)
+        in: query
+        name: date
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      - description: Completed-workout/fitness lookback window (default 14, max 90)
+        in: query
+        name: lookback_days
+        type: integer
+      - description: Planned-workout lookahead window (default 7, max 60)
+        in: query
+        name: lookahead_days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/coachcontext.TrainingContext'
+        "400":
+          description: date_invalid | tz_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: context_failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Training context bundle
+      tags:
+      - coach-context
   /daily-summary:
     get:
       parameters:

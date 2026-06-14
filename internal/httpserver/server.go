@@ -17,6 +17,7 @@ import (
 	"github.com/vinzenzs/nutrition-api/internal/chatsessions"
 	"github.com/vinzenzs/nutrition-api/internal/config"
 	"github.com/vinzenzs/nutrition-api/internal/cookidoo"
+	"github.com/vinzenzs/nutrition-api/internal/coachcontext"
 	"github.com/vinzenzs/nutrition-api/internal/dailycontext"
 	"github.com/vinzenzs/nutrition-api/internal/energy"
 	"github.com/vinzenzs/nutrition-api/internal/fitnessmetrics"
@@ -325,6 +326,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
+	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo)
+	coachcontext.NewHandlers(coachCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
 	// engages when an Idempotency-Key header is present, and the chat client does
 	// not send one (a streamed conversation turn is not a replayable write — the

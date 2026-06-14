@@ -111,6 +111,8 @@ var AnnouncedToolNames = []string{
 	"get_goal_template",
 	"delete_goal_template",
 	"daily_context",
+	"get_training_context",
+	"get_recovery_context",
 	"garmin_login",
 	"garmin_submit_mfa",
 	"garmin_schedule_workout",

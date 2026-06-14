@@ -602,6 +602,138 @@ const docTemplate = `{
                 }
             }
         },
+        "/context/recovery": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One read for grounding recovery/readiness advice: the latest recovery snapshot on/before the date (sleep, HRV, resting HR, body battery, training readiness, …) plus the recent trend over ` + "`" + `days` + "`" + ` (default 7). Composition-only; for per-day detail use list_recovery_metrics.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-context"
+                ],
+                "summary": "Recovery context bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar date YYYY-MM-DD (defaults to today)",
+                        "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Trend window in days (default 7, max 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/coachcontext.RecoveryContext"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "context_failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/context/training": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One read for grounding training advice: the covering training phase, the latest fitness snapshot (VO2max, acute/chronic load, training status, race predictors) with derived ACWR, a recent-load summary plus recent completed workouts (lookback_days, default 14), and upcoming planned workouts (lookahead_days, default 7). Composition-only over existing repos; for per-entry detail use the dedicated tools (list_workouts, list_fitness_metrics, …).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-context"
+                ],
+                "summary": "Training context bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar date YYYY-MM-DD (defaults to today)",
+                        "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Completed-workout/fitness lookback window (default 14, max 90)",
+                        "name": "lookback_days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Planned-workout lookahead window (default 7, max 60)",
+                        "name": "lookahead_days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/coachcontext.TrainingContext"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "context_failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/daily-summary": {
             "get": {
                 "security": [
@@ -8284,6 +8416,140 @@ const docTemplate = `{
             "properties": {
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "coachcontext.LoadSummary": {
+            "type": "object",
+            "properties": {
+                "by_sport": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "total_duration_min": {
+                    "type": "number"
+                },
+                "total_kcal": {
+                    "type": "number"
+                }
+            }
+        },
+        "coachcontext.PhaseLite": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/trainingphases.PhaseType"
+                }
+            }
+        },
+        "coachcontext.RecoveryContext": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "days": {
+                    "type": "integer"
+                },
+                "latest": {
+                    "$ref": "#/definitions/recoverymetrics.Snapshot"
+                },
+                "recent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/recoverymetrics.Snapshot"
+                    }
+                }
+            }
+        },
+        "coachcontext.TrainingContext": {
+            "type": "object",
+            "properties": {
+                "acwr": {
+                    "description": "ACWR is the acute:chronic load ratio, derived (acute ÷ chronic) only when\nboth loads are present; null otherwise. Never stored.",
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "fitness": {
+                    "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                },
+                "lookahead_days": {
+                    "type": "integer"
+                },
+                "lookback_days": {
+                    "type": "integer"
+                },
+                "phase": {
+                    "$ref": "#/definitions/coachcontext.PhaseLite"
+                },
+                "recent_load": {
+                    "$ref": "#/definitions/coachcontext.LoadSummary"
+                },
+                "recent_workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/coachcontext.WorkoutLite"
+                    }
+                },
+                "tz": {
+                    "type": "string"
+                },
+                "upcoming_workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/coachcontext.WorkoutLite"
+                    }
+                }
+            }
+        },
+        "coachcontext.WorkoutLite": {
+            "type": "object",
+            "properties": {
+                "duration_min": {
+                    "type": "number"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kcal_burned": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tss": {
+                    "type": "number"
                 }
             }
         },
