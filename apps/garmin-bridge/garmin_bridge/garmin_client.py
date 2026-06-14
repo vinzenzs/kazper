@@ -52,6 +52,37 @@ def _garth(api):
     return client
 
 
+def _connect_write(api, path: str, method: str, **kwargs):
+    """Issue a non-GET connectapi call, tolerant of the client variant.
+
+    garth's ``connectapi(path, method=...)`` accepts a ``method`` kwarg, but the
+    garminconnect-bundled client hardcodes GET in ``connectapi`` and forwards
+    ``method=`` straight into ``_run_request(method, ...)`` — colliding with its
+    positional ``"GET"`` ("got multiple values for argument 'method'", the cause
+    of the prod 502s on POST /workouts). When ``connectapi`` has no ``method``
+    parameter, dispatch to that client's verb helper (``post``/``put``/
+    ``delete``), which is how garminconnect itself issues writes. Returns the
+    parsed JSON body (or None/empty on 204) for either variant.
+    """
+    import inspect
+
+    client = _garth(api)
+    verb = method.upper()
+    try:
+        accepts_method = "method" in inspect.signature(client.connectapi).parameters
+    except (TypeError, ValueError):  # pragma: no cover - builtins without a sig
+        accepts_method = False
+    if accepts_method:
+        return client.connectapi(path, method=verb, **kwargs)
+    helper = getattr(client, verb.lower(), None)
+    if not callable(helper):  # pragma: no cover - defensive
+        raise RuntimeError(
+            f"garmin client supports neither connectapi(method=) nor {verb.lower()}()"
+        )
+    # garminconnect verb helpers take (subdomain, path, ...); api=True parses JSON.
+    return helper("connectapi", path, api=True, **kwargs)
+
+
 def begin_login(email: str, password: str) -> tuple[str, Any]:
     """Start Garmin SSO.
 
@@ -318,7 +349,7 @@ def _user_profile_number(api) -> Any:
 
 def create_workout(api, payload: dict[str, Any]) -> str:
     """Create a structured workout in the Garmin library; return its id."""
-    resp = _garth(api).connectapi("/workout-service/workout", method="POST", json=payload)
+    resp = _connect_write(api, "/workout-service/workout", "POST", json=payload)
     wid = (resp or {}).get("workoutId")
     if wid is None:
         raise RuntimeError("garmin did not return a workoutId")
@@ -327,8 +358,8 @@ def create_workout(api, payload: dict[str, Any]) -> str:
 
 def schedule_workout(api, workout_id: str, date: str) -> str:
     """Place a Garmin workout on a calendar date; return the schedule id."""
-    resp = _garth(api).connectapi(
-        f"/workout-service/schedule/{workout_id}", method="POST", json={"date": date}
+    resp = _connect_write(
+        api, f"/workout-service/schedule/{workout_id}", "POST", json={"date": date}
     )
     sid = (resp or {}).get("id")
     if sid is None:
@@ -339,7 +370,7 @@ def schedule_workout(api, workout_id: str, date: str) -> str:
 def unschedule_workout(api, schedule_id: str) -> None:
     """Remove a scheduled calendar entry. A missing id is treated as a no-op."""
     try:
-        _garth(api).connectapi(f"/workout-service/schedule/{schedule_id}", method="DELETE")
+        _connect_write(api, f"/workout-service/schedule/{schedule_id}", "DELETE")
     except Exception as exc:  # noqa: BLE001
         # Idempotent unschedule: a 404 (already gone) is success.
         if "404" in str(exc) or "not found" in str(exc).lower():
@@ -392,7 +423,7 @@ def delete_workout(api, workout_id: str) -> bool:
     re-push and unschedule reap paths stay safe to retry.
     """
     try:
-        _garth(api).connectapi(f"/workout-service/workout/{workout_id}", method="DELETE")
+        _connect_write(api, f"/workout-service/workout/{workout_id}", "DELETE")
         return True
     except Exception as exc:  # noqa: BLE001
         if "404" in str(exc) or "not found" in str(exc).lower():

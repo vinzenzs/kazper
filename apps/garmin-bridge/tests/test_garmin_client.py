@@ -28,7 +28,7 @@ class FakeGarth:
         self.refreshed = True
 
     def connectapi(self, path: str, **kwargs):
-        if path == "/userprofile-service/userprofile/profile":
+        if path == "/userprofile-service/socialProfile":
             return self._profile
         return None
 
@@ -139,6 +139,8 @@ class RecordingGarth:
             return {"workouts": [{"workoutId": 1}]}
         if method == "GET":
             return {"workoutId": 99}
+        if method == "POST":
+            return {"workoutId": 1, "id": "sched"}
         return None
 
 
@@ -155,6 +157,76 @@ class ApiWithGarth:
     def download_activity(self, activity_id, dl_fmt=None):
         self.download_calls.append((activity_id, dl_fmt))
         return b"FITBYTES"
+
+
+class BundledGarth:
+    """Mimics the garminconnect-bundled client (garminconnect 0.3.2).
+
+    Its ``connectapi`` hardcodes GET and forwards ``**kwargs`` into
+    ``_run_request(method, path, **kwargs)``, so passing ``method=`` collides on
+    the positional ``method`` ("got multiple values for argument 'method'") —
+    the exact prod 502 on POST /workouts. Writes must go through the verb helpers.
+    """
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+
+    def _run_request(self, method, path, **kwargs):
+        self.calls.append((method, path))
+        return {"workoutId": 555, "id": "sched-1"}
+
+    def connectapi(self, path, **kwargs):  # no `method` param — like the real one
+        return self._run_request("GET", path, **kwargs)
+
+    def post(self, _domain, path, **kwargs):
+        kwargs.pop("api", None)
+        return self._run_request("POST", path, **kwargs)
+
+    def delete(self, _domain, path, **kwargs):
+        kwargs.pop("api", None)
+        return self._run_request("DELETE", path, **kwargs)
+
+
+def test_bundled_connectapi_method_kwarg_collides():
+    # Guards that BundledGarth faithfully reproduces the prod failure mode: the
+    # old code path (connectapi(path, method=...)) raises the very TypeError seen
+    # in the prod logs, which _connect_write must avoid.
+    client = BundledGarth()
+    try:
+        client.connectapi("/workout-service/workout", method="POST")
+        raised = None
+    except TypeError as exc:
+        raised = str(exc)
+    assert raised is not None and "method" in raised
+
+
+def test_create_workout_bundled_client_uses_post():
+    # Regression for the prod 502: with the bundled client, create must route
+    # through .post (not connectapi(method=)) and still return the workout id.
+    api = ApiWithGarth(BundledGarth())
+    assert gc.create_workout(api, {"name": "Z2"}) == "555"
+    assert api.client.calls == [("POST", "/workout-service/workout")]
+
+
+def test_create_workout_garth_client_uses_connectapi():
+    # The other variant (garth's connectapi accepts method=) still works.
+    api = ApiWithGarth(RecordingGarth())
+    gc.create_workout(api, {"name": "Z2"})
+    assert ("POST", "/workout-service/workout") in api.client.calls
+
+
+def test_schedule_and_unschedule_bundled_client():
+    api = ApiWithGarth(BundledGarth())
+    assert gc.schedule_workout(api, "gw-1", "2026-06-20") == "sched-1"
+    gc.unschedule_workout(api, "sched-1")
+    assert ("POST", "/workout-service/schedule/gw-1") in api.client.calls
+    assert ("DELETE", "/workout-service/schedule/sched-1") in api.client.calls
+
+
+def test_delete_workout_bundled_client_uses_delete():
+    api = ApiWithGarth(BundledGarth())
+    assert gc.delete_workout(api, "gw-1") is True
+    assert api.client.calls == [("DELETE", "/workout-service/workout/gw-1")]
 
 
 def test_delete_workout_issues_delete():
