@@ -48,7 +48,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	registerGoalOverrideTools(server, client)
 	registerHydrationTools(server, client)
 	registerWorkoutsTools(server, client)
-	registerTrainingPlanTools(server, client)
 	registerWorkoutFuelTools(server, client)
 	registerWeightTools(server, client)
 	registerCoachContextTools(server, client)

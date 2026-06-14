@@ -47,6 +47,18 @@ func TestDispatchMCP_ReadGetsNoKey(t *testing.T) {
 	assert.Empty(t, (*recs)[0].idemKey, "a read never carries an idempotency key")
 }
 
+func TestDispatchMCP_OmitIdempotencyKeyWriteCarriesNoKey(t *testing.T) {
+	// materialize_training_plan is a POST but is re-runnable by design, so it
+	// dispatches without an Idempotency-Key (Spec.OmitIdempotencyKey) — a
+	// derived key would replay a stale response after a plan edit.
+	c, recs := newWorkoutRecorder(t, 200, `{"materialized":3}`)
+	_ = dispatchMCP(context.Background(), c, mcpSpec(t, "materialize_training_plan"),
+		json.RawMessage(`{"plan_id":"p1","scope":"all"}`))
+	require.Len(t, *recs, 1)
+	assert.Equal(t, "POST", (*recs)[0].method)
+	assert.Empty(t, (*recs)[0].idemKey, "a re-runnable write (OmitIdempotencyKey) carries no key")
+}
+
 func TestDispatchMCP_SameInputSameKey(t *testing.T) {
 	c, recs := newWorkoutRecorder(t, 201, `{}`)
 	in := json.RawMessage(`{"date":"2026-06-14","sweat_loss_ml":2400}`)

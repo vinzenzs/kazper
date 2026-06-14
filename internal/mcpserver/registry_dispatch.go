@@ -59,9 +59,11 @@ func dispatchMCP(ctx context.Context, c *apiClient, s agenttools.Spec, raw json.
 	// write branch, exactly as the bespoke handlers did. (The MCP surface
 	// ignores Tier, by design.)
 	var key string
-	switch call.Method {
-	case "POST", "PATCH", "DELETE":
-		key = agenttools.EffectiveIdempotencyKey(agenttools.ExplicitIdempotencyKey(raw), s.Name, raw)
+	if !s.OmitIdempotencyKey {
+		switch call.Method {
+		case "POST", "PATCH", "DELETE":
+			key = agenttools.EffectiveIdempotencyKey(agenttools.ExplicitIdempotencyKey(raw), s.Name, raw)
+		}
 	}
 	status, body, err := c.do(ctx, call.Method, call.Path, call.Query, call.Body, key)
 	return toToolResult(status, body, err)

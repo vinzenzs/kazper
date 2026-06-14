@@ -68,6 +68,13 @@ type Spec struct {
 	// aggregate context reads are dual-surface (DD1).
 	ChatExposed bool
 	MCPExposed  bool
+	// OmitIdempotencyKey forces a write tool to dispatch WITHOUT an
+	// Idempotency-Key even though its verb is mutating. Used by naturally
+	// idempotent, re-runnable writes whose result must always reflect current
+	// state (e.g. materialize_training_plan: its args don't change when the plan
+	// is edited, so a derived key would replay a stale response instead of
+	// re-materializing). The prior bespoke handler sent an empty key for these.
+	OmitIdempotencyKey bool
 }
 
 // DecodeInto unmarshals a tool's input JSON into dst, returning a friendly
