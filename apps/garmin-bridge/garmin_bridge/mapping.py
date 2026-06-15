@@ -23,25 +23,54 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# Garmin activityType.typeKey → our small Sport enum. Anything unmapped is
-# "other" so an unknown sport never drops the activity.
+# Garmin activityType.typeKey → our small Sport enum (run/bike/swim/strength/
+# yoga/mobility/other). Anything unmapped is "other" so an unknown sport never
+# drops the activity. Built by collapsing Garmin's full ~152-entry activityTypes
+# vocabulary (verified live 2026-06-15) onto the enum: every leaf under the
+# running / cycling / swimming parents, plus the fitness_equipment leaves that
+# have a home (strength_training, yoga, mobility). The genuinely-unmappable
+# categories (walking, hiking, winter/water/team/racket sports, golf, cardio
+# machines, pilates, hiit, dance, …) intentionally fall through to "other" —
+# our enum has no slot for them.
 _SPORT_BY_TYPEKEY = {
+    # running family
     "running": "run",
     "trail_running": "run",
-    "treadmill_running": "run",
+    "street_running": "run",
     "track_running": "run",
+    "treadmill_running": "run",
     "indoor_running": "run",
+    "virtual_run": "run",
+    "obstacle_run": "run",
+    "ultra_run": "run",
+    # cycling family
     "cycling": "bike",
     "road_biking": "bike",
     "mountain_biking": "bike",
+    "gravel_cycling": "bike",
+    "cyclocross": "bike",
+    "downhill_biking": "bike",
+    "track_cycling": "bike",
+    "recumbent_cycling": "bike",
     "indoor_cycling": "bike",
     "virtual_ride": "bike",
-    "gravel_cycling": "bike",
+    "bmx": "bike",
+    "e_bike_mountain": "bike",
+    "e_bike_fitness": "bike",
+    "hand_cycling": "bike",
+    "indoor_hand_cycling": "bike",
+    "enduro_mtb": "bike",
+    "e_enduro_mtb": "bike",
+    # swimming family
+    "swimming": "swim",
     "lap_swimming": "swim",
     "open_water_swimming": "swim",
-    "swimming": "swim",
+    # strength / fitness equipment
     "strength_training": "strength",
     "indoor_cardio": "strength",
+    # yoga / mobility (own enum slots)
+    "yoga": "yoga",
+    "mobility": "mobility",
 }
 
 

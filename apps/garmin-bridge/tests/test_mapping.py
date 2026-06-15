@@ -391,6 +391,35 @@ def test_weight_mapping_grams_to_kg(raw_day):
     assert w["logged_at"] == "2026-06-12T00:00:00Z"
 
 
+def test_sport_typekey_collapses_to_enum():
+    # Garmin's 152-entry activityType vocabulary collapses onto our 7 sports;
+    # variants map to their family and unmapped types fall through to "other".
+    cases = {
+        "trail_running": "run",
+        "ultra_run": "run",
+        "virtual_run": "run",
+        "gravel_cycling": "bike",
+        "e_bike_mountain": "bike",
+        "hand_cycling": "bike",
+        "open_water_swimming": "swim",
+        "strength_training": "strength",
+        "yoga": "yoga",
+        "mobility": "mobility",
+        "golf": "other",          # genuinely unmappable
+        "resort_skiing": "other",
+        "totally_made_up": "other",  # unknown → other, never dropped
+    }
+    for i, (type_key, expect) in enumerate(cases.items()):
+        raw = {"activities": [{
+            "activityId": 9000 + i,
+            "startTimeGMT": "2026-06-12 06:00:00",
+            "duration": 1800.0,
+            "activityType": {"typeKey": type_key},
+        }]}
+        got = mapping.map_workouts(raw)
+        assert got and got[0]["sport"] == expect, f"{type_key} -> {got[0]['sport']} (want {expect})"
+
+
 def test_workouts_mapping(raw_day):
     workouts = mapping.map_workouts(raw_day)
     assert len(workouts) == 3
