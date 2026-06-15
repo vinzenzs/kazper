@@ -134,10 +134,16 @@ target type with `targetValueOne=low` and `targetValueTwo=high`. When a bike ste
 SHALL additionally emit Garmin's secondary-target fields (`secondaryTargetType`
 plus `secondaryZoneNumber` or
 `secondaryTargetValueOne`/`secondaryTargetValueTwo`) using the same per-kind
-value logic as the primary target. The garminconnect payload shape SHALL exist
+value logic as the primary target. The endpoint SHALL additionally accept a
+**multisport** form — an ordered list of segments, each with its own `sport` and
+step program (plus `transition` segments) — and compile it into a payload with
+multiple `workoutSegments` entries: one per segment, each with its own
+`sportType`, a monotonic `segmentOrder`, and `workoutSteps` numbered by a
+step-order counter that spans the whole workout; `transition` segments map to
+Garmin's transition sport type. The garminconnect payload shape SHALL exist
 only in the bridge and SHALL NOT be returned to or required from the backend.
 
-#### Scenario: A structured workout is created and its id returned
+#### Scenario: A single-sport structured workout is created and its id returned
 
 - **WHEN** `POST /workouts` is called with a run workout whose steps include a
   warmup, a repeat group of intervals with a power-zone target, and a cooldown
@@ -163,6 +169,15 @@ only in the bridge and SHALL NOT be returned to or required from the backend.
   `power_zone 4` and whose `secondary_target` is `hr_zone 3`
 - **THEN** the executable step carries both the primary power-zone target and the
   Garmin secondary heart-rate-zone fields
+
+#### Scenario: A multisport workout compiles to multiple segments
+
+- **WHEN** `POST /workouts` is called with a multisport form of segments
+  `[swim, transition, bike, transition, run]`
+- **THEN** the payload has five ordered `workoutSegments`, each with its own
+  `sportType` (transition segments using the transition sport type)
+- **AND** step order is monotonic across all segments
+- **AND** one Garmin workout id is returned
 
 #### Scenario: The Garmin payload shape stays inside the bridge
 
