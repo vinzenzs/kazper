@@ -1,6 +1,6 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-15 by the `roadmap` skill (71 implemented, 4 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (74 implemented, 1 planned)._
 
 _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinzenzs/kazper` (some are local-only until `main` is pushed)._
 
@@ -8,6 +8,9 @@ _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinze
 
 | Date | Change | Summary | Commit |
 |---|---|---|---|
+| 2026-06-16 | add-secondary-target | Garmin bike steps carry a Primary + Secondary target (e.g. Power Zone *and* cadence/HR) but `Step.Target` was a single slot; adds a bike-only secondary target (different metric family). | [`526daf3`](https://github.com/vinzenzs/kazper/commit/526daf3) |
+| 2026-06-16 | add-cadence-target | Garmin offers a cadence step target on bike (rpm) and run (spm) for drills/intervals and as the classic secondary pairing with power; adds a cross-sport `cadence` target kind. | [`4d730d4`](https://github.com/vinzenzs/kazper/commit/4d730d4) |
+| 2026-06-15 | add-swim-pace-targets | Swim pace was unexpressible — `Target` only carried sec/km but swims are prescribed in sec/100m; adds a `swim_pace` kind (swim-restricted; bridge converts `100/sec_per_100m`). | [`025d9a5`](https://github.com/vinzenzs/kazper/commit/025d9a5) |
 | 2026-06-15 | surface-athlete-readiness-context | When the coach grounds on `GET /context/training`, it has no view of the athlete's physiology — surfaces `athlete_config` readiness context. | [`cf07892`](https://github.com/vinzenzs/kazper/commit/cf07892) |
 | 2026-06-15 | schedule-adhoc-yoga-mobility | The vault's `/yoga schedule` still shells out to `garmin.py` because the API has no server-side path; adds `yoga`/`mobility` to the sport vocabulary + scheduling. | [`34c4b5b`](https://github.com/vinzenzs/kazper/commit/34c4b5b) |
 | 2026-06-15 | resolve-zone-targets | Athlete physiology config (FTP, power/HR zones) was stored but consumed by nothing; `EffectiveProgram` now resolves zone-reference targets to absolute power_w/hr_bpm ranges. | [`0ac66fd`](https://github.com/vinzenzs/kazper/commit/0ac66fd) |
@@ -84,10 +87,7 @@ _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinze
 
 | Change | Summary | Proposed by | Proposed |
 |---|---|---|---|
-| add-cadence-target | Garmin offers a Cadence step target on bike (rpm) and run (spm) for drills/intervals and as the classic secondary pairing with power; adds a cross-sport cadence `Target.kind`. | Vinzenz Stadtmueller | uncommitted |
-| add-multisport-structured-workouts | A triathlon/brick is one continuous session (swim→T1→bike→T2→run) that should push as a single multisport watch workout; today bricks are faked as separate single-sport rows. | Vinzenz Stadtmueller | uncommitted |
-| add-secondary-target | Garmin bike steps carry Primary + Secondary targets (e.g. Power Zone *and* cadence) but `Step.Target` is a single slot; adds a bike-scoped secondary target. | Vinzenz Stadtmueller | uncommitted |
-| add-swim-pace-targets | Swim pace is unexpressible — `Target` only carries sec/km but swims are prescribed in sec/100m; adds a swim-pace target kind (the deferred sibling of resolve-zone-targets). | Vinzenz Stadtmueller | uncommitted |
+| add-multisport-structured-workouts | A triathlon/brick is one continuous session (swim→T1→bike→T2→run) that should push as a single multisport watch workout; today bricks are faked as separate single-sport rows. Phase 1 = library + multi-segment compile + schedule. | Vinzenz Stadtmueller | uncommitted |
 
 ---
 _To regenerate: ask Claude "update the roadmap"._
