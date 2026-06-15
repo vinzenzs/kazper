@@ -118,6 +118,34 @@ func TestWorkoutProgram_SwimPaceOverrideResolvesIntoProgram(t *testing.T) {
 	assert.Equal(t, float64(96), target["high_sec_per_100m"])
 }
 
+func TestWorkoutProgram_SecondaryTargetCarriesThrough(t *testing.T) {
+	r := setup(t)
+	// A bike template whose interval step has a primary + secondary target.
+	bikeTmpl := `{"sport":"bike","name":"SS+HR","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":600},` +
+		`"target":{"kind":"power_w","low":250,"high":260},` +
+		`"secondary_target":{"kind":"hr_bpm","low":150,"high":160}}]}`
+	templateID := mustID(t, do(t, r, http.MethodPost, "/workout-templates", bikeTmpl))
+	planID := mustID(t, do(t, r, http.MethodPost, "/training-plans", `{"name":"p","start_date":"2026-06-01"}`))
+	weekID := mustID(t, do(t, r, http.MethodPost, "/training-plans/"+planID+"/weeks", `{"ordinal":1}`))
+	require.Equal(t, http.StatusCreated, do(t, r, http.MethodPost, "/training-plans/"+planID+"/weeks/"+weekID+"/slots",
+		`{"weekday":0,"ordinal":0,"template_id":"`+templateID+`"}`).Code)
+
+	ws := materialize(t, r, planID, `{"scope":"all"}`)
+	require.Len(t, ws, 1)
+
+	prog := program(t, r, ws[0]["id"].(string))
+	steps := prog["steps"].([]any)
+	require.Len(t, steps, 1)
+	step := steps[0].(map[string]any)
+	primary := step["target"].(map[string]any)
+	assert.Equal(t, "power_w", primary["kind"])
+	secondary := step["secondary_target"].(map[string]any)
+	assert.Equal(t, "hr_bpm", secondary["kind"])
+	assert.Equal(t, float64(150), secondary["low"])
+	assert.Equal(t, float64(160), secondary["high"])
+}
+
 func TestWorkoutProgram_NoOverrideYieldsTemplateVerbatim(t *testing.T) {
 	r := setup(t)
 	planID, _, _, _ := buildPlan(t, r) // slot has no overrides

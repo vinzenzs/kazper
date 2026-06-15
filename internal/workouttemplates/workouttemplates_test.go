@@ -203,6 +203,54 @@ func TestCadenceTargetRoundTripsAndIsBikeRunRestricted(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "target_range_invalid")
 }
 
+func TestSecondaryTargetRoundTripsAndIsBikeRestricted(t *testing.T) {
+	r := setup(t)
+
+	// A bike step with primary power_zone + secondary hr_zone is accepted and
+	// both targets echo verbatim.
+	bike := `{"sport":"bike","name":"Sweet spot + HR cap","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":600},` +
+		`"target":{"kind":"power_zone","low":4,"high":4},` +
+		`"secondary_target":{"kind":"hr_zone","low":3,"high":3}}]}`
+	rec := do(t, r, http.MethodPost, "/workout-templates", bike)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var got workouttemplates.Template
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Steps, 1)
+	require.NotNil(t, got.Steps[0].Target)
+	require.NotNil(t, got.Steps[0].SecondaryTarget)
+	assert.Equal(t, workouttemplates.TargetPowerZone, got.Steps[0].Target.Kind)
+	assert.Equal(t, workouttemplates.TargetHRZone, got.Steps[0].SecondaryTarget.Kind)
+	assert.Equal(t, 3, *got.Steps[0].SecondaryTarget.Low)
+
+	// secondary_target on a non-bike template is rejected.
+	runSecondary := `{"sport":"run","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+		`"target":{"kind":"hr_zone","low":4,"high":4},` +
+		`"secondary_target":{"kind":"power_zone","low":3,"high":3}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", runSecondary)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "secondary_target_invalid")
+
+	// A same-metric-family secondary (power primary + power secondary) is rejected.
+	sameFamily := `{"sport":"bike","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+		`"target":{"kind":"power_zone","low":4,"high":4},` +
+		`"secondary_target":{"kind":"power_w","low":250,"high":260}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", sameFamily)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "secondary_target_invalid")
+
+	// A kind:"none" secondary is rejected.
+	noneSecondary := `{"sport":"bike","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+		`"target":{"kind":"power_zone","low":4,"high":4},` +
+		`"secondary_target":{"kind":"none"}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", noneSecondary)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "secondary_target_invalid")
+}
+
 func TestPatchReplacesStepsAsAUnit(t *testing.T) {
 	r := setup(t)
 	created := createValid(t, r)

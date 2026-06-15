@@ -29,7 +29,7 @@ func TestResolveTargets_SingleZonePower(t *testing.T) {
 	out := resolveTargets(steps, zonedConfig(), wt.SportBike)
 	tg := out[0].Target
 	assert.Equal(t, wt.TargetPowerW, tg.Kind)
-	assert.Equal(t, 230, *tg.Low) // PowerZone3Max
+	assert.Equal(t, 230, *tg.Low)  // PowerZone3Max
 	assert.Equal(t, 268, *tg.High) // PowerZone4Max
 	assert.Equal(t, "Z4", tg.Origin)
 	// original slice not mutated
@@ -41,9 +41,32 @@ func TestResolveTargets_SingleZoneHR(t *testing.T) {
 	out := resolveTargets(steps, zonedConfig(), wt.SportRun)
 	tg := out[0].Target
 	assert.Equal(t, wt.TargetHRBpm, tg.Kind)
-	assert.Equal(t, 167, *tg.Low) // HRZone3Max
+	assert.Equal(t, 167, *tg.Low)  // HRZone3Max
 	assert.Equal(t, 178, *tg.High) // HRZone4Max
 	assert.Equal(t, "Z4", tg.Origin)
+}
+
+func TestResolveTargets_SecondaryZoneResolved(t *testing.T) {
+	// A bike step with primary power_zone + secondary hr_zone: both zone-kind
+	// targets resolve to absolutes, the secondary using the same rules.
+	steps := []wt.Step{{
+		Type:            wt.NodeStep,
+		Intent:          wt.IntentInterval,
+		Target:          zoneTarget(wt.TargetPowerZone, 4, 4),
+		SecondaryTarget: zoneTarget(wt.TargetHRZone, 3, 3),
+	}}
+	out := resolveTargets(steps, zonedConfig(), wt.SportBike)
+	primary := out[0].Target
+	assert.Equal(t, wt.TargetPowerW, primary.Kind)
+	assert.Equal(t, 268, *primary.High) // PowerZone4Max
+	secondary := out[0].SecondaryTarget
+	require.NotNil(t, secondary)
+	assert.Equal(t, wt.TargetHRBpm, secondary.Kind)
+	assert.Equal(t, 142, *secondary.Low)  // HRZone2Max
+	assert.Equal(t, 167, *secondary.High) // HRZone3Max
+	assert.Equal(t, "Z3", secondary.Origin)
+	// original slice not mutated
+	assert.Equal(t, wt.TargetHRZone, steps[0].SecondaryTarget.Kind)
 }
 
 func TestResolveTargets_MultiZoneBand(t *testing.T) {
@@ -51,7 +74,7 @@ func TestResolveTargets_MultiZoneBand(t *testing.T) {
 	out := resolveTargets(steps, zonedConfig(), wt.SportBike)
 	tg := out[0].Target
 	assert.Equal(t, wt.TargetPowerW, tg.Kind)
-	assert.Equal(t, 140, *tg.Low) // PowerZone1Max
+	assert.Equal(t, 140, *tg.Low)  // PowerZone1Max
 	assert.Equal(t, 268, *tg.High) // PowerZone4Max
 	assert.Equal(t, "Z2–Z4", tg.Origin)
 }
@@ -61,7 +84,7 @@ func TestResolveTargets_ZoneOneFloorIsZero(t *testing.T) {
 	out := resolveTargets(steps, zonedConfig(), wt.SportRun)
 	tg := out[0].Target
 	assert.Equal(t, wt.TargetHRBpm, tg.Kind)
-	assert.Equal(t, 0, *tg.Low) // zone-1 lower edge
+	assert.Equal(t, 0, *tg.Low)    // zone-1 lower edge
 	assert.Equal(t, 120, *tg.High) // HRZone1Max
 	assert.Equal(t, "Z1", tg.Origin)
 }
@@ -79,7 +102,7 @@ func TestResolveTargets_NestedInRepeat(t *testing.T) {
 	// nested power-zone interval resolved to watts
 	interval := out[1].Steps[0].Target
 	assert.Equal(t, wt.TargetPowerW, interval.Kind)
-	assert.Equal(t, 268, *interval.Low) // PowerZone4Max
+	assert.Equal(t, 268, *interval.Low)  // PowerZone4Max
 	assert.Equal(t, 320, *interval.High) // PowerZone5Max
 	// nested recovery hr-zone resolved to bpm
 	assert.Equal(t, wt.TargetHRBpm, out[1].Steps[1].Target.Kind)

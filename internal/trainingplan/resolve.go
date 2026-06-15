@@ -35,11 +35,17 @@ func resolveStep(st workouttemplates.Step, cfg *athleteconfig.AthleteConfig, spo
 		st.Steps = inner
 		return st
 	}
-	if st.Target == nil {
-		return st
+	if st.Target != nil {
+		if resolved := resolveTarget(*st.Target, cfg, sport); resolved != nil {
+			st.Target = resolved
+		}
 	}
-	if resolved := resolveTarget(*st.Target, cfg, sport); resolved != nil {
-		st.Target = resolved
+	// A bike step's secondary target resolves the same way (e.g. a secondary
+	// power_zone → power_w); same bike-gate and passthrough rules as the primary.
+	if st.SecondaryTarget != nil {
+		if resolved := resolveTarget(*st.SecondaryTarget, cfg, sport); resolved != nil {
+			st.SecondaryTarget = resolved
+		}
 	}
 	return st
 }

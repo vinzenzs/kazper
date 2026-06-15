@@ -177,6 +177,11 @@ def _build_step(node: dict[str, Any], sport_obj: dict, order: _Counter) -> dict[
     if node.get("note"):
         step["description"] = node["note"]
     step.update(_target(node.get("target") or {"kind": "none"}))
+    # Bike steps may carry a second simultaneous target (e.g. power + cadence);
+    # the backend validates it bike-only and family-distinct, so just emit it.
+    secondary = node.get("secondary_target")
+    if secondary:
+        step.update(_secondary_target(secondary))
     return step
 
 
@@ -198,32 +203,56 @@ def _end_condition(duration: dict[str, Any]) -> tuple[tuple[int, str], float | N
     return _END_CONDITION[kind], None
 
 
-def _target(target: dict[str, Any]) -> dict[str, Any]:
+def _target_type_and_values(target: dict[str, Any]) -> tuple[int, str, dict[str, Any]]:
+    """Resolve a target kind to its Garmin (typeId, typeKey) and the unprefixed
+    value fields (zoneNumber / targetValueOne / targetValueTwo). Shared by the
+    primary (_target) and secondary (_secondary_target) emitters."""
     kind = target.get("kind", "none")
     if kind not in _TARGET_TYPE:
         raise BuildError(f"unknown target kind {kind!r}")
     type_id, type_key = _TARGET_TYPE[kind]
-    out: dict[str, Any] = {"targetType": {"workoutTargetTypeId": type_id, "workoutTargetTypeKey": type_key}}
+    values: dict[str, Any] = {}
 
     if kind in ("hr_zone", "power_zone"):
         # Zone-by-number when a single zone (low==high); otherwise a value range.
         low, high = target.get("low"), target.get("high")
         if low is not None and high is not None and low == high:
-            out["zoneNumber"] = low
+            values["zoneNumber"] = low
         else:
-            out["targetValueOne"] = low
-            out["targetValueTwo"] = high
+            values["targetValueOne"] = low
+            values["targetValueTwo"] = high
     elif kind in ("hr_bpm", "power_w", "cadence"):
-        out["targetValueOne"] = target.get("low")
-        out["targetValueTwo"] = target.get("high")
+        values["targetValueOne"] = target.get("low")
+        values["targetValueTwo"] = target.get("high")
     elif kind == "pace":
         # Garmin pace targets are metres/second; convert from sec/km.
-        out["targetValueOne"] = _pace_mps(target.get("low_sec_per_km"))
-        out["targetValueTwo"] = _pace_mps(target.get("high_sec_per_km"))
+        values["targetValueOne"] = _pace_mps(target.get("low_sec_per_km"))
+        values["targetValueTwo"] = _pace_mps(target.get("high_sec_per_km"))
     elif kind == "swim_pace":
         # Same Garmin m/s pace gate, but swim pace is sec/100m: 100/sec_per_100m.
-        out["targetValueOne"] = _swim_pace_mps(target.get("low_sec_per_100m"))
-        out["targetValueTwo"] = _swim_pace_mps(target.get("high_sec_per_100m"))
+        values["targetValueOne"] = _swim_pace_mps(target.get("low_sec_per_100m"))
+        values["targetValueTwo"] = _swim_pace_mps(target.get("high_sec_per_100m"))
+    return type_id, type_key, values
+
+
+def _target(target: dict[str, Any]) -> dict[str, Any]:
+    type_id, type_key, values = _target_type_and_values(target)
+    out: dict[str, Any] = {"targetType": {"workoutTargetTypeId": type_id, "workoutTargetTypeKey": type_key}}
+    out.update(values)
+    return out
+
+
+def _secondary_target(target: dict[str, Any]) -> dict[str, Any]:
+    """Garmin's second simultaneous target for a (bike) step: the same type and
+    value logic as _target, under the `secondary*` field names the
+    ExecutableStepDTO uses (secondaryTargetType / secondaryZoneNumber /
+    secondaryTargetValueOne / secondaryTargetValueTwo)."""
+    type_id, type_key, values = _target_type_and_values(target)
+    out: dict[str, Any] = {
+        "secondaryTargetType": {"workoutTargetTypeId": type_id, "workoutTargetTypeKey": type_key}
+    }
+    for k, v in values.items():
+        out["secondary" + k[0].upper() + k[1:]] = v
     return out
 
 

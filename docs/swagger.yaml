@@ -2665,6 +2665,14 @@ definitions:
         type: string
       note:
         type: string
+      secondary_target:
+        allOf:
+        - $ref: '#/definitions/workouttemplates.Target'
+        description: |-
+          SecondaryTarget is a second simultaneous effort gate (e.g. hold power AND
+          a cadence band). Garmin offers this only for bike steps, so it is accepted
+          only on bike-sport templates and must be in a different metric family than
+          Target. omitempty so absent stays distinct.
       steps:
         items:
           $ref: '#/definitions/workouttemplates.Step'

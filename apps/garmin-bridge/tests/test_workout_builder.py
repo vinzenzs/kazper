@@ -136,6 +136,31 @@ def test_swim_pace_inverted_or_zero_bounds_guarded():
     assert wb._swim_pace_mps(100) == pytest.approx(1.0)
 
 
+def test_bike_secondary_target_emits_both_target_sets():
+    p = wb.build_payload("bike", "Sweet spot", [
+        {"type": "step", "intent": "interval", "duration": {"kind": "time", "seconds": 600},
+         "target": {"kind": "power_zone", "low": 4, "high": 4},
+         "secondary_target": {"kind": "hr_zone", "low": 3, "high": 3}},
+    ])
+    step = p["workoutSegments"][0]["workoutSteps"][0]
+    # Primary: power zone 4 by number.
+    assert step["targetType"]["workoutTargetTypeKey"] == "power.zone"
+    assert step["zoneNumber"] == 4
+    # Secondary: hr zone 3 under the secondary* field names.
+    assert step["secondaryTargetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+    assert step["secondaryZoneNumber"] == 3
+    assert "secondaryTargetValueOne" not in step  # single zone → zoneNumber form
+
+
+def test_secondary_target_absent_emits_no_secondary_fields():
+    p = wb.build_payload("bike", "x", [
+        {"type": "step", "intent": "interval", "duration": {"kind": "time", "seconds": 60},
+         "target": {"kind": "power_zone", "low": 3, "high": 3}},
+    ])
+    step = p["workoutSegments"][0]["workoutSteps"][0]
+    assert not any(k.startswith("secondary") for k in step)
+
+
 def test_absolute_hr_and_power_targets_use_value_range():
     p = wb.build_payload("run", "x", [
         {"type": "step", "intent": "active", "duration": {"kind": "time", "seconds": 60},

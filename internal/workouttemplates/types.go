@@ -89,7 +89,12 @@ type Step struct {
 	Intent   string    `json:"intent,omitempty"`
 	Duration *Duration `json:"duration,omitempty"`
 	Target   *Target   `json:"target,omitempty"`
-	Note     string    `json:"note,omitempty"`
+	// SecondaryTarget is a second simultaneous effort gate (e.g. hold power AND
+	// a cadence band). Garmin offers this only for bike steps, so it is accepted
+	// only on bike-sport templates and must be in a different metric family than
+	// Target. omitempty so absent stays distinct.
+	SecondaryTarget *Target `json:"secondary_target,omitempty"`
+	Note            string  `json:"note,omitempty"`
 
 	// --- repeat group (Type == "repeat") ---
 	Count int    `json:"count,omitempty"`

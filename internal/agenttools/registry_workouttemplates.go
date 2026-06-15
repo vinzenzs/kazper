@@ -36,20 +36,22 @@ type wtTarget struct {
 }
 
 type wtSubStep struct {
-	Type     string      `json:"type" jsonschema:"always the literal step inside a repeat group"`
-	Intent   string      `json:"intent" jsonschema:"one of warmup, active, interval, recovery, rest, cooldown"`
-	Duration *wtDuration `json:"duration" jsonschema:"the step's end condition"`
-	Target   *wtTarget   `json:"target" jsonschema:"the step's effort target; use kind none for untargeted"`
-	Note     string      `json:"note,omitempty" jsonschema:"optional free-text cue"`
+	Type            string      `json:"type" jsonschema:"always the literal step inside a repeat group"`
+	Intent          string      `json:"intent" jsonschema:"one of warmup, active, interval, recovery, rest, cooldown"`
+	Duration        *wtDuration `json:"duration" jsonschema:"the step's end condition"`
+	Target          *wtTarget   `json:"target" jsonschema:"the step's effort target; use kind none for untargeted"`
+	SecondaryTarget *wtTarget   `json:"secondary_target,omitempty" jsonschema:"optional second simultaneous target, bike templates only; must be a different metric family than target (e.g. primary power_zone + secondary hr_zone or cadence)"`
+	Note            string      `json:"note,omitempty" jsonschema:"optional free-text cue"`
 }
 
 type wtStep struct {
 	Type string `json:"type" jsonschema:"step for a single executable step, repeat for a repeat group"`
 	// step fields
-	Intent   string      `json:"intent,omitempty" jsonschema:"for a single step: one of warmup, active, interval, recovery, rest, cooldown"`
-	Duration *wtDuration `json:"duration,omitempty" jsonschema:"for a single step: the end condition"`
-	Target   *wtTarget   `json:"target,omitempty" jsonschema:"for a single step: the effort target"`
-	Note     string      `json:"note,omitempty" jsonschema:"for a single step: optional free-text cue"`
+	Intent          string      `json:"intent,omitempty" jsonschema:"for a single step: one of warmup, active, interval, recovery, rest, cooldown"`
+	Duration        *wtDuration `json:"duration,omitempty" jsonschema:"for a single step: the end condition"`
+	Target          *wtTarget   `json:"target,omitempty" jsonschema:"for a single step: the effort target"`
+	SecondaryTarget *wtTarget   `json:"secondary_target,omitempty" jsonschema:"for a single step: optional second simultaneous target, bike templates only; must be a different metric family than target (e.g. primary power_zone + secondary hr_zone or cadence)"`
+	Note            string      `json:"note,omitempty" jsonschema:"for a single step: optional free-text cue"`
 	// repeat fields
 	Count int         `json:"count,omitempty" jsonschema:"for a repeat group: number of iterations, at least 2"`
 	Steps []wtSubStep `json:"steps,omitempty" jsonschema:"for a repeat group: single steps to repeat (no nested repeats)"`
@@ -96,7 +98,8 @@ func workoutTemplatesSpecs() []Spec {
 				"plan references and the Garmin watch push compiles. Steps are validated; repeat groups are single-level. " +
 				"Pace targets are sport-specific: run/bike use kind pace (sec/km); swim uses kind swim_pace (sec/100m) — " +
 				"each is rejected on the other's sport. Cadence targets (kind cadence, rpm on bike / spm on run) are " +
-				"accepted only on bike or run.",
+				"accepted only on bike or run. Bike steps may also carry a secondary_target (a second simultaneous gate, " +
+				"e.g. primary power_zone + secondary hr_zone or cadence) — bike-only and a different metric family than the primary.",
 			SchemaType: CreateWorkoutTemplateArgs{},
 			Tier:       TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {

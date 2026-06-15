@@ -11938,6 +11938,14 @@ const docTemplate = `{
                 "note": {
                     "type": "string"
                 },
+                "secondary_target": {
+                    "description": "SecondaryTarget is a second simultaneous effort gate (e.g. hold power AND\na cadence band). Garmin offers this only for bike steps, so it is accepted\nonly on bike-sport templates and must be in a different metric family than\nTarget. omitempty so absent stays distinct.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/workouttemplates.Target"
+                        }
+                    ]
+                },
                 "steps": {
                     "type": "array",
                     "items": {

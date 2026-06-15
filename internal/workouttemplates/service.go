@@ -18,6 +18,7 @@ var (
 	ErrTargetInvalid       = errors.New("target_invalid")
 	ErrTargetRangeInvalid  = errors.New("target_range_invalid")
 	ErrTargetSportMismatch = errors.New("target_sport_mismatch")
+	ErrSecondaryTarget     = errors.New("secondary_target_invalid")
 	ErrRepeatInvalid       = errors.New("repeat_invalid")
 	ErrRepeatNested        = errors.New("repeat_nested")
 )
@@ -166,7 +167,57 @@ func validateSingleStep(n Step, sport string) error {
 	if err := validateTarget(n.Target); err != nil {
 		return err
 	}
-	return validateTargetSport(n.Target, sport)
+	if err := validateTargetSport(n.Target, sport); err != nil {
+		return err
+	}
+	return validateSecondaryTarget(n.Target, n.SecondaryTarget, sport)
+}
+
+// validateSecondaryTarget enforces the bike-only second-target rules: a
+// secondary target is accepted only on bike steps, its kind SHALL NOT be none,
+// it SHALL be a valid target in a metric family different from the primary, and
+// it SHALL satisfy the same sport rules as any target. A nil secondary is a
+// no-op. Applies to top-level and repeat-group child steps alike.
+func validateSecondaryTarget(primary, secondary *Target, sport string) error {
+	if secondary == nil {
+		return nil
+	}
+	if sport != SportBike {
+		return ErrSecondaryTarget
+	}
+	if secondary.Kind == TargetNone {
+		return ErrSecondaryTarget
+	}
+	if err := validateTarget(secondary); err != nil {
+		return err
+	}
+	if err := validateTargetSport(secondary, sport); err != nil {
+		return err
+	}
+	if primary != nil && metricFamily(primary.Kind) == metricFamily(secondary.Kind) {
+		return ErrSecondaryTarget
+	}
+	return nil
+}
+
+// metricFamily groups target kinds that measure the same thing, so a primary and
+// secondary target can be required to gate on different metrics (e.g. power +
+// cadence, never power + power).
+func metricFamily(kind string) string {
+	switch kind {
+	case TargetPowerZone, TargetPowerW:
+		return "power"
+	case TargetHRZone, TargetHRBpm:
+		return "hr"
+	case TargetPace, TargetSwimPace:
+		return "pace"
+	case TargetCadence:
+		return "cadence"
+	case TargetRPE:
+		return "rpe"
+	default:
+		return kind
+	}
 }
 
 // validateTargetSport enforces sport-dependent target rules against the
