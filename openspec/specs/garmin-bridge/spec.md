@@ -307,10 +307,11 @@ The bridge SHALL, on each daily sync, fetch the athlete's Garmin physiology conf
 - **WHEN** `get_userprofile_settings()` returns only display preferences (no `userData`, no zones) and `userData.ftpAutoDetected` is the boolean `true`
 - **THEN** the bridge does not derive any config field from `get_userprofile_settings()` and does not treat `ftpAutoDetected` as `ftp_watts`
 
-#### Scenario: Power zones are omitted while unavailable
+#### Scenario: Power zones are derived from FTP (no readable Garmin source)
 
-- **WHEN** a sync runs and no Garmin endpoint exposes configured power-zone boundaries
-- **THEN** the `PUT /athlete-config` body omits all `power_zone_*` fields and the rest of the config is still written
+- **WHEN** a sync runs with a known FTP — Garmin exposes no readable power-zone endpoint (`/biometric-service/powerZones` is write-only: `Allow: OPTIONS,PUT`, no GET; `/power-service/powerZones` 404s)
+- **THEN** the `PUT /athlete-config` body sets `power_zone_1_max..power_zone_5_max` derived from FTP via the Coggan %FTP model (55/75/90/105/120%, rounded to the watt)
+- **AND** when FTP is absent the `power_zone_*` fields are omitted (they cannot be derived) and the rest of the config is still written
 
 #### Scenario: Config refresh is a non-date-keyed singleton overwrite
 

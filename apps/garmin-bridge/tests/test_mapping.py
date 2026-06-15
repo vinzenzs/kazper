@@ -212,9 +212,38 @@ def test_athlete_config_mapping(raw_day):
     assert cfg["hr_zone_1_max"] == 120
     assert cfg["hr_zone_4_max"] == 175
     assert cfg["hr_zone_5_max"] == 190
-    # power zones have no reachable source → omitted; no functional threshold_hr
-    assert not any(k.startswith("power_zone_") for k in cfg)
+    # power zones aren't readable from Garmin (PUT-only endpoint) → derived from
+    # FTP via Coggan %FTP: 55/75/90/105/120% of 255 W
+    assert cfg["power_zone_1_max"] == 140
+    assert cfg["power_zone_2_max"] == 191
+    assert cfg["power_zone_3_max"] == 230
+    assert cfg["power_zone_4_max"] == 268
+    assert cfg["power_zone_5_max"] == 306
+    # no functional threshold_hr (no Garmin value distinct from lactate threshold)
     assert "threshold_hr" not in cfg
+
+
+def test_power_zone_maxima_derived_from_ftp():
+    """Coggan Z1-Z5 boundaries (55/75/90/105/120% FTP), rounded to the watt."""
+    assert mapping._power_zone_maxima(300) == {
+        "power_zone_1_max": 165,
+        "power_zone_2_max": 225,
+        "power_zone_3_max": 270,
+        "power_zone_4_max": 315,
+        "power_zone_5_max": 360,
+    }
+    # absent / non-positive FTP → no zones (can't derive without FTP)
+    assert mapping._power_zone_maxima(None) == {}
+    assert mapping._power_zone_maxima(0) == {}
+
+
+def test_athlete_config_power_zones_absent_without_ftp():
+    """No FTP → power zones cannot be derived and are omitted, HR zones still map."""
+    raw = {"heart_rate_zones": [{"sport": "DEFAULT", "zone2Floor": 120, "maxHeartRateUsed": 190}]}
+    cfg = mapping.map_athlete_config(raw)
+    assert cfg["hr_zone_1_max"] == 120
+    assert not any(k.startswith("power_zone_") for k in cfg)
+    assert "ftp_watts" not in cfg
 
 
 def test_athlete_config_default_sport_zones_chosen():
@@ -257,10 +286,11 @@ def test_athlete_config_drops_implausible_threshold_pace():
     assert "threshold_pace_sec_per_km" not in cfg  # 5.0 * 1000 = 5000 s/km → dropped
 
 
-def test_athlete_config_power_zones_absent(raw_day):
-    """No reachable power-zone source → power_zone_* always omitted."""
+def test_athlete_config_power_zones_derived_from_ftp(raw_day):
+    """No readable power-zone endpoint → power_zone_* derived from FTP, not omitted."""
     cfg = mapping.map_athlete_config(raw_day)
-    assert not any(k.startswith("power_zone_") for k in cfg)
+    assert cfg["power_zone_1_max"] == 140  # 55% of FTP 255
+    assert cfg["power_zone_5_max"] == 306  # 120% of FTP 255
 
 
 def test_athlete_config_empty_yields_none():

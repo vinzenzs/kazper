@@ -645,6 +645,29 @@ def _hr_zone_maxima(entry: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+# Cycling power zones are *defined* as % of FTP. Garmin exposes no readable
+# power-zones endpoint: ``/power-service/powerZones`` 404s and
+# ``/biometric-service/powerZones`` is write-only (verified live — ``Allow:
+# OPTIONS,PUT``, no GET; no sport sub-path or ?sport= variant exists). So the five
+# zone maxima are derived from FTP using the standard Coggan Z1-Z5 boundaries;
+# Coggan Z6-Z7 (anaerobic / neuromuscular) fold into "above zone 5".
+_POWER_ZONE_PCT_OF_FTP = (0.55, 0.75, 0.90, 1.05, 1.20)
+
+
+def _power_zone_maxima(ftp_watts: int | None) -> dict[str, Any]:
+    """FTP → {power_zone_1_max .. power_zone_5_max} via Coggan %FTP boundaries.
+
+    55/75/90/105/120% of FTP, each rounded to the nearest watt. Empty when FTP is
+    absent or non-positive (zones cannot be derived without it).
+    """
+    if not ftp_watts or ftp_watts <= 0:
+        return {}
+    return {
+        f"power_zone_{n}_max": round(ftp_watts * pct)
+        for n, pct in enumerate(_POWER_ZONE_PCT_OF_FTP, start=1)
+    }
+
+
 def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
     """Garmin physiology config → /athlete-config singleton body.
 
@@ -652,15 +675,17 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
     omitted when absent. FTP is the auto-detected cycling FTP (``get_cycling_ftp``);
     lactate-threshold HR and threshold *speeds* (→ paces) come from the user
     profile's ``userData``; max HR and HR-zone maxima come from the heart-rate-zones
-    payload. Power zones have no reachable Garmin endpoint and are omitted, as is a
-    distinct functional ``threshold_hr`` (no value separate from lactate threshold).
-    Returns None when nothing usable was found.
+    payload. Power zones have no reachable Garmin endpoint, so they are *derived*
+    from FTP via the Coggan %FTP model (see ``_power_zone_maxima``). A distinct
+    functional ``threshold_hr`` is left unmapped (no value separate from lactate
+    threshold). Returns None when nothing usable was found.
     """
     user = _dig(raw, "user_profile", "userData") or {}
     hr_entry = _hr_zone_entry(raw.get("heart_rate_zones"))
+    ftp = _as_int(_dig(raw, "cycling_ftp", "functionalThresholdPower"))
     cfg = _prune(
         {
-            "ftp_watts": _as_int(_dig(raw, "cycling_ftp", "functionalThresholdPower")),
+            "ftp_watts": ftp,
             "lactate_threshold_hr": _as_int(user.get("lactateThresholdHeartRate")),
             "max_hr": _as_int((hr_entry or {}).get("maxHeartRateUsed")),
             "threshold_pace_sec_per_km": _pace_per_km(
@@ -672,6 +697,7 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
         }
     )
     cfg.update(_hr_zone_maxima(hr_entry))
+    cfg.update(_power_zone_maxima(ftp))
     return cfg or None
 
 
