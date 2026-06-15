@@ -1,6 +1,6 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (74 implemented, 1 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (75 implemented, 0 planned — workout-target arc complete; no active changes)._
 
 _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinzenzs/kazper` (some are local-only until `main` is pushed)._
 
@@ -8,6 +8,7 @@ _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinze
 
 | Date | Change | Summary | Commit |
 |---|---|---|---|
+| 2026-06-16 | add-multisport-structured-workouts | A triathlon/brick is one continuous session (swim→T1→bike→T2→run) that should push as a single auto-advancing multisport watch workout; adds per-sport segment templates + multi-segment Garmin compile (Phase 1: library + compile + schedule). | [`5808e0e`](https://github.com/vinzenzs/kazper/commit/5808e0e) |
 | 2026-06-16 | add-secondary-target | Garmin bike steps carry a Primary + Secondary target (e.g. Power Zone *and* cadence/HR) but `Step.Target` was a single slot; adds a bike-only secondary target (different metric family). | [`526daf3`](https://github.com/vinzenzs/kazper/commit/526daf3) |
 | 2026-06-16 | add-cadence-target | Garmin offers a cadence step target on bike (rpm) and run (spm) for drills/intervals and as the classic secondary pairing with power; adds a cross-sport `cadence` target kind. | [`4d730d4`](https://github.com/vinzenzs/kazper/commit/4d730d4) |
 | 2026-06-15 | add-swim-pace-targets | Swim pace was unexpressible — `Target` only carried sec/km but swims are prescribed in sec/100m; adds a `swim_pace` kind (swim-restricted; bridge converts `100/sec_per_100m`). | [`025d9a5`](https://github.com/vinzenzs/kazper/commit/025d9a5) |
@@ -85,9 +86,9 @@ _All changes authored by Vinzenz Stadtmueller. Commits link to `github.com/vinze
 
 ## Planned
 
-| Change | Summary | Proposed by | Proposed |
-|---|---|---|---|
-| add-multisport-structured-workouts | A triathlon/brick is one continuous session (swim→T1→bike→T2→run) that should push as a single multisport watch workout; today bricks are faked as separate single-sport rows. Phase 1 = library + multi-segment compile + schedule. | Vinzenz Stadtmueller | uncommitted |
+_No active changes — `openspec/changes/` is empty. The workout-target arc (resolve-zone-targets → swim-pace → secondary-target → cadence → multisport) is fully shipped._
+
+**Future-but-unproposed:** multisport **Phase 2** (plan-slot/materialize integration + `multisport`/`transition` in `workouts.Sport`/`Program`) becomes a proposal once Phase 1 settles.
 
 ---
 _To regenerate: ask Claude "update the roadmap"._
