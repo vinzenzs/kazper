@@ -246,8 +246,10 @@ def test_multisport_segments_ordered_with_own_sport():
     assert out[0]["sportType"] == {"sportTypeId": 4, "sportTypeKey": "swimming"}
     assert out[2]["sportType"] == {"sportTypeId": 2, "sportTypeKey": "cycling"}
     assert out[4]["sportType"] == {"sportTypeId": 1, "sportTypeKey": "running"}
-    # Transitions use the transition sport.
-    assert out[1]["sportType"]["sportTypeKey"] == "transition"
+    # Transitions compile as multi_sport-typed segments (verified live 2026-06-16:
+    # the Garmin workout vocabulary has no distinct transition sportType; id 10 =
+    # multi_sport, accepted for the transition segment).
+    assert out[1]["sportType"]["sportTypeKey"] == "multi_sport"
 
 
 def test_multisport_step_order_monotonic_across_segments():

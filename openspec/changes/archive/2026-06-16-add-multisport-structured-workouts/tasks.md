@@ -12,7 +12,7 @@
 ## 3. Garmin bridge multi-segment compile
 
 - [x] 3.1 Extend `workout_builder.build_payload` with a multisport branch: one `workoutSegments` entry per segment with its own `sportType`, monotonic `segmentOrder`, whole-workout step-order counter.
-- [x] 3.2 Map `transition` segments to Garmin's transition sport type. Verify exact sport-type ids and segment field names against garminconnect. _Structure + per-segment ids (from the verified `_SPORT` map) done. The top-level `multi_sport` and `transition` workout-service sportTypeIds are flagged `TO VERIFY` in `workout_builder.py` — the garminconnect lib's `SportType` enum uses non-workout-service numbering, so a wrong id is silently stored as 0; needs one on-device push to confirm before relying on the watch._
+- [x] 3.2 Map `transition` segments to Garmin's transition sport type. Verify exact sport-type ids and segment field names against garminconnect. _**VERIFIED LIVE 2026-06-16** via create+read round-trips through the running bridge (Garmin normalizes sportTypeId→canonical key on store). **`multi_sport` = id 10** — a first guess of 9 stored as `"hiit"` (would have pushed the tri as a HIIT workout); top-level corrected 9→10 and a full swim/T1/bike/T2/run probe read back top-level `multi_sport` with segments swim(4)/bike(2)/run(1). The reachable Garmin vocabulary has **no distinct transition workout sportType**; Garmin accepts a transition segment typed `multi_sport(10)`, so T1/T2 compile as multi_sport-typed duration segments. Probe workouts created + deleted; no residue._
 - [x] 3.3 Unit-test the multi-segment payload (swim/T1/bike/T2/run → 5 ordered segments, monotonic step order).
 
 ## 4. Compile + schedule action

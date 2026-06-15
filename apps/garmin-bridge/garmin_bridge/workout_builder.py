@@ -112,16 +112,18 @@ def build_payload(sport: str, name: str, steps: list[dict[str, Any]]) -> dict[st
 
 
 # Multisport top-level sportType and the transition (T1/T2) sport, in the Garmin
-# workout-service vocabulary. TO VERIFY against the live API (add-multisport task
-# 3.2): a wrong sportTypeId is silently stored as 0 (no sport) rather than
-# erroring — see the _SPORT note. `transition` is id 10 (the gap in the verified
-# 1..13 list). The workout-service `multi_sport` id is NOT yet confirmed live —
-# the garminconnect lib's SportType enum uses a different, non-workout-service
-# numbering (it has swimming=3 where the workout service uses 4), so it is not
-# authoritative here. The per-segment sportType ids below come from the verified
-# _SPORT map and are trusted.
-_TRANSITION_SPORT = (10, "transition")
-_MULTISPORT_SPORT = (9, "multi_sport")
+# workout-service vocabulary. VERIFIED LIVE 2026-06-16 (add-multisport task 3.2)
+# via a create+read round-trip: Garmin normalizes a sent sportTypeId to its
+# canonical key on store, so the read-back is authoritative. Findings:
+#   id 10 → "multi_sport"      id 9 → "hiit"   (a first guess of 9 pushed the
+#   workout to the watch as HIIT — the exact silent failure the _SPORT note warns
+#   about).
+# The reachable Garmin client vocabulary (garminconnect/garth) has NO distinct
+# "transition" workout sportType, and Garmin accepts a transition segment typed
+# multi_sport(10), so T1/T2 segments compile as multi_sport-typed duration
+# segments. The per-segment sport ids come from the verified _SPORT map.
+_MULTISPORT_SPORT = (10, "multi_sport")
+_TRANSITION_SPORT = (10, "multi_sport")
 
 
 def build_multisport_payload(name: str, segments: list[dict[str, Any]]) -> dict[str, Any]:
