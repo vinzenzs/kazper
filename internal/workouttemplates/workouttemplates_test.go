@@ -158,6 +158,51 @@ func TestSwimPaceTargetRoundTripsAndIsSwimRestricted(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "target_range_invalid")
 }
 
+func TestCadenceTargetRoundTripsAndIsBikeRunRestricted(t *testing.T) {
+	r := setup(t)
+
+	// A run (and a bike) template with a cadence step is accepted, echoed verbatim.
+	for _, sport := range []string{"run", "bike"} {
+		body := `{"sport":"` + sport + `","name":"Cadence drill","steps":[` +
+			`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+			`"target":{"kind":"cadence","low":88,"high":92}}]}`
+		rec := do(t, r, http.MethodPost, "/workout-templates", body)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		var got workouttemplates.Template
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		require.Len(t, got.Steps, 1)
+		tgt := got.Steps[0].Target
+		require.NotNil(t, tgt)
+		assert.Equal(t, workouttemplates.TargetCadence, tgt.Kind)
+		require.NotNil(t, tgt.Low)
+		require.NotNil(t, tgt.High)
+		assert.Equal(t, 88, *tgt.Low)
+		assert.Equal(t, 92, *tgt.High)
+	}
+
+	// cadence on a non-bike/run template is rejected.
+	for _, sport := range []string{"swim", "strength"} {
+		dur := `{"kind":"time","seconds":60}`
+		if sport == "swim" {
+			dur = `{"kind":"distance","meters":100}`
+		}
+		body := `{"sport":"` + sport + `","name":"x","steps":[` +
+			`{"type":"step","intent":"interval","duration":` + dur + `,` +
+			`"target":{"kind":"cadence","low":88,"high":92}}]}`
+		rec := do(t, r, http.MethodPost, "/workout-templates", body)
+		require.Equal(t, http.StatusBadRequest, rec.Code, sport)
+		assert.Contains(t, rec.Body.String(), "target_sport_mismatch", sport)
+	}
+
+	// An inverted cadence range is rejected.
+	badRange := `{"sport":"run","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+		`"target":{"kind":"cadence","low":92,"high":88}}]}`
+	rec := do(t, r, http.MethodPost, "/workout-templates", badRange)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "target_range_invalid")
+}
+
 func TestPatchReplacesStepsAsAUnit(t *testing.T) {
 	r := setup(t)
 	created := createValid(t, r)

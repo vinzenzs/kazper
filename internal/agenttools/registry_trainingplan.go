@@ -77,7 +77,7 @@ type DeletePlanWeekArgs struct {
 // intent matches, when the planned workout's effective program is resolved.
 type SlotTargetOverrideArg struct {
 	Intent string         `json:"intent" jsonschema:"step intent to override: warmup|active|interval|recovery|rest|cooldown"`
-	Target map[string]any `json:"target" jsonschema:"effort target, same shape as a workout-template step target (e.g. {\"kind\":\"pace\",\"low_sec_per_km\":435,\"high_sec_per_km\":435} for 7:15/km; for swim use {\"kind\":\"swim_pace\",\"low_sec_per_100m\":92,\"high_sec_per_100m\":96})"`
+	Target map[string]any `json:"target" jsonschema:"effort target, same shape as a workout-template step target (e.g. {\"kind\":\"pace\",\"low_sec_per_km\":435,\"high_sec_per_km\":435} for 7:15/km; for swim use {\"kind\":\"swim_pace\",\"low_sec_per_100m\":92,\"high_sec_per_100m\":96}; for a bike/run cadence drill use {\"kind\":\"cadence\",\"low\":88,\"high\":92})"`
 }
 
 // SlotDurationOverrideArg overrides the duration of every template step whose

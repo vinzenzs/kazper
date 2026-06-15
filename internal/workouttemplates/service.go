@@ -169,10 +169,11 @@ func validateSingleStep(n Step, sport string) error {
 	return validateTargetSport(n.Target, sport)
 }
 
-// validateTargetSport enforces the pace/swim_pace unit split against the
-// workout's sport: swim_pace (sec/100m) is swim-only, and pace (sec/km) is
-// rejected on swim. Other kinds are sport-agnostic. A nil target is a no-op
-// (validateTarget already rejected it where required).
+// validateTargetSport enforces sport-dependent target rules against the
+// workout's sport: swim_pace (sec/100m) is swim-only, pace (sec/km) is rejected
+// on swim, and cadence (rpm/spm) is accepted only on bike or run. Other kinds
+// are sport-agnostic. A nil target is a no-op (validateTarget already rejected
+// it where required).
 func validateTargetSport(t *Target, sport string) error {
 	if t == nil {
 		return nil
@@ -184,6 +185,10 @@ func validateTargetSport(t *Target, sport string) error {
 		}
 	case TargetPace:
 		if sport == SportSwim {
+			return ErrTargetSportMismatch
+		}
+	case TargetCadence:
+		if sport != SportBike && sport != SportRun {
 			return ErrTargetSportMismatch
 		}
 	}
@@ -239,7 +244,7 @@ func validateTarget(t *Target) error {
 		return nil
 	case TargetHRZone, TargetPowerZone:
 		return validateRange(t.Low, t.High, 1, 5)
-	case TargetHRBpm, TargetPowerW, TargetRPE:
+	case TargetHRBpm, TargetPowerW, TargetCadence, TargetRPE:
 		return validatePositiveRange(t.Low, t.High)
 	case TargetPace:
 		return validatePositiveRange(t.LowSecPerKM, t.HighSecPerKM)

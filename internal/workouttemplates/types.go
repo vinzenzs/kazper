@@ -75,6 +75,7 @@ const (
 	TargetSwimPace  = "swim_pace"
 	TargetHRBpm     = "hr_bpm"
 	TargetPowerW    = "power_w"
+	TargetCadence   = "cadence"
 	TargetRPE       = "rpe"
 )
 
@@ -104,8 +105,9 @@ type Duration struct {
 }
 
 // Target is a step's effort target. Zones use Low/High (1..5); pace uses the
-// per-km fields; swim_pace uses the per-100m fields; hr_bpm/power_w/rpe use
-// Low/High in their own units. Pace units are self-describing: `pace` is
+// per-km fields; swim_pace uses the per-100m fields; hr_bpm/power_w/cadence/rpe
+// use Low/High in their own units (cadence is rpm on bike, spm on run). Pace
+// units are self-describing: `pace` is
 // sec/km (run/bike) and `swim_pace` is sec/100m (swim), so a target's units are
 // unambiguous without consulting the workout's sport — mirroring athlete_config's
 // threshold_pace_sec_per_km vs threshold_swim_pace_sec_per_100m split.

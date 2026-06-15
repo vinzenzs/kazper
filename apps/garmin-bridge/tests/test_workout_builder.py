@@ -147,6 +147,21 @@ def test_absolute_hr_and_power_targets_use_value_range():
     assert step["targetValueTwo"] == 155
 
 
+@pytest.mark.parametrize("sport", ["run", "bike"])
+def test_cadence_target_emits_value_range(sport):
+    # Garmin's cadence target (id 3) is sport-agnostic; the same low/high range
+    # serves run spm and bike rpm.
+    p = wb.build_payload(sport, "Cadence drill", [
+        {"type": "step", "intent": "active", "duration": {"kind": "time", "seconds": 60},
+         "target": {"kind": "cadence", "low": 88, "high": 92}},
+    ])
+    step = p["workoutSegments"][0]["workoutSteps"][0]
+    assert step["targetType"]["workoutTargetTypeId"] == 3
+    assert step["targetType"]["workoutTargetTypeKey"] == "cadence.zone"
+    assert step["targetValueOne"] == 88
+    assert step["targetValueTwo"] == 92
+
+
 @pytest.mark.parametrize("bad", [
     {"sport": "chess", "name": "x", "steps": [{"type": "step", "intent": "active", "duration": {"kind": "open"}, "target": {"kind": "none"}}]},
     {"sport": "run", "name": "x", "steps": []},

@@ -26,8 +26,8 @@ type wtDuration struct {
 }
 
 type wtTarget struct {
-	Kind           string `json:"kind" jsonschema:"one of none, hr_zone, power_zone, pace, swim_pace, hr_bpm, power_w, rpe"`
-	Low            *int   `json:"low,omitempty" jsonschema:"lower bound (zones are 1 to 5; hr_bpm, power_w, rpe in their own units)"`
+	Kind           string `json:"kind" jsonschema:"one of none, hr_zone, power_zone, pace, swim_pace, hr_bpm, power_w, cadence, rpe"`
+	Low            *int   `json:"low,omitempty" jsonschema:"lower bound (zones are 1 to 5; hr_bpm, power_w, rpe in their own units; cadence in rpm on bike / spm on run, bike or run only)"`
 	High           *int   `json:"high,omitempty" jsonschema:"upper bound; must be at least the lower bound"`
 	LowSecPerKM    *int   `json:"low_sec_per_km,omitempty" jsonschema:"pace lower bound, seconds per km (run/bike only)"`
 	HighSecPerKM   *int   `json:"high_sec_per_km,omitempty" jsonschema:"pace upper bound, seconds per km (run/bike only)"`
@@ -95,7 +95,8 @@ func workoutTemplatesSpecs() []Spec {
 				"(warmup / intervals with target zones / cooldown) and repeat groups. This is the library the training " +
 				"plan references and the Garmin watch push compiles. Steps are validated; repeat groups are single-level. " +
 				"Pace targets are sport-specific: run/bike use kind pace (sec/km); swim uses kind swim_pace (sec/100m) — " +
-				"each is rejected on the other's sport.",
+				"each is rejected on the other's sport. Cadence targets (kind cadence, rpm on bike / spm on run) are " +
+				"accepted only on bike or run.",
 			SchemaType: CreateWorkoutTemplateArgs{},
 			Tier:       TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
