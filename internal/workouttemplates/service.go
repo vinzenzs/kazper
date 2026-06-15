@@ -257,6 +257,27 @@ func ValidIntent(s string) bool {
 	return false
 }
 
+// ValidateSteps validates an ordered, non-empty step program under the given
+// sport, applying the same rules as a template's own steps (intent, duration,
+// per-sport target rules, secondary-target pairing, single-level repeats).
+// Exported for reuse by the multisport capability, which validates each
+// segment's steps under that segment's sport. Returns ErrSportInvalid for an
+// unknown sport and ErrStepsEmpty for an empty program.
+func ValidateSteps(steps []Step, sport string) error {
+	if !validSport(sport) {
+		return ErrSportInvalid
+	}
+	if len(steps) == 0 {
+		return ErrStepsEmpty
+	}
+	for i := range steps {
+		if err := validateNode(steps[i], false, sport); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ValidateTarget validates a single effort target using the same rules applied
 // to template steps. Exported for reuse by training-plan slot target overrides.
 func ValidateTarget(t *Target) error { return validateTarget(t) }

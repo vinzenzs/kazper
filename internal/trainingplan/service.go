@@ -492,6 +492,16 @@ func (s *Service) EffectiveProgram(ctx context.Context, workoutID uuid.UUID) (*P
 	return prog, nil
 }
 
+// ResolveSteps applies the athlete-config zone→absolute resolution pass to a
+// standalone step program under the given sport — the same pass EffectiveProgram
+// runs on a planned workout. Exported for the multisport schedule path, which
+// resolves each segment's steps by that segment's own sport (so a bike segment's
+// power_zone resolves to watts while a run segment's passes through). Best-effort:
+// missing config leaves zone targets unchanged.
+func (s *Service) ResolveSteps(ctx context.Context, steps []workouttemplates.Step, sport string) []workouttemplates.Step {
+	return s.resolveProgramTargets(ctx, steps, sport)
+}
+
 // resolveProgramTargets applies the athlete-config zone→absolute resolution pass
 // to the effective steps. Best-effort: a missing repo, a load error, or no
 // config leaves the steps untouched (zone targets pass through to the watch).

@@ -39,9 +39,10 @@ type Handlers struct {
 
 	// Scheduling dependencies (per add-garmin-scheduling), wired via
 	// SetSchedulingDeps. Nil until set — the login proxy needs none of them.
-	workoutsRepo  workoutsRepo
-	templatesRepo templatesRepo
-	planSvc       planService
+	workoutsRepo   workoutsRepo
+	templatesRepo  templatesRepo
+	planSvc        planService
+	multisportRepo multisportRepo
 }
 
 // NewHandlers builds the proxy. An empty bridgeURL disables it.
@@ -59,6 +60,13 @@ func (h *Handlers) SetSchedulingDeps(w workoutsRepo, t templatesRepo, p planServ
 	h.planSvc = p
 }
 
+// SetMultisportRepo wires the multisport-template repo used by the
+// schedule-multisport endpoint. Kept separate from SetSchedulingDeps so existing
+// callers/tests are undisturbed; nil leaves the endpoint returning a not-found.
+func (h *Handlers) SetMultisportRepo(m multisportRepo) {
+	h.multisportRepo = m
+}
+
 func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/garmin/login", h.login)
 	rg.POST("/garmin/login/mfa", h.loginMFA)
@@ -66,6 +74,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/garmin/schedule/workout", h.scheduleWorkout)
 	rg.DELETE("/garmin/schedule/workout/:id", h.unscheduleWorkout)
 	rg.POST("/garmin/schedule/template", h.scheduleTemplate)
+	rg.POST("/garmin/schedule/multisport", h.scheduleMultisport)
 	rg.POST("/garmin/schedule/plan", h.schedulePlan)
 	rg.GET("/garmin/calendar", h.calendar)
 

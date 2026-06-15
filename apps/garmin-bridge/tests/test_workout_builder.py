@@ -200,3 +200,69 @@ def test_cadence_target_emits_value_range(sport):
 def test_build_errors(bad):
     with pytest.raises(wb.BuildError):
         wb.build_payload(bad["sport"], bad["name"], bad["steps"])
+
+
+# --- multisport ---
+
+
+def _swim_seg():
+    return {"sport": "swim", "steps": [
+        {"type": "step", "intent": "active",
+         "duration": {"kind": "distance", "meters": 750},
+         "target": {"kind": "swim_pace", "low_sec_per_100m": 100, "high_sec_per_100m": 100}},
+    ]}
+
+
+def _bike_seg():
+    return {"sport": "bike", "steps": [
+        {"type": "step", "intent": "active",
+         "duration": {"kind": "time", "seconds": 1200},
+         "target": {"kind": "power_w", "low": 200, "high": 230}},
+    ]}
+
+
+def _run_seg():
+    return {"sport": "run", "steps": [
+        {"type": "step", "intent": "active",
+         "duration": {"kind": "time", "seconds": 900},
+         "target": {"kind": "none"}},
+    ]}
+
+
+def _transition(label="T1"):
+    return {"sport": "transition", "duration": {"kind": "lap_button"}}
+
+
+def test_multisport_segments_ordered_with_own_sport():
+    segs = [_swim_seg(), _transition(), _bike_seg(), _transition("T2"), _run_seg()]
+    p = wb.build_multisport_payload("Tri Race Sim", segs)
+    assert p["workoutName"] == "Tri Race Sim"
+    assert p["sportType"]["sportTypeKey"] == "multi_sport"
+    out = p["workoutSegments"]
+    assert len(out) == 5
+    # segmentOrder is 1..5 in order.
+    assert [s["segmentOrder"] for s in out] == [1, 2, 3, 4, 5]
+    # Each segment carries its OWN sportType (verified per-segment ids).
+    assert out[0]["sportType"] == {"sportTypeId": 4, "sportTypeKey": "swimming"}
+    assert out[2]["sportType"] == {"sportTypeId": 2, "sportTypeKey": "cycling"}
+    assert out[4]["sportType"] == {"sportTypeId": 1, "sportTypeKey": "running"}
+    # Transitions use the transition sport.
+    assert out[1]["sportType"]["sportTypeKey"] == "transition"
+
+
+def test_multisport_step_order_monotonic_across_segments():
+    segs = [_swim_seg(), _transition(), _bike_seg(), _run_seg()]
+    p = wb.build_multisport_payload("Brick", segs)
+    orders = [st["stepOrder"] for seg in p["workoutSegments"] for st in seg["workoutSteps"]]
+    # Every step across the whole workout is numbered monotonically 1..N.
+    assert orders == list(range(1, len(orders) + 1))
+
+
+def test_multisport_requires_two_sport_segments():
+    with pytest.raises(wb.BuildError):
+        wb.build_multisport_payload("Solo", [_swim_seg(), _transition()])
+
+
+def test_multisport_rejects_unknown_segment_sport():
+    with pytest.raises(wb.BuildError):
+        wb.build_multisport_payload("Bad", [_bike_seg(), {"sport": "kayak", "steps": _run_seg()["steps"]}])

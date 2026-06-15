@@ -43,9 +43,12 @@ class BackfillRequest(BaseModel):
 
 
 class CreateWorkoutRequest(BaseModel):
-    sport: str
     name: str
-    steps: list[dict[str, Any]]
+    # Single-sport form: sport + steps. Multisport form: segments (an ordered
+    # list of per-sport segments + transitions). Exactly one form is supplied.
+    sport: str | None = None
+    steps: list[dict[str, Any]] | None = None
+    segments: list[dict[str, Any]] | None = None
 
 
 class ScheduleRequest(BaseModel):
@@ -229,9 +232,17 @@ def create_app(
 
     @app.post("/workouts")
     def create_workout(req: CreateWorkoutRequest) -> JSONResponse:
-        """Compile our step model to a Garmin payload and create it in the library."""
+        """Compile our step model to a Garmin payload and create it in the library.
+
+        Single-sport (sport + steps) and multisport (segments) forms are both
+        accepted; segments take precedence when supplied."""
         try:
-            payload = workout_builder.build_payload(req.sport, req.name, req.steps)
+            if req.segments is not None:
+                payload = workout_builder.build_multisport_payload(req.name, req.segments)
+            elif req.sport is not None and req.steps is not None:
+                payload = workout_builder.build_payload(req.sport, req.name, req.steps)
+            else:
+                raise workout_builder.BuildError("provide either (sport, steps) or segments")
         except workout_builder.BuildError as exc:
             return JSONResponse(status_code=400, content={"error": "invalid_steps", "message": str(exc)})
         pair, errResp = _with_api()

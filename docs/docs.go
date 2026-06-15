@@ -1880,6 +1880,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/garmin/schedule/multisport": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Compiles a multisport template (its ordered per-sport segments + transitions) into a single multisport Garmin workout via the bridge and schedules it on the date. Each sport segment's steps are zone→absolute resolved by that segment's own sport before compiling. Phase 1: no planned-workout row is created — the response carries the Garmin workout and schedule ids.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Schedule a multisport template to a date on the Garmin watch",
+                "parameters": [
+                    {
+                        "description": "{ multisport_template_id, date }",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/garmincontrol.scheduleMultisportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ garmin_workout_id, garmin_schedule_id, date }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "multisport_template_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "garmin_bridge_unreachable | garmin_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/garmin/schedule/plan": {
             "post": {
                 "security": [
@@ -4072,6 +4148,159 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "meal_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/multisport-templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "multisport-templates"
+                ],
+                "summary": "List multisport workout templates",
+                "responses": {
+                    "200": {
+                        "description": "{ multisport_templates: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a multisport session (triathlon/brick) as an ordered list of per-sport segments plus transitions. Needs ≥2 non-transition segments; each segment's steps are validated under that segment's sport. ` + "`" + `Idempotency-Key` + "`" + ` supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "multisport-templates"
+                ],
+                "summary": "Create a multisport workout template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Multisport template",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/multisport.createRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/multisport.Template"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | name_required | segments_empty | too_few_sport_segments | segment_sport_invalid | transition_segment_invalid | (per-segment step errors: intent_invalid | duration_invalid | target_invalid | target_range_invalid | target_sport_mismatch | secondary_target_invalid | repeat_invalid | repeat_nested | steps_empty)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/multisport-templates/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "multisport-templates"
+                ],
+                "summary": "Get a multisport workout template by id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/multisport.Template"
+                        }
+                    },
+                    "404": {
+                        "description": "multisport_template_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "multisport-templates"
+                ],
+                "summary": "Delete a multisport workout template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "multisport_template_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -9115,6 +9344,17 @@ const docTemplate = `{
                 }
             }
         },
+        "garmincontrol.scheduleMultisportRequest": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "multisport_template_id": {
+                    "type": "string"
+                }
+            }
+        },
         "garmincontrol.schedulePlanRequest": {
             "type": "object",
             "properties": {
@@ -9779,6 +10019,60 @@ const docTemplate = `{
                 "workout_id": {
                     "description": "WorkoutID supports the empty-string sentinel for clear:\n  omitted   → leave unchanged\n  \"\u003cuuid\u003e\"  → set the link\n  \"\"        → clear the link",
                     "type": "string"
+                }
+            }
+        },
+        "multisport.Segment": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "$ref": "#/definitions/workouttemplates.Duration"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workouttemplates.Step"
+                    }
+                }
+            }
+        },
+        "multisport.Template": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/multisport.Segment"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "multisport.createRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/multisport.Segment"
+                    }
                 }
             }
         },

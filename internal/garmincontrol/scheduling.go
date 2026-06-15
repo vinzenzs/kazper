@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/trainingplan"
 	"github.com/vinzenzs/kazper/internal/workouts"
 	"github.com/vinzenzs/kazper/internal/workouttemplates"
@@ -36,14 +37,25 @@ type planService interface {
 	// EffectiveProgram resolves a planned workout's template steps with its slot
 	// target overrides applied — what the watch compile must build from.
 	EffectiveProgram(ctx context.Context, workoutID uuid.UUID) (*trainingplan.Program, error)
+	// ResolveSteps applies the athlete-config zone→absolute resolution pass to a
+	// standalone step program under a sport — used to resolve each multisport
+	// segment by its own sport before compiling.
+	ResolveSteps(ctx context.Context, steps []workouttemplates.Step, sport string) []workouttemplates.Step
+}
+
+// multisportRepo is the narrow view of the multisport-template repo the
+// schedule-multisport path needs.
+type multisportRepo interface {
+	GetByID(ctx context.Context, id string) (*multisport.Template, error)
 }
 
 // Orchestration sentinels.
 var (
-	errWorkoutNotFound  = errors.New("workout_not_found")
-	errNotSchedulable   = errors.New("workout_not_schedulable") // not planned or no template
-	errNotScheduled     = errors.New("workout_not_scheduled")   // no stored schedule id
-	errTemplateNotFound = errors.New("template_not_found")      // ad-hoc schedule of an unknown template
+	errWorkoutNotFound    = errors.New("workout_not_found")
+	errNotSchedulable     = errors.New("workout_not_schedulable")       // not planned or no template
+	errNotScheduled       = errors.New("workout_not_scheduled")         // no stored schedule id
+	errTemplateNotFound   = errors.New("template_not_found")            // ad-hoc schedule of an unknown template
+	errMultisportNotFound = errors.New("multisport_template_not_found") // schedule of an unknown multisport template
 )
 
 // adhocFallbackDuration is the session length used when a template's program has
@@ -168,6 +180,86 @@ func (h *Handlers) scheduleTemplateOne(ctx context.Context, tmplID uuid.UUID, da
 		return nil, err
 	}
 	return h.pushOne(ctx, w.ID)
+}
+
+type scheduleMultisportRequest struct {
+	MultisportTemplateID string `json:"multisport_template_id"`
+	Date                 string `json:"date"`
+}
+
+// scheduleMultisport godoc
+// @Summary      Schedule a multisport template to a date on the Garmin watch
+// @Description  Compiles a multisport template (its ordered per-sport segments + transitions) into a single multisport Garmin workout via the bridge and schedules it on the date. Each sport segment's steps are zone→absolute resolved by that segment's own sport before compiling. Phase 1: no planned-workout row is created — the response carries the Garmin workout and schedule ids.
+// @Tags         garmin
+// @Accept       json
+// @Produce      json
+// @Param        body  body  scheduleMultisportRequest  true  "{ multisport_template_id, date }"
+// @Success      200  {object}  map[string]interface{}  "{ garmin_workout_id, garmin_schedule_id, date }"
+// @Failure      400  {object}  map[string]string  "invalid_json | date_invalid"
+// @Failure      404  {object}  map[string]string  "multisport_template_not_found"
+// @Failure      502  {object}  map[string]string  "garmin_bridge_unreachable | garmin_error"
+// @Failure      503  {object}  map[string]string  "garmin_disabled"
+// @Security     BearerAuth
+// @Router       /garmin/schedule/multisport [post]
+func (h *Handlers) scheduleMultisport(c *gin.Context) {
+	if !h.enabled() {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "garmin_disabled"})
+		return
+	}
+	var req scheduleMultisportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if h.multisportRepo == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "multisport_template_not_found"})
+		return
+	}
+	tmplID, err := uuid.Parse(req.MultisportTemplateID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "multisport_template_not_found"})
+		return
+	}
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date_invalid"})
+		return
+	}
+	out, err := h.scheduleMultisportOne(c.Request.Context(), tmplID, date)
+	if err != nil {
+		h.respondScheduleErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// scheduleMultisportOne loads a multisport template, resolves each sport
+// segment's steps by that segment's sport (zone→absolute via athlete config),
+// compiles all segments into one multisport Garmin workout, schedules it on the
+// date, and returns the Garmin ids. Phase 1 keeps multisport out of the workouts
+// table, so nothing is persisted here.
+func (h *Handlers) scheduleMultisportOne(ctx context.Context, tmplID uuid.UUID, date time.Time) (gin.H, error) {
+	tmpl, err := h.multisportRepo.GetByID(ctx, tmplID.String())
+	if err != nil {
+		return nil, errMultisportNotFound
+	}
+	segments := make([]multisport.Segment, len(tmpl.Segments))
+	for i, seg := range tmpl.Segments {
+		if !seg.IsTransition() {
+			seg.Steps = h.planSvc.ResolveSteps(ctx, seg.Steps, seg.Sport)
+		}
+		segments[i] = seg
+	}
+	garminWorkoutID, err := h.bridgeCreateMultisportWorkout(ctx, tmpl.Name, segments)
+	if err != nil {
+		return nil, err
+	}
+	dateStr := date.Format("2006-01-02")
+	scheduleID, err := h.bridgeSchedule(ctx, garminWorkoutID, dateStr)
+	if err != nil {
+		return nil, err
+	}
+	return gin.H{"garmin_workout_id": garminWorkoutID, "garmin_schedule_id": scheduleID, "date": dateStr}, nil
 }
 
 // unscheduleWorkout godoc
@@ -391,6 +483,20 @@ func (h *Handlers) bridgeCreateWorkout(ctx context.Context, sport, name string, 
 	return out.GarminWorkoutID, nil
 }
 
+// bridgeCreateMultisportWorkout sends a multisport form to the bridge's
+// POST /workouts (name + ordered per-sport segments, transitions included) and
+// returns the single created Garmin multisport workout id.
+func (h *Handlers) bridgeCreateMultisportWorkout(ctx context.Context, name string, segments []multisport.Segment) (string, error) {
+	body, _ := json.Marshal(map[string]any{"name": name, "segments": segments})
+	var out struct {
+		GarminWorkoutID string `json:"garmin_workout_id"`
+	}
+	if err := h.bridgeJSON(ctx, http.MethodPost, "/workouts", body, &out); err != nil {
+		return "", err
+	}
+	return out.GarminWorkoutID, nil
+}
+
 func (h *Handlers) bridgeSchedule(ctx context.Context, garminWorkoutID, date string) (string, error) {
 	body, _ := json.Marshal(map[string]any{"garmin_workout_id": garminWorkoutID, "date": date})
 	var out struct {
@@ -456,6 +562,8 @@ func (h *Handlers) respondScheduleErr(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
 	case errors.Is(err, errTemplateNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "template_not_found"})
+	case errors.Is(err, errMultisportNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "multisport_template_not_found"})
 	case errors.Is(err, errNotSchedulable):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workout_not_schedulable"})
 	case errors.Is(err, errNotScheduled):

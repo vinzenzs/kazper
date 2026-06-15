@@ -35,6 +35,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/idempotency"
 	"github.com/vinzenzs/kazper/internal/mealplan"
 	"github.com/vinzenzs/kazper/internal/meals"
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/off"
 	"github.com/vinzenzs/kazper/internal/personalrecords"
 	"github.com/vinzenzs/kazper/internal/products"
@@ -296,6 +297,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
+	multisportRepo := multisport.NewRepo(pool)
+	multisport.NewHandlers(multisport.NewService(multisportRepo)).Register(api)
 	trainingPlanSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, workoutTemplatesRepo, cfg.DefaultUserTZ)
 	// Cross-inject athlete-config so EffectiveProgram resolves zone-reference
 	// targets into absolute power_w/hr_bpm ranges (mirrors SetWorkoutsRepo).
@@ -321,6 +324,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Empty URL ⇒ the endpoints return 503 garmin_disabled.
 	garminControl := garmincontrol.NewHandlers(cfg.GarminBridgeURL)
 	garminControl.SetSchedulingDeps(workoutsRepo, workoutTemplatesRepo, trainingPlanSvc)
+	garminControl.SetMultisportRepo(multisportRepo)
 	garminControl.Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(

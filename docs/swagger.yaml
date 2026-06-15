@@ -685,6 +685,13 @@ definitions:
       vo2max_running:
         type: number
     type: object
+  garmincontrol.scheduleMultisportRequest:
+    properties:
+      date:
+        type: string
+      multisport_template_id:
+        type: string
+    type: object
   garmincontrol.schedulePlanRequest:
     properties:
       from:
@@ -1133,6 +1140,41 @@ definitions:
             "<uuid>"  → set the link
             ""        → clear the link
         type: string
+    type: object
+  multisport.Segment:
+    properties:
+      duration:
+        $ref: '#/definitions/workouttemplates.Duration'
+      sport:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/workouttemplates.Step'
+        type: array
+    type: object
+  multisport.Template:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/multisport.Segment'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  multisport.createRequest:
+    properties:
+      name:
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/multisport.Segment'
+        type: array
     type: object
   personalrecords.PersonalRecord:
     properties:
@@ -4019,6 +4061,59 @@ paths:
       summary: Submit the Garmin bridge MFA code (proxy)
       tags:
       - garmin
+  /garmin/schedule/multisport:
+    post:
+      consumes:
+      - application/json
+      description: 'Compiles a multisport template (its ordered per-sport segments
+        + transitions) into a single multisport Garmin workout via the bridge and
+        schedules it on the date. Each sport segment''s steps are zone→absolute resolved
+        by that segment''s own sport before compiling. Phase 1: no planned-workout
+        row is created — the response carries the Garmin workout and schedule ids.'
+      parameters:
+      - description: '{ multisport_template_id, date }'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/garmincontrol.scheduleMultisportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ garmin_workout_id, garmin_schedule_id, date }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid_json | date_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: multisport_template_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: garmin_bridge_unreachable | garmin_error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Schedule a multisport template to a date on the Garmin watch
+      tags:
+      - garmin
   /garmin/schedule/plan:
     post:
       consumes:
@@ -5488,6 +5583,108 @@ paths:
       summary: Log a meal from a photo via Claude Vision
       tags:
       - meals
+  /multisport-templates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ multisport_templates: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List multisport workout templates
+      tags:
+      - multisport-templates
+    post:
+      consumes:
+      - application/json
+      description: Create a multisport session (triathlon/brick) as an ordered list
+        of per-sport segments plus transitions. Needs ≥2 non-transition segments;
+        each segment's steps are validated under that segment's sport. `Idempotency-Key`
+        supported.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Multisport template
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/multisport.createRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/multisport.Template'
+        "400":
+          description: 'invalid_json | name_required | segments_empty | too_few_sport_segments
+            | segment_sport_invalid | transition_segment_invalid | (per-segment step
+            errors: intent_invalid | duration_invalid | target_invalid | target_range_invalid
+            | target_sport_mismatch | secondary_target_invalid | repeat_invalid |
+            repeat_nested | steps_empty)'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a multisport workout template
+      tags:
+      - multisport-templates
+  /multisport-templates/{id}:
+    delete:
+      parameters:
+      - description: Template UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: multisport_template_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a multisport workout template
+      tags:
+      - multisport-templates
+    get:
+      parameters:
+      - description: Template UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/multisport.Template'
+        "404":
+          description: multisport_template_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a multisport workout template by id
+      tags:
+      - multisport-templates
   /personal-records:
     get:
       parameters:

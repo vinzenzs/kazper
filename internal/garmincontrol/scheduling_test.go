@@ -103,6 +103,12 @@ func (f *fakePlan) PlannedWorkoutsInScope(_ context.Context, _ uuid.UUID, _ trai
 	return f.ids, nil
 }
 
+// ResolveSteps returns the steps unchanged — the fake has no athlete config, so
+// the real resolver would pass zone targets through anyway.
+func (f *fakePlan) ResolveSteps(_ context.Context, steps []workouttemplates.Step, _ string) []workouttemplates.Step {
+	return steps
+}
+
 func (f *fakePlan) EffectiveProgram(_ context.Context, workoutID uuid.UUID) (*trainingplan.Program, error) {
 	steps := f.steps
 	if steps == nil {
@@ -119,11 +125,11 @@ func (f *fakePlan) EffectiveProgram(_ context.Context, workoutID uuid.UUID) (*tr
 // --- stub bridge ---
 
 type bridgeStub struct {
-	server         *httptest.Server
-	mu             sync.Mutex
-	createCalls    int
-	createBody     string
-	schedCalls     int
+	server           *httptest.Server
+	mu               sync.Mutex
+	createCalls      int
+	createBody       string
+	schedCalls       int
 	unschedIDs       []string
 	deleteWorkouts   []string
 	hydrationBody    string

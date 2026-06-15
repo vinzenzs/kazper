@@ -111,6 +111,76 @@ def build_payload(sport: str, name: str, steps: list[dict[str, Any]]) -> dict[st
     }
 
 
+# Multisport top-level sportType and the transition (T1/T2) sport, in the Garmin
+# workout-service vocabulary. TO VERIFY against the live API (add-multisport task
+# 3.2): a wrong sportTypeId is silently stored as 0 (no sport) rather than
+# erroring — see the _SPORT note. `transition` is id 10 (the gap in the verified
+# 1..13 list). The workout-service `multi_sport` id is NOT yet confirmed live —
+# the garminconnect lib's SportType enum uses a different, non-workout-service
+# numbering (it has swimming=3 where the workout service uses 4), so it is not
+# authoritative here. The per-segment sportType ids below come from the verified
+# _SPORT map and are trusted.
+_TRANSITION_SPORT = (10, "transition")
+_MULTISPORT_SPORT = (9, "multi_sport")
+
+
+def build_multisport_payload(name: str, segments: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a multisport create-workout payload: one workoutSegments entry per
+    segment, each carrying its own sportType, with stepOrder monotonic across the
+    whole workout (Garmin numbers every step, across segments). Transition (T1/T2)
+    segments use the transition sport and a single duration-bounded step. Requires
+    at least two sport (non-transition) segments."""
+    if not segments:
+        raise BuildError("segments must be non-empty")
+    order = _Counter()
+    out_segments: list[dict[str, Any]] = []
+    sport_count = 0
+    for i, seg in enumerate(segments, start=1):
+        seg_sport = seg.get("sport")
+        if seg_sport == "transition":
+            tid, tkey = _TRANSITION_SPORT
+            seg_obj = {"sportTypeId": tid, "sportTypeKey": tkey}
+            workout_steps = [_transition_step(seg.get("duration") or {}, order)]
+        else:
+            if seg_sport not in _SPORT:
+                raise BuildError(f"unknown segment sport {seg_sport!r}")
+            sid, skey = _SPORT[seg_sport]
+            seg_obj = {"sportTypeId": sid, "sportTypeKey": skey}
+            nodes = seg.get("steps") or []
+            workout_steps = [_build_node(node, seg_obj, order) for node in nodes]
+            if not workout_steps:
+                raise BuildError("segment steps must be non-empty")
+            sport_count += 1
+        out_segments.append(
+            {"segmentOrder": i, "sportType": seg_obj, "workoutSteps": workout_steps}
+        )
+    if sport_count < 2:
+        raise BuildError("multisport needs at least two sport segments")
+    msid, mskey = _MULTISPORT_SPORT
+    return {
+        "sportType": {"sportTypeId": msid, "sportTypeKey": mskey},
+        "workoutName": name,
+        "workoutSegments": out_segments,
+    }
+
+
+def _transition_step(duration: dict[str, Any], order: _Counter) -> dict[str, Any]:
+    """A transition segment carries one duration-bounded, untargeted step (T1/T2
+    is athlete-paced — typically lap_button/open). Mirrors _build_step's shape."""
+    cond, cond_value = _end_condition(duration)
+    cond_id, cond_key = cond
+    rest_id, rest_key = _STEP_TYPE["rest"]
+    step: dict[str, Any] = {
+        "type": "ExecutableStepDTO",
+        "stepOrder": order.next(),
+        "stepType": {"stepTypeId": rest_id, "stepTypeKey": rest_key},
+        "endCondition": {"conditionTypeId": cond_id, "conditionTypeKey": cond_key},
+        "endConditionValue": cond_value,
+    }
+    step.update(_target({"kind": "none"}))
+    return step
+
+
 class _Counter:
     """Monotonic stepOrder allocator (Garmin numbers every step, nested too)."""
 
