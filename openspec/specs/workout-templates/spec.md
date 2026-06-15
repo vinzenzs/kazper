@@ -43,11 +43,19 @@ either a single executable step or a repeat group. A single step SHALL carry an
 exactly one `duration` (`{kind:"time",seconds}` with `seconds > 0`,
 `{kind:"distance",meters}` with `meters > 0`, `{kind:"lap_button"}`, or
 `{kind:"open"}`), and a `target` whose `kind` is one of `none`, `hr_zone`,
-`power_zone`, `pace`, `swim_pace`, `hr_bpm`, `power_w`, or `rpe`; an optional
-free-text `note` MAY be present. A `swim_pace` target SHALL carry
+`power_zone`, `pace`, `swim_pace`, `hr_bpm`, `power_w`, `cadence`, or `rpe`; an
+optional free-text `note` MAY be present. A `swim_pace` target SHALL carry
 `low_sec_per_100m`/`high_sec_per_100m` (positive, `low <= high`) and SHALL be
 accepted only on swim-sport templates; conversely `pace` (`/km`) SHALL be
-rejected on swim steps. A repeat group SHALL carry a `count >= 2` and a non-empty
+rejected on swim steps. A `cadence` target SHALL carry `low`/`high` (positive,
+`low <= high`) as the cadence range in the sport's native unit (rpm for bike,
+spm for run) and SHALL be accepted only on bike- or run-sport templates. A step
+MAY additionally carry an optional `secondary_target` (the same Target shape)
+**only on bike-sport templates**; when present, its `kind` SHALL NOT be `none`,
+it SHALL be in a different metric family than the primary `target` (power =
+`power_zone`/`power_w`, hr = `hr_zone`/`hr_bpm`, pace, cadence, rpe), and it
+SHALL be validated by the same Target validator. A repeat group SHALL carry a
+`count >= 2` and a non-empty
 `steps` array of single steps only — repeat groups SHALL NOT nest. The system
 SHALL validate this structure on every write at the service layer and reject
 malformed steps with a sentinel error mapped to a 1:1 API error code.
@@ -80,6 +88,42 @@ malformed steps with a sentinel error mapped to a 1:1 API error code.
 
 - **WHEN** a swim step supplies a `swim_pace` target whose `low_sec_per_100m`
   exceeds its `high_sec_per_100m`, or a non-positive bound
+- **THEN** the response is a validation error and nothing is persisted
+
+#### Scenario: A run template accepts a cadence target
+
+- **WHEN** `POST /workout-templates` is called with a `run` template whose
+  interval step targets `{kind:"cadence", low:88, high:92}`
+- **THEN** the template is persisted and the cadence target is echoed verbatim
+
+#### Scenario: cadence on a non-bike/run template is rejected
+
+- **WHEN** a `swim` or `strength` template supplies a step with a `cadence` target
+- **THEN** the response is a validation error and nothing is persisted
+
+#### Scenario: An invalid cadence range is rejected
+
+- **WHEN** a bike/run step supplies a `cadence` target whose `low` exceeds its
+  `high`, or a non-positive bound
+- **THEN** the response is a validation error and nothing is persisted
+
+#### Scenario: A bike step accepts a primary + secondary target
+
+- **WHEN** `POST /workout-templates` is called with a `bike` template whose
+  interval step has primary `{kind:"power_zone", low:4, high:4}` and
+  `secondary_target {kind:"hr_zone", low:3, high:3}`
+- **THEN** the template is persisted and both targets are echoed verbatim
+
+#### Scenario: secondary_target on a non-bike step is rejected
+
+- **WHEN** a `run` or `swim` template supplies a step with a `secondary_target`
+- **THEN** the response is a validation error and nothing is persisted
+
+#### Scenario: A same-family or none secondary is rejected
+
+- **WHEN** a bike step supplies a `secondary_target` whose `kind` is `none`, or
+  whose metric family matches the primary target (e.g. primary `power_zone` with
+  secondary `power_w`)
 - **THEN** the response is a validation error and nothing is persisted
 
 #### Scenario: Empty steps are rejected
