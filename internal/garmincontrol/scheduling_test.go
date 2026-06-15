@@ -92,18 +92,27 @@ func (f *fakeTemplates) GetByID(_ context.Context, id string) (*workouttemplates
 	}, nil
 }
 
-type fakePlan struct{ ids []uuid.UUID }
+type fakePlan struct {
+	ids []uuid.UUID
+	// steps, when non-nil, is the effective program returned verbatim — used to
+	// assert the push path forwards already-resolved targets to the bridge.
+	steps []workouttemplates.Step
+}
 
 func (f *fakePlan) PlannedWorkoutsInScope(_ context.Context, _ uuid.UUID, _ trainingplan.Scope) ([]uuid.UUID, error) {
 	return f.ids, nil
 }
 
 func (f *fakePlan) EffectiveProgram(_ context.Context, workoutID uuid.UUID) (*trainingplan.Program, error) {
+	steps := f.steps
+	if steps == nil {
+		steps = []workouttemplates.Step{{Type: "step", Intent: "active",
+			Duration: &workouttemplates.Duration{Kind: "open"}, Target: &workouttemplates.Target{Kind: "none"}}}
+	}
 	return &trainingplan.Program{
 		WorkoutID: workoutID,
 		Sport:     "run",
-		Steps: []workouttemplates.Step{{Type: "step", Intent: "active",
-			Duration: &workouttemplates.Duration{Kind: "open"}, Target: &workouttemplates.Target{Kind: "none"}}},
+		Steps:     steps,
 	}, nil
 }
 
@@ -239,6 +248,30 @@ func TestScheduleWorkout_StoresIDs(t *testing.T) {
 	require.NotNil(t, fw.rows[w.ID].GarminWorkoutID)
 	assert.Equal(t, "gw-1", *fw.rows[w.ID].GarminWorkoutID)
 	assert.Equal(t, "gs-1", *fw.rows[w.ID].GarminScheduleID)
+}
+
+// TestScheduleWorkout_ResolvedTargetsForwarded asserts the push path forwards
+// EffectiveProgram's resolved absolute targets to the bridge verbatim — a
+// zone-targeted workout reaches Garmin as power_w (value range), not a
+// power_zone reference. EffectiveProgram does the zone→absolute resolution (see
+// trainingplan); bridgeCreateWorkout marshals prog.Steps unchanged.
+func TestScheduleWorkout_ResolvedTargetsForwarded(t *testing.T) {
+	bridge := newBridgeStub(t)
+	fw := newFakeWorkouts()
+	w := plannedWorkout(uuid.New())
+	fw.rows[w.ID] = w
+	lo, hi := 230, 268
+	resolved := []workouttemplates.Step{{Type: "step", Intent: "active",
+		Duration: &workouttemplates.Duration{Kind: "open"},
+		Target:   &workouttemplates.Target{Kind: "power_w", Low: &lo, High: &hi, Origin: "Z4"}}}
+	r := newEngine(bridge.server.URL, fw, &fakeTemplates{}, &fakePlan{steps: resolved})
+
+	rec := req(t, r, http.MethodPost, "/garmin/schedule/workout", `{"workout_id":"`+w.ID.String()+`"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, bridge.createBody, `"kind":"power_w"`, "resolved absolute target forwarded")
+	assert.Contains(t, bridge.createBody, `"low":230`)
+	assert.Contains(t, bridge.createBody, `"high":268`)
+	assert.NotContains(t, bridge.createBody, "power_zone", "no unresolved zone reference reaches the bridge")
 }
 
 func TestScheduleTemplate_CreatesAndSchedules(t *testing.T) {

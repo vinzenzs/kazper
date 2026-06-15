@@ -2686,6 +2686,8 @@ definitions:
         type: integer
       low_sec_per_km:
         type: integer
+      origin:
+        type: string
     type: object
   workouttemplates.Template:
     properties:

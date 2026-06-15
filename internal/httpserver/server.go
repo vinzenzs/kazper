@@ -297,6 +297,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
 	trainingPlanSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, workoutTemplatesRepo, cfg.DefaultUserTZ)
+	// Cross-inject athlete-config so EffectiveProgram resolves zone-reference
+	// targets into absolute power_w/hr_bpm ranges (mirrors SetWorkoutsRepo).
+	trainingPlanSvc.SetAthleteConfigRepo(athleteConfigRepo)
 	trainingplan.NewHandlers(trainingPlanSvc).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)

@@ -11969,6 +11969,9 @@ const docTemplate = `{
                 },
                 "low_sec_per_km": {
                     "type": "integer"
+                },
+                "origin": {
+                    "type": "string"
                 }
             }
         },

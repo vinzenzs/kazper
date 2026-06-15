@@ -104,10 +104,17 @@ type Duration struct {
 
 // Target is a step's effort target. Zones use Low/High (1..5); pace uses the
 // per-km fields; hr_bpm/power_w/rpe use Low/High in their own units.
+//
+// Origin is set only by the training-plan effective-program resolver: when a
+// zone-reference target (hr_zone/power_zone) is rewritten to an absolute
+// (hr_bpm/power_w) range, it records the source zone(s) (e.g. "Z4", "Z2–Z4") so
+// callers see both the numbers and where they came from. It is read-time
+// provenance, never persisted on a template, and the garmin-bridge ignores it.
 type Target struct {
 	Kind         string `json:"kind"`
 	Low          *int   `json:"low,omitempty"`
 	High         *int   `json:"high,omitempty"`
 	LowSecPerKM  *int   `json:"low_sec_per_km,omitempty"`
 	HighSecPerKM *int   `json:"high_sec_per_km,omitempty"`
+	Origin       string `json:"origin,omitempty"`
 }

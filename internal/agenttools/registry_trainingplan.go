@@ -382,7 +382,7 @@ func trainingPlanSpecs() []Spec {
 		// ----- program -----
 		{
 			Name:        "get_workout_program",
-			Description: "Get a planned workout's effective program — its template steps with the plan slot's per-intent target overrides applied (e.g. the interval at pace 7:15). A workout with no template returns sport/name and no steps.",
+			Description: "Get a planned workout's effective program — its template steps with the plan slot's per-intent target overrides applied (e.g. the interval at pace 7:15). Zone-reference targets are resolved against the athlete config to absolute ranges: power_zone→power_w watts (bike only) and hr_zone→hr_bpm, each carrying an `origin` label naming the source zone (e.g. \"Z4\"). When the config is missing the needed boundary the zone reference passes through unchanged. A workout with no template returns sport/name and no steps.",
 			SchemaType:  GetWorkoutProgramArgs{},
 			Tier:        TierRead,
 			Build: func(in json.RawMessage) (HTTPCall, error) {

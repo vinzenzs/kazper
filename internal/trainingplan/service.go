@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/store"
 	"github.com/vinzenzs/kazper/internal/workouts"
 	"github.com/vinzenzs/kazper/internal/workouttemplates"
@@ -43,11 +44,22 @@ const fallbackDurationSec = 3600
 
 // Service orchestrates plan/week/slot CRUD plus materialize.
 type Service struct {
-	repo          *Repo
-	pool          *pgxpool.Pool
-	workoutsRepo  *workouts.Repo
-	templatesRepo *workouttemplates.Repo
-	loc           *time.Location
+	repo              *Repo
+	pool              *pgxpool.Pool
+	workoutsRepo      *workouts.Repo
+	templatesRepo     *workouttemplates.Repo
+	athleteConfigRepo *athleteconfig.Repo
+	loc               *time.Location
+}
+
+// SetAthleteConfigRepo cross-injects the athlete-config singleton repo used by
+// EffectiveProgram to resolve zone-reference targets into absolute power_w/
+// hr_bpm ranges. Optional: when unset (or it returns no config), zone targets
+// pass through unchanged. Mirrors the SetWorkoutsRepo cross-injection pattern;
+// wired in httpserver.Run() to keep athleteconfig an optional dependency and
+// avoid an import cycle.
+func (s *Service) SetAthleteConfigRepo(r *athleteconfig.Repo) {
+	s.athleteConfigRepo = r
 }
 
 // NewService wires the plan repo, the pool (for the materialize transaction),
@@ -476,7 +488,22 @@ func (s *Service) EffectiveProgram(ctx context.Context, workoutID uuid.UUID) (*P
 		}
 	}
 	prog.Steps = applyOverrides(tmpl.Steps, targets, durations)
+	prog.Steps = s.resolveProgramTargets(ctx, prog.Steps, prog.Sport)
 	return prog, nil
+}
+
+// resolveProgramTargets applies the athlete-config zone→absolute resolution pass
+// to the effective steps. Best-effort: a missing repo, a load error, or no
+// config leaves the steps untouched (zone targets pass through to the watch).
+func (s *Service) resolveProgramTargets(ctx context.Context, steps []workouttemplates.Step, sport string) []workouttemplates.Step {
+	if s.athleteConfigRepo == nil {
+		return steps
+	}
+	cfg, err := s.athleteConfigRepo.Get(ctx)
+	if err != nil || cfg == nil {
+		return steps
+	}
+	return resolveTargets(steps, cfg, sport)
 }
 
 // applyOverrides returns a copy of steps with each step's target and/or duration
