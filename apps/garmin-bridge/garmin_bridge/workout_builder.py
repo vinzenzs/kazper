@@ -71,6 +71,7 @@ _TARGET_TYPE = {
     "power_zone": (2, "power.zone"),
     "hr_zone": (4, "heart.rate.zone"),
     "pace": (6, "pace.zone"),
+    "swim_pace": (6, "pace.zone"),  # same Garmin pace gate; units differ (sec/100m)
     "hr_bpm": (4, "heart.rate.zone"),
     "power_w": (2, "power.zone"),
     "rpe": (1, "no.target"),  # Garmin has no RPE target; carry it as untargeted
@@ -215,6 +216,10 @@ def _target(target: dict[str, Any]) -> dict[str, Any]:
         # Garmin pace targets are metres/second; convert from sec/km.
         out["targetValueOne"] = _pace_mps(target.get("low_sec_per_km"))
         out["targetValueTwo"] = _pace_mps(target.get("high_sec_per_km"))
+    elif kind == "swim_pace":
+        # Same Garmin m/s pace gate, but swim pace is sec/100m: 100/sec_per_100m.
+        out["targetValueOne"] = _swim_pace_mps(target.get("low_sec_per_100m"))
+        out["targetValueTwo"] = _swim_pace_mps(target.get("high_sec_per_100m"))
     return out
 
 
@@ -222,3 +227,9 @@ def _pace_mps(sec_per_km: float | None) -> float | None:
     if not sec_per_km or sec_per_km <= 0:
         return None
     return 1000.0 / sec_per_km
+
+
+def _swim_pace_mps(sec_per_100m: float | None) -> float | None:
+    if not sec_per_100m or sec_per_100m <= 0:
+        return None
+    return 100.0 / sec_per_100m

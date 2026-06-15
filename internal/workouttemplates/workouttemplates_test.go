@@ -113,6 +113,51 @@ func TestCreateAcceptsYogaAndMobility(t *testing.T) {
 	}
 }
 
+func TestSwimPaceTargetRoundTripsAndIsSwimRestricted(t *testing.T) {
+	r := setup(t)
+
+	// A swim template with a swim_pace step is accepted and echoed verbatim.
+	swim := `{"sport":"swim","name":"Threshold 100s","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"distance","meters":100},` +
+		`"target":{"kind":"swim_pace","low_sec_per_100m":95,"high_sec_per_100m":100}}]}`
+	rec := do(t, r, http.MethodPost, "/workout-templates", swim)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var got workouttemplates.Template
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Steps, 1)
+	tgt := got.Steps[0].Target
+	require.NotNil(t, tgt)
+	assert.Equal(t, workouttemplates.TargetSwimPace, tgt.Kind)
+	require.NotNil(t, tgt.LowSecPer100m)
+	require.NotNil(t, tgt.HighSecPer100m)
+	assert.Equal(t, 95, *tgt.LowSecPer100m)
+	assert.Equal(t, 100, *tgt.HighSecPer100m)
+
+	// swim_pace on a non-swim template is rejected.
+	bikeSwimPace := `{"sport":"bike","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"time","seconds":60},` +
+		`"target":{"kind":"swim_pace","low_sec_per_100m":95,"high_sec_per_100m":100}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", bikeSwimPace)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "target_sport_mismatch")
+
+	// km pace on a swim template is rejected.
+	swimKmPace := `{"sport":"swim","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"distance","meters":100},` +
+		`"target":{"kind":"pace","low_sec_per_km":95,"high_sec_per_km":100}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", swimKmPace)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "target_sport_mismatch")
+
+	// An inverted swim_pace range is rejected.
+	badRange := `{"sport":"swim","name":"x","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"distance","meters":100},` +
+		`"target":{"kind":"swim_pace","low_sec_per_100m":110,"high_sec_per_100m":100}}]}`
+	rec = do(t, r, http.MethodPost, "/workout-templates", badRange)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "target_range_invalid")
+}
+
 func TestPatchReplacesStepsAsAUnit(t *testing.T) {
 	r := setup(t)
 	created := createValid(t, r)

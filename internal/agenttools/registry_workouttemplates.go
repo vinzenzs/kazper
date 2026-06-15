@@ -26,11 +26,13 @@ type wtDuration struct {
 }
 
 type wtTarget struct {
-	Kind         string `json:"kind" jsonschema:"one of none, hr_zone, power_zone, pace, hr_bpm, power_w, rpe"`
-	Low          *int   `json:"low,omitempty" jsonschema:"lower bound (zones are 1 to 5; hr_bpm, power_w, rpe in their own units)"`
-	High         *int   `json:"high,omitempty" jsonschema:"upper bound; must be at least the lower bound"`
-	LowSecPerKM  *int   `json:"low_sec_per_km,omitempty" jsonschema:"pace lower bound, seconds per km"`
-	HighSecPerKM *int   `json:"high_sec_per_km,omitempty" jsonschema:"pace upper bound, seconds per km"`
+	Kind           string `json:"kind" jsonschema:"one of none, hr_zone, power_zone, pace, swim_pace, hr_bpm, power_w, rpe"`
+	Low            *int   `json:"low,omitempty" jsonschema:"lower bound (zones are 1 to 5; hr_bpm, power_w, rpe in their own units)"`
+	High           *int   `json:"high,omitempty" jsonschema:"upper bound; must be at least the lower bound"`
+	LowSecPerKM    *int   `json:"low_sec_per_km,omitempty" jsonschema:"pace lower bound, seconds per km (run/bike only)"`
+	HighSecPerKM   *int   `json:"high_sec_per_km,omitempty" jsonschema:"pace upper bound, seconds per km (run/bike only)"`
+	LowSecPer100m  *int   `json:"low_sec_per_100m,omitempty" jsonschema:"swim_pace lower bound, seconds per 100m (swim only; e.g. 95 for 1:35/100m)"`
+	HighSecPer100m *int   `json:"high_sec_per_100m,omitempty" jsonschema:"swim_pace upper bound, seconds per 100m (swim only)"`
 }
 
 type wtSubStep struct {
@@ -91,7 +93,9 @@ func workoutTemplatesSpecs() []Spec {
 			Name: "create_workout_template",
 			Description: "Create a reusable, structured workout template — a sport plus an ordered program of steps " +
 				"(warmup / intervals with target zones / cooldown) and repeat groups. This is the library the training " +
-				"plan references and the Garmin watch push compiles. Steps are validated; repeat groups are single-level.",
+				"plan references and the Garmin watch push compiles. Steps are validated; repeat groups are single-level. " +
+				"Pace targets are sport-specific: run/bike use kind pace (sec/km); swim uses kind swim_pace (sec/100m) — " +
+				"each is rejected on the other's sport.",
 			SchemaType: CreateWorkoutTemplateArgs{},
 			Tier:       TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {

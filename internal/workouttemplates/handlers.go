@@ -227,7 +227,7 @@ func respondServiceError(c *gin.Context, err error) {
 	for _, e := range []error{
 		ErrSportInvalid, ErrNameRequired, ErrEstimatedInvalid, ErrStepsEmpty,
 		ErrStepTypeInvalid, ErrIntentInvalid, ErrDurationInvalid, ErrTargetInvalid,
-		ErrTargetRangeInvalid, ErrRepeatInvalid, ErrRepeatNested,
+		ErrTargetRangeInvalid, ErrTargetSportMismatch, ErrRepeatInvalid, ErrRepeatNested,
 	} {
 		if errors.Is(err, e) {
 			respondError(c, http.StatusBadRequest, e.Error())

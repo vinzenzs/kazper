@@ -116,6 +116,26 @@ def test_each_sport_maps():
         assert p["sportType"] == {"sportTypeId": sid, "sportTypeKey": key}
 
 
+def test_swim_pace_target_converts_to_mps():
+    p = wb.build_payload("swim", "Threshold", [
+        {"type": "step", "intent": "interval", "duration": {"kind": "distance", "meters": 100},
+         "target": {"kind": "swim_pace", "low_sec_per_100m": 100, "high_sec_per_100m": 95}},
+    ])
+    step = p["workoutSegments"][0]["workoutSteps"][0]
+    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+    # 100 s/100m → 100/100 = 1.0 m/s; 95 s/100m → 100/95 m/s.
+    assert step["targetValueOne"] == pytest.approx(1.0)
+    assert step["targetValueTwo"] == pytest.approx(100.0 / 95.0)
+
+
+def test_swim_pace_inverted_or_zero_bounds_guarded():
+    # Non-positive / missing bounds convert to None rather than dividing by zero.
+    assert wb._swim_pace_mps(0) is None
+    assert wb._swim_pace_mps(None) is None
+    assert wb._swim_pace_mps(-5) is None
+    assert wb._swim_pace_mps(100) == pytest.approx(1.0)
+
+
 def test_absolute_hr_and_power_targets_use_value_range():
     p = wb.build_payload("run", "x", [
         {"type": "step", "intent": "active", "duration": {"kind": "time", "seconds": 60},

@@ -77,7 +77,7 @@ type DeletePlanWeekArgs struct {
 // intent matches, when the planned workout's effective program is resolved.
 type SlotTargetOverrideArg struct {
 	Intent string         `json:"intent" jsonschema:"step intent to override: warmup|active|interval|recovery|rest|cooldown"`
-	Target map[string]any `json:"target" jsonschema:"effort target, same shape as a workout-template step target (e.g. {\"kind\":\"pace\",\"low_sec_per_km\":435,\"high_sec_per_km\":435} for 7:15/km)"`
+	Target map[string]any `json:"target" jsonschema:"effort target, same shape as a workout-template step target (e.g. {\"kind\":\"pace\",\"low_sec_per_km\":435,\"high_sec_per_km\":435} for 7:15/km; for swim use {\"kind\":\"swim_pace\",\"low_sec_per_100m\":92,\"high_sec_per_100m\":96})"`
 }
 
 // SlotDurationOverrideArg overrides the duration of every template step whose
@@ -282,7 +282,7 @@ func trainingPlanSpecs() []Spec {
 		// ----- slot -----
 		{
 			Name:        "add_plan_slot",
-			Description: "Add a day-slot to a plan week: a weekday (0=Mon..6=Sun), a within-day ordinal, the workout-template to schedule, an optional time_of_day, and optional per-intent target_overrides (progress an interval pace across weeks) and duration_overrides (progress a block's length, e.g. 75min→80min) so one template can progress across the plan.",
+			Description: "Add a day-slot to a plan week: a weekday (0=Mon..6=Sun), a within-day ordinal, the workout-template to schedule, an optional time_of_day, and optional per-intent target_overrides (progress an interval pace across weeks — run/bike use pace in sec/km, swim uses swim_pace in sec/100m) and duration_overrides (progress a block's length, e.g. 75min→80min) so one template can progress across the plan.",
 			SchemaType:  AddPlanSlotArgs{},
 			Tier:        TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {

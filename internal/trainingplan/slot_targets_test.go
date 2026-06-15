@@ -94,6 +94,30 @@ func TestWorkoutProgram_OverrideAppliedToMatchingIntentOnly(t *testing.T) {
 	assert.Equal(t, float64(435), target["low_sec_per_km"])
 }
 
+func TestWorkoutProgram_SwimPaceOverrideResolvesIntoProgram(t *testing.T) {
+	r := setup(t)
+	// A swim template with an interval step.
+	swimTmpl := `{"sport":"swim","name":"Swim intervals","steps":[` +
+		`{"type":"step","intent":"interval","duration":{"kind":"distance","meters":100},"target":{"kind":"none"}}]}`
+	templateID := mustID(t, do(t, r, http.MethodPost, "/workout-templates", swimTmpl))
+	planID := mustID(t, do(t, r, http.MethodPost, "/training-plans", `{"name":"p","start_date":"2026-06-01"}`))
+	weekID := mustID(t, do(t, r, http.MethodPost, "/training-plans/"+planID+"/weeks", `{"ordinal":1}`))
+	swimPaceOverride := `"target_overrides":[{"intent":"interval","target":{"kind":"swim_pace","low_sec_per_100m":92,"high_sec_per_100m":96}}]`
+	require.Equal(t, http.StatusCreated, do(t, r, http.MethodPost, "/training-plans/"+planID+"/weeks/"+weekID+"/slots",
+		`{"weekday":0,"ordinal":0,"template_id":"`+templateID+`",`+swimPaceOverride+`}`).Code)
+
+	ws := materialize(t, r, planID, `{"scope":"all"}`)
+	require.Len(t, ws, 1)
+
+	prog := program(t, r, ws[0]["id"].(string))
+	steps := prog["steps"].([]any)
+	require.Len(t, steps, 1)
+	target := steps[0].(map[string]any)["target"].(map[string]any)
+	assert.Equal(t, "swim_pace", target["kind"])
+	assert.Equal(t, float64(92), target["low_sec_per_100m"])
+	assert.Equal(t, float64(96), target["high_sec_per_100m"])
+}
+
 func TestWorkoutProgram_NoOverrideYieldsTemplateVerbatim(t *testing.T) {
 	r := setup(t)
 	planID, _, _, _ := buildPlan(t, r) // slot has no overrides

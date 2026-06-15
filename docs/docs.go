@@ -11958,6 +11958,9 @@ const docTemplate = `{
                 "high": {
                     "type": "integer"
                 },
+                "high_sec_per_100m": {
+                    "type": "integer"
+                },
                 "high_sec_per_km": {
                     "type": "integer"
                 },
@@ -11965,6 +11968,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "low": {
+                    "type": "integer"
+                },
+                "low_sec_per_100m": {
                     "type": "integer"
                 },
                 "low_sec_per_km": {

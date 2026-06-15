@@ -72,6 +72,7 @@ const (
 	TargetHRZone    = "hr_zone"
 	TargetPowerZone = "power_zone"
 	TargetPace      = "pace"
+	TargetSwimPace  = "swim_pace"
 	TargetHRBpm     = "hr_bpm"
 	TargetPowerW    = "power_w"
 	TargetRPE       = "rpe"
@@ -103,7 +104,11 @@ type Duration struct {
 }
 
 // Target is a step's effort target. Zones use Low/High (1..5); pace uses the
-// per-km fields; hr_bpm/power_w/rpe use Low/High in their own units.
+// per-km fields; swim_pace uses the per-100m fields; hr_bpm/power_w/rpe use
+// Low/High in their own units. Pace units are self-describing: `pace` is
+// sec/km (run/bike) and `swim_pace` is sec/100m (swim), so a target's units are
+// unambiguous without consulting the workout's sport — mirroring athlete_config's
+// threshold_pace_sec_per_km vs threshold_swim_pace_sec_per_100m split.
 //
 // Origin is set only by the training-plan effective-program resolver: when a
 // zone-reference target (hr_zone/power_zone) is rewritten to an absolute
@@ -111,10 +116,12 @@ type Duration struct {
 // callers see both the numbers and where they came from. It is read-time
 // provenance, never persisted on a template, and the garmin-bridge ignores it.
 type Target struct {
-	Kind         string `json:"kind"`
-	Low          *int   `json:"low,omitempty"`
-	High         *int   `json:"high,omitempty"`
-	LowSecPerKM  *int   `json:"low_sec_per_km,omitempty"`
-	HighSecPerKM *int   `json:"high_sec_per_km,omitempty"`
-	Origin       string `json:"origin,omitempty"`
+	Kind           string `json:"kind"`
+	Low            *int   `json:"low,omitempty"`
+	High           *int   `json:"high,omitempty"`
+	LowSecPerKM    *int   `json:"low_sec_per_km,omitempty"`
+	HighSecPerKM   *int   `json:"high_sec_per_km,omitempty"`
+	LowSecPer100m  *int   `json:"low_sec_per_100m,omitempty"`
+	HighSecPer100m *int   `json:"high_sec_per_100m,omitempty"`
+	Origin         string `json:"origin,omitempty"`
 }

@@ -8,17 +8,18 @@ import (
 
 // Validation errors map 1:1 to API error codes.
 var (
-	ErrSportInvalid       = errors.New("sport_invalid")
-	ErrNameRequired       = errors.New("name_required")
-	ErrEstimatedInvalid   = errors.New("estimated_duration_sec_invalid")
-	ErrStepsEmpty         = errors.New("steps_empty")
-	ErrStepTypeInvalid    = errors.New("step_type_invalid")
-	ErrIntentInvalid      = errors.New("intent_invalid")
-	ErrDurationInvalid    = errors.New("duration_invalid")
-	ErrTargetInvalid      = errors.New("target_invalid")
-	ErrTargetRangeInvalid = errors.New("target_range_invalid")
-	ErrRepeatInvalid      = errors.New("repeat_invalid")
-	ErrRepeatNested       = errors.New("repeat_nested")
+	ErrSportInvalid        = errors.New("sport_invalid")
+	ErrNameRequired        = errors.New("name_required")
+	ErrEstimatedInvalid    = errors.New("estimated_duration_sec_invalid")
+	ErrStepsEmpty          = errors.New("steps_empty")
+	ErrStepTypeInvalid     = errors.New("step_type_invalid")
+	ErrIntentInvalid       = errors.New("intent_invalid")
+	ErrDurationInvalid     = errors.New("duration_invalid")
+	ErrTargetInvalid       = errors.New("target_invalid")
+	ErrTargetRangeInvalid  = errors.New("target_range_invalid")
+	ErrTargetSportMismatch = errors.New("target_sport_mismatch")
+	ErrRepeatInvalid       = errors.New("repeat_invalid")
+	ErrRepeatNested        = errors.New("repeat_nested")
 )
 
 // Service orchestrates template CRUD with structured-step validation.
@@ -116,7 +117,7 @@ func validateTemplate(t *Template) error {
 		return ErrStepsEmpty
 	}
 	for i := range t.Steps {
-		if err := validateNode(t.Steps[i], false); err != nil {
+		if err := validateNode(t.Steps[i], false, t.Sport); err != nil {
 			return err
 		}
 	}
@@ -124,11 +125,12 @@ func validateTemplate(t *Template) error {
 }
 
 // validateNode validates one step node. nested=true forbids further repeats
-// (single-level repeat groups only).
-func validateNode(n Step, nested bool) error {
+// (single-level repeat groups only). sport is the template's sport, threaded
+// through so pace-kind targets can be swim-restricted at validation time.
+func validateNode(n Step, nested bool, sport string) error {
 	switch n.Type {
 	case NodeStep:
-		return validateSingleStep(n)
+		return validateSingleStep(n, sport)
 	case NodeRepeat:
 		if nested {
 			return ErrRepeatNested
@@ -142,7 +144,7 @@ func validateNode(n Step, nested bool) error {
 		for i := range n.Steps {
 			// A repeat's children must be single steps; a nested repeat trips
 			// ErrRepeatNested via the nested=true flag.
-			if err := validateNode(n.Steps[i], true); err != nil {
+			if err := validateNode(n.Steps[i], true, sport); err != nil {
 				return err
 			}
 		}
@@ -152,7 +154,7 @@ func validateNode(n Step, nested bool) error {
 	}
 }
 
-func validateSingleStep(n Step) error {
+func validateSingleStep(n Step, sport string) error {
 	switch n.Intent {
 	case IntentWarmup, IntentActive, IntentInterval, IntentRecovery, IntentRest, IntentCooldown:
 	default:
@@ -161,7 +163,31 @@ func validateSingleStep(n Step) error {
 	if err := validateDuration(n.Duration); err != nil {
 		return err
 	}
-	return validateTarget(n.Target)
+	if err := validateTarget(n.Target); err != nil {
+		return err
+	}
+	return validateTargetSport(n.Target, sport)
+}
+
+// validateTargetSport enforces the pace/swim_pace unit split against the
+// workout's sport: swim_pace (sec/100m) is swim-only, and pace (sec/km) is
+// rejected on swim. Other kinds are sport-agnostic. A nil target is a no-op
+// (validateTarget already rejected it where required).
+func validateTargetSport(t *Target, sport string) error {
+	if t == nil {
+		return nil
+	}
+	switch t.Kind {
+	case TargetSwimPace:
+		if sport != SportSwim {
+			return ErrTargetSportMismatch
+		}
+	case TargetPace:
+		if sport == SportSwim {
+			return ErrTargetSportMismatch
+		}
+	}
+	return nil
 }
 
 // ValidIntent reports whether s is a recognized step intent. Exported so other
@@ -217,6 +243,8 @@ func validateTarget(t *Target) error {
 		return validatePositiveRange(t.Low, t.High)
 	case TargetPace:
 		return validatePositiveRange(t.LowSecPerKM, t.HighSecPerKM)
+	case TargetSwimPace:
+		return validatePositiveRange(t.LowSecPer100m, t.HighSecPer100m)
 	default:
 		return ErrTargetInvalid
 	}
