@@ -123,13 +123,14 @@ in-memory state is the transient SSO context between `POST /login` and
 
 The bridge SHALL expose `POST /workouts` accepting a sport, a name, and the
 backend's structured step model (intents, durations by time/distance/lap-button/
-open, and targets by HR/power zone, pace, swim pace, RPE, or absolute HR/power),
-and SHALL translate it into a garminconnect structured-workout payload
+open, and targets by HR/power zone, pace, swim pace, cadence, RPE, or absolute
+HR/power), and SHALL translate it into a garminconnect structured-workout payload
 (`executableStepDTO` end conditions and targets; `repeatGroupDTO` for repeat
 groups), create it in the athlete's Garmin workout library, and return the
 created Garmin workout id. A `swim_pace` target SHALL be converted to Garmin's
 m/s pace target via `100 / sec_per_100m` (paralleling the `pace` kind's
-`1000 / sec_per_km`). When a bike step carries a `secondary_target`, the bridge
+`1000 / sec_per_km`). A `cadence` target SHALL be emitted as Garmin's cadence
+target type with `targetValueOne=low` and `targetValueTwo=high`. When a bike step carries a `secondary_target`, the bridge
 SHALL additionally emit Garmin's secondary-target fields (`secondaryTargetType`
 plus `secondaryZoneNumber` or
 `secondaryTargetValueOne`/`secondaryTargetValueTwo`) using the same per-kind
@@ -148,6 +149,13 @@ only in the bridge and SHALL NOT be returned to or required from the backend.
 - **WHEN** `POST /workouts` is called with a swim workout whose step targets
   `{kind:"swim_pace", low_sec_per_100m:100, high_sec_per_100m:100}`
 - **THEN** the bridge emits a Garmin pace target of `1.0` m/s (`100/100`)
+
+#### Scenario: A cadence target is emitted as a Garmin cadence gate
+
+- **WHEN** `POST /workouts` is called with a run step targeting
+  `{kind:"cadence", low:88, high:92}`
+- **THEN** the bridge emits a Garmin cadence target with `targetValueOne=88`,
+  `targetValueTwo=92`
 
 #### Scenario: A bike step's secondary target is emitted
 
