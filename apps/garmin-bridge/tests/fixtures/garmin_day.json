@@ -72,8 +72,7 @@
     "userData": {
       "ftpAutoDetected": true,
       "lactateThresholdHeartRate": 165,
-      "lactateThresholdSpeed": 0.25,
-      "lactateThresholdSwimSpeed": 1.5
+      "lactateThresholdSpeed": 0.25
     }
   },
   "userprofile_settings": {

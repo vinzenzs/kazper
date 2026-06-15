@@ -596,18 +596,6 @@ def _pace_per_km(sec_per_m: float | None) -> float | None:
     return pace if 90.0 <= pace <= 1200.0 else None
 
 
-def _pace_per_100m(sec_per_m: float | None) -> float | None:
-    """seconds-per-metre → seconds per 100 m (the conventional swim pace unit).
-
-    Guarded against a garbage source: a result outside a plausible swim-pace band
-    (≈0:30–10:00 per 100 m) is dropped rather than stored.
-    """
-    if sec_per_m is None or sec_per_m <= 0:
-        return None
-    pace = sec_per_m * 100.0
-    return pace if 30.0 <= pace <= 600.0 else None
-
-
 def _hr_zone_entry(zones: Any) -> dict[str, Any] | None:
     """Pick the heart-rate-zones entry to use: the ``DEFAULT`` sport, else the first.
 
@@ -673,12 +661,14 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
 
     Defensive: each field is read from the endpoint that actually exposes it and
     omitted when absent. FTP is the auto-detected cycling FTP (``get_cycling_ftp``);
-    lactate-threshold HR and threshold *speeds* (→ paces) come from the user
-    profile's ``userData``; max HR and HR-zone maxima come from the heart-rate-zones
-    payload. Power zones have no reachable Garmin endpoint, so they are *derived*
-    from FTP via the Coggan %FTP model (see ``_power_zone_maxima``). A distinct
-    functional ``threshold_hr`` is left unmapped (no value separate from lactate
-    threshold). Returns None when nothing usable was found.
+    lactate-threshold HR and the running threshold pace come from the user profile's
+    ``userData``; max HR and HR-zone maxima come from the heart-rate-zones payload.
+    Power zones have no reachable Garmin endpoint, so they are *derived* from FTP via
+    the Coggan %FTP model (see ``_power_zone_maxima``). The swim threshold pace is
+    not mapped — Garmin exposes no swim-threshold value here (its concept is Critical
+    Swim Speed, with no reachable source). A distinct functional ``threshold_hr`` is
+    likewise left unmapped (no value separate from lactate threshold). Returns None
+    when nothing usable was found.
     """
     user = _dig(raw, "user_profile", "userData") or {}
     hr_entry = _hr_zone_entry(raw.get("heart_rate_zones"))
@@ -690,9 +680,6 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
             "max_hr": _as_int((hr_entry or {}).get("maxHeartRateUsed")),
             "threshold_pace_sec_per_km": _pace_per_km(
                 _as_float(user.get("lactateThresholdSpeed"))
-            ),
-            "threshold_swim_pace_sec_per_100m": _pace_per_100m(
-                _as_float(user.get("lactateThresholdSwimSpeed"))
             ),
         }
     )

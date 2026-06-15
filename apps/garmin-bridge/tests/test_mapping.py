@@ -205,9 +205,10 @@ def test_athlete_config_mapping(raw_day):
     assert cfg["lactate_threshold_hr"] == 165
     # max HR + HR-zone maxima from the DEFAULT-sport heart-rate-zones entry
     assert cfg["max_hr"] == 190
-    # threshold paces: lactateThresholdSpeed is seconds-per-metre (from userData)
+    # threshold pace: lactateThresholdSpeed is seconds-per-metre (from userData)
     assert cfg["threshold_pace_sec_per_km"] == 250.0  # 0.25 s/m * 1000
-    assert cfg["threshold_swim_pace_sec_per_100m"] == 150.0  # 1.5 s/m * 100
+    # swim threshold has no reachable Garmin source → never mapped
+    assert "threshold_swim_pace_sec_per_100m" not in cfg
     # zone N max = zone N+1 floor (DEFAULT: 120/140/160/175), zone 5 = maxHeartRateUsed
     assert cfg["hr_zone_1_max"] == 120
     assert cfg["hr_zone_4_max"] == 175
