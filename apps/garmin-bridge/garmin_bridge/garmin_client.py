@@ -201,13 +201,18 @@ def fetch_day(api, date: str) -> dict[str, Any]:
     raw["hydration"] = safe("hydration", lambda: api.get_hydration_data(date))
     raw["user_summary"] = safe("user_summary", lambda: api.get_user_summary(date))
     # Athlete physiology config (per add-garmin-athlete-config): FTP, thresholds,
-    # max HR, and HR/power-zone boundaries. Slowly-changing — refreshed in place
-    # via the singleton PUT each sync. Sourced from the user profile + settings
-    # (this garminconnect build exposes no dedicated heart-rate-zones call; the
-    # zones ride in the user-settings payload). Both fetches guarded.
+    # max HR, and HR-zone boundaries. Slowly-changing — refreshed in place via the
+    # singleton PUT each sync. The values live across several endpoints: lactate
+    # threshold HR/pace in the user profile's userData; FTP in get_cycling_ftp;
+    # max HR + HR-zone floors in the (helper-less) /biometric-service/heartRateZones
+    # raw call. Power zones have no reachable endpoint and are omitted. All guarded.
     raw["user_profile"] = safe("user_profile", lambda: api.get_user_profile())
     raw["userprofile_settings"] = safe(
         "userprofile_settings", lambda: api.get_userprofile_settings()
+    )
+    raw["cycling_ftp"] = safe("cycling_ftp", lambda: api.get_cycling_ftp())
+    raw["heart_rate_zones"] = safe(
+        "heart_rate_zones", lambda: api.connectapi("/biometric-service/heartRateZones")
     )
     raw["weigh_ins"] = safe("weigh_ins", lambda: api.get_weigh_ins(date, date))
     raw["activities"] = safe(

@@ -582,52 +582,86 @@ def _pr_achieved_at(pr: dict[str, Any]) -> str | None:
 
 
 def _speed_to_pace_per_km(speed_mps: float | None) -> float | None:
-    """m/s → seconds per kilometre (Garmin exposes threshold as a speed)."""
+    """m/s → seconds per kilometre (Garmin exposes threshold as a speed).
+
+    Guarded against an out-of-unit/garbage source: a result outside a plausible
+    running-pace band (≈1:30–20:00 per km) is dropped rather than stored, the same
+    way ``_progress_pct`` omits an out-of-range percent. Observed live: Garmin can
+    report a ``lactateThresholdSpeed`` that is not m/s, yielding a nonsense pace.
+    """
     if speed_mps is None or speed_mps <= 0:
         return None
-    return 1000.0 / speed_mps
+    pace = 1000.0 / speed_mps
+    return pace if 90.0 <= pace <= 1200.0 else None
 
 
 def _speed_to_pace_per_100m(speed_mps: float | None) -> float | None:
-    """m/s → seconds per 100 m (the conventional swim pace unit)."""
+    """m/s → seconds per 100 m (the conventional swim pace unit).
+
+    Guarded against an out-of-unit/garbage source: a result outside a plausible
+    swim-pace band (≈0:30–10:00 per 100 m) is dropped rather than stored.
+    """
     if speed_mps is None or speed_mps <= 0:
         return None
-    return 100.0 / speed_mps
+    pace = 100.0 / speed_mps
+    return pace if 30.0 <= pace <= 600.0 else None
 
 
-def _zone_maxima(zones: Any, prefix: str) -> dict[str, Any]:
-    """A list of Garmin zone objects → {prefix_1_max .. prefix_5_max} (upper bounds)."""
+def _hr_zone_entry(zones: Any) -> dict[str, Any] | None:
+    """Pick the heart-rate-zones entry to use: the ``DEFAULT`` sport, else the first.
+
+    ``/biometric-service/heartRateZones`` returns one entry per sport (DEFAULT,
+    RUNNING, CYCLING, SWIMMING); ``athlete-config`` models a single zone set, so
+    we use the device's general (DEFAULT) zones.
+    """
+    if not isinstance(zones, list):
+        return None
+    entries = [z for z in zones if isinstance(z, dict)]
+    if not entries:
+        return None
+    for z in entries:
+        if z.get("sport") == "DEFAULT":
+            return z
+    return entries[0]
+
+
+def _hr_zone_maxima(entry: dict[str, Any] | None) -> dict[str, Any]:
+    """HR-zone floors → {hr_zone_1_max .. hr_zone_5_max}.
+
+    Garmin exposes zone *floors* (``zoneNFloor``); the upper bound of zone N is the
+    floor of zone N+1, and zone 5's upper bound is ``maxHeartRateUsed``.
+    """
+    if not entry:
+        return {}
     out: dict[str, Any] = {}
-    for z in zones or []:
-        num = _as_int(z.get("zoneNumber"))
-        high = _as_int(
-            z.get("zoneHigh")
-            if z.get("zoneHigh") is not None
-            else z.get("highBpm")
-            if z.get("highBpm") is not None
-            else z.get("max")
-        )
-        if num is not None and 1 <= num <= 5 and high is not None:
-            out[f"{prefix}_{num}_max"] = high
+    for n in range(1, 5):
+        nxt = _as_int(entry.get(f"zone{n + 1}Floor"))
+        if nxt is not None:
+            out[f"hr_zone_{n}_max"] = nxt
+    top = _as_int(entry.get("maxHeartRateUsed"))
+    if top is not None:
+        out["hr_zone_5_max"] = top
     return out
 
 
 def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
-    """Garmin user profile + settings → /athlete-config singleton body.
+    """Garmin physiology config → /athlete-config singleton body.
 
-    Defensive: each field is read from the user-settings ``userData`` (with a
-    user-profile fallback for max HR) and omitted when absent. Threshold paces
-    are derived from Garmin's threshold *speeds* (m/s). HR/power-zone boundaries
-    ride in the settings payload. Returns None when nothing usable was found.
+    Defensive: each field is read from the endpoint that actually exposes it and
+    omitted when absent. FTP is the auto-detected cycling FTP (``get_cycling_ftp``);
+    lactate-threshold HR and threshold *speeds* (→ paces) come from the user
+    profile's ``userData``; max HR and HR-zone maxima come from the heart-rate-zones
+    payload. Power zones have no reachable Garmin endpoint and are omitted, as is a
+    distinct functional ``threshold_hr`` (no value separate from lactate threshold).
+    Returns None when nothing usable was found.
     """
-    user = _dig(raw, "userprofile_settings", "userData") or {}
-    profile = raw.get("user_profile") or {}
+    user = _dig(raw, "user_profile", "userData") or {}
+    hr_entry = _hr_zone_entry(raw.get("heart_rate_zones"))
     cfg = _prune(
         {
-            "ftp_watts": _as_int(user.get("ftpAutoDetected") or user.get("functionalThresholdPower")),
-            "threshold_hr": _as_int(user.get("functionalThresholdHeartRate")),
+            "ftp_watts": _as_int(_dig(raw, "cycling_ftp", "functionalThresholdPower")),
             "lactate_threshold_hr": _as_int(user.get("lactateThresholdHeartRate")),
-            "max_hr": _as_int(user.get("maxHeartRate") or profile.get("maxHeartRate")),
+            "max_hr": _as_int((hr_entry or {}).get("maxHeartRateUsed")),
             "threshold_pace_sec_per_km": _speed_to_pace_per_km(
                 _as_float(user.get("lactateThresholdSpeed"))
             ),
@@ -636,8 +670,7 @@ def map_athlete_config(raw: dict[str, Any]) -> dict[str, Any] | None:
             ),
         }
     )
-    cfg.update(_zone_maxima(_dig(raw, "userprofile_settings", "heartRateZones"), "hr_zone"))
-    cfg.update(_zone_maxima(_dig(raw, "userprofile_settings", "powerZones"), "power_zone"))
+    cfg.update(_hr_zone_maxima(hr_entry))
     return cfg or None
 
 

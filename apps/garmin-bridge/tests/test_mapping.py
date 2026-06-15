@@ -200,41 +200,65 @@ def test_inventory_empty_when_absent():
 
 def test_athlete_config_mapping(raw_day):
     cfg = mapping.map_athlete_config(raw_day)
-    assert cfg["ftp_watts"] == 265
-    assert cfg["threshold_hr"] == 168
+    # FTP from get_cycling_ftp, not the userData ftpAutoDetected flag
+    assert cfg["ftp_watts"] == 255
     assert cfg["lactate_threshold_hr"] == 165
-    assert cfg["max_hr"] == 188
-    # threshold speeds (m/s) → paces
+    # max HR + HR-zone maxima from the DEFAULT-sport heart-rate-zones entry
+    assert cfg["max_hr"] == 190
+    # threshold speeds (m/s) → paces (from user_profile.userData)
     assert cfg["threshold_pace_sec_per_km"] == 250.0  # 1000 / 4.0
     assert cfg["threshold_swim_pace_sec_per_100m"] == 80.0  # 100 / 1.25
+    # zone N max = zone N+1 floor (DEFAULT: 120/140/160/175), zone 5 = maxHeartRateUsed
     assert cfg["hr_zone_1_max"] == 120
-    assert cfg["hr_zone_5_max"] == 182
-    assert cfg["power_zone_3_max"] == 240
-    assert cfg["power_zone_5_max"] == 350
+    assert cfg["hr_zone_4_max"] == 175
+    assert cfg["hr_zone_5_max"] == 190
+    # power zones have no reachable source → omitted; no functional threshold_hr
+    assert not any(k.startswith("power_zone_") for k in cfg)
+    assert "threshold_hr" not in cfg
 
 
-def test_athlete_config_power_zones_absent():
-    """HR zones present, power zones absent → power_zone_* omitted."""
+def test_athlete_config_default_sport_zones_chosen():
+    """When multiple sports are present, the DEFAULT entry drives the zone maxima."""
     raw = {
-        "userprofile_settings": {
-            "userData": {"ftpAutoDetected": 250},
-            "heartRateZones": [
-                {"zoneNumber": 1, "zoneHigh": 120},
-                {"zoneNumber": 2, "zoneHigh": 140},
-            ],
-        }
+        "heart_rate_zones": [
+            {"sport": "RUNNING", "zone2Floor": 131, "maxHeartRateUsed": 196},
+            {"sport": "DEFAULT", "zone2Floor": 120, "maxHeartRateUsed": 190},
+        ]
     }
     cfg = mapping.map_athlete_config(raw)
-    assert cfg["ftp_watts"] == 250
-    assert cfg["hr_zone_1_max"] == 120
+    assert cfg["hr_zone_1_max"] == 120  # DEFAULT, not RUNNING's 131
+    assert cfg["max_hr"] == 190
+
+
+def test_athlete_config_ignores_preferences_and_ftp_flag():
+    """Preferences-only settings and the boolean ftpAutoDetected flag are not sources."""
+    raw = {
+        "userprofile_settings": {"measurementSystem": "metric"},
+        "user_profile": {"userData": {"ftpAutoDetected": True}},
+    }
+    assert mapping.map_athlete_config(raw) is None
+
+
+def test_athlete_config_drops_implausible_threshold_pace():
+    """A non-m/s / garbage lactateThresholdSpeed → pace omitted, not stored as nonsense."""
+    raw = {
+        "cycling_ftp": {"functionalThresholdPower": 255},
+        "user_profile": {"userData": {"lactateThresholdSpeed": 0.269}},
+    }
+    cfg = mapping.map_athlete_config(raw)
+    assert cfg["ftp_watts"] == 255
+    assert "threshold_pace_sec_per_km" not in cfg  # 1000/0.269 ≈ 3711 s/km → dropped
+
+
+def test_athlete_config_power_zones_absent(raw_day):
+    """No reachable power-zone source → power_zone_* always omitted."""
+    cfg = mapping.map_athlete_config(raw_day)
     assert not any(k.startswith("power_zone_") for k in cfg)
-    # threshold paces absent (no speeds supplied) → omitted
-    assert "threshold_pace_sec_per_km" not in cfg
 
 
 def test_athlete_config_empty_yields_none():
     assert mapping.map_athlete_config({}) is None
-    assert mapping.map_athlete_config({"userprofile_settings": {"userData": {}}}) is None
+    assert mapping.map_athlete_config({"user_profile": {"userData": {}}}) is None
 
 
 def test_devices_mapping_joins_last_used(raw_day):
