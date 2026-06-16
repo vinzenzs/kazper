@@ -40,7 +40,7 @@ func seedPlannedFromSlot(t *testing.T, f *fixture, sport string, start time.Time
 
 	w, err := f.repo.UpsertPlannedFromSlot(ctx, f.pool, workouts.PlannedSlotInput{
 		PlanSlotID: planSlotID,
-		TemplateID: templateID,
+		TemplateID: &templateID,
 		Sport:      sport,
 		StartedAt:  start,
 		EndedAt:    start.Add(time.Hour),
@@ -171,7 +171,7 @@ func TestMaterializeGuard_DoesNotRevertFulfilled(t *testing.T) {
 	// the WHERE status='planned' guard must skip the now-completed row.
 	got, err := f.repo.UpsertPlannedFromSlot(context.Background(), f.pool, workouts.PlannedSlotInput{
 		PlanSlotID: planSlotID,
-		TemplateID: templateID,
+		TemplateID: &templateID,
 		Sport:      "run",
 		StartedAt:  at(18),
 		EndedAt:    at(19),

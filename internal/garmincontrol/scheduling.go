@@ -428,15 +428,24 @@ func (h *Handlers) pushOne(ctx context.Context, id uuid.UUID) (*workouts.Workout
 	if err != nil {
 		return nil, errWorkoutNotFound
 	}
-	if string(w.Status) != string(workouts.StatusPlanned) || w.TemplateID == nil {
+	// Schedulable when planned and carrying a template reference: a single-sport
+	// template_id, or — for a multisport brick — a multisport_template_id.
+	isMultisport := w.Sport == workouts.SportMultisport && w.MultisportTemplateID != nil
+	if string(w.Status) != string(workouts.StatusPlanned) || (w.TemplateID == nil && !isMultisport) {
 		return nil, errNotSchedulable
 	}
-	tmpl, err := h.templatesRepo.GetByID(ctx, w.TemplateID.String())
-	if err != nil {
-		return nil, errNotSchedulable
+	// Single-sport: load the template (its sport/name drive the bridge body) and
+	// confirm it still exists before mutating Garmin state.
+	var tmpl *workouttemplates.Template
+	if !isMultisport {
+		tmpl, err = h.templatesRepo.GetByID(ctx, w.TemplateID.String())
+		if err != nil {
+			return nil, errNotSchedulable
+		}
 	}
 	// Compile from the workout's EFFECTIVE program — the template steps with the
-	// plan slot's per-intent target overrides applied — not the raw template.
+	// plan slot's per-intent target overrides applied (single-sport), or the
+	// per-segment resolved programs (multisport) — not the raw template.
 	prog, err := h.planSvc.EffectiveProgram(ctx, id)
 	if err != nil {
 		return nil, errNotSchedulable
@@ -455,7 +464,18 @@ func (h *Handlers) pushOne(ctx context.Context, id uuid.UUID) (*workouts.Workout
 			return nil, err
 		}
 	}
-	garminWorkoutID, err := h.bridgeCreateWorkout(ctx, tmpl.Sport, tmpl.Name, prog.Steps)
+	var garminWorkoutID string
+	if isMultisport {
+		// Multisport: send the multi-segment form (one Garmin multisport workout),
+		// reusing Phase 1's bridge multi-segment compile.
+		name := ""
+		if prog.Name != nil {
+			name = *prog.Name
+		}
+		garminWorkoutID, err = h.bridgeCreateMultisportWorkout(ctx, name, prog.Segments)
+	} else {
+		garminWorkoutID, err = h.bridgeCreateWorkout(ctx, tmpl.Sport, tmpl.Name, prog.Steps)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -485,8 +505,11 @@ func (h *Handlers) bridgeCreateWorkout(ctx context.Context, sport, name string, 
 
 // bridgeCreateMultisportWorkout sends a multisport form to the bridge's
 // POST /workouts (name + ordered per-sport segments, transitions included) and
-// returns the single created Garmin multisport workout id.
-func (h *Handlers) bridgeCreateMultisportWorkout(ctx context.Context, name string, segments []multisport.Segment) (string, error) {
+// returns the single created Garmin multisport workout id. segments is the
+// ordered segment list — []multisport.Segment (direct schedule) or
+// []trainingplan.ProgramSegment (plan push); both marshal to the same
+// {sport, steps, duration} shape the bridge expects.
+func (h *Handlers) bridgeCreateMultisportWorkout(ctx context.Context, name string, segments any) (string, error) {
 	body, _ := json.Marshal(map[string]any{"name": name, "segments": segments})
 	var out struct {
 		GarminWorkoutID string `json:"garmin_workout_id"`

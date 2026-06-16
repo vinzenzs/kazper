@@ -42,14 +42,20 @@ type PlanWeek struct {
 	Slots     []PlanSlot `json:"slots,omitempty"`
 }
 
-// PlanSlot mirrors a plan_slots row. TimeOfDay is HH:MM:SS or nil.
+// PlanSlot mirrors a plan_slots row. TimeOfDay is HH:MM:SS or nil. A slot
+// references EITHER a single-sport TemplateID OR a MultisportTemplateID (exactly
+// one is non-nil; a DB CHECK enforces the XOR).
 type PlanSlot struct {
 	ID         uuid.UUID `json:"id"`
 	PlanWeekID uuid.UUID `json:"plan_week_id"`
 	Weekday    int       `json:"weekday"` // 0=Mon … 6=Sun
 	Ordinal    int       `json:"ordinal"`
-	TemplateID uuid.UUID `json:"template_id"`
-	TimeOfDay  *string   `json:"time_of_day,omitempty"`
+	// TemplateID references a single-sport workout_templates row; nil for a
+	// multisport slot. MultisportTemplateID references a multisport_templates row;
+	// nil for a single-sport slot. Exactly one is set.
+	TemplateID           *uuid.UUID `json:"template_id,omitempty"`
+	MultisportTemplateID *uuid.UUID `json:"multisport_template_id,omitempty"`
+	TimeOfDay            *string    `json:"time_of_day,omitempty"`
 	// TargetOverrides supersede the referenced template's step targets, matched
 	// by intent, when the planned workout's effective program is resolved. At
 	// most one entry per intent; nil/empty means no overrides.
@@ -82,10 +88,25 @@ type SlotDurationOverride struct {
 
 // Program is a planned workout's effective program: its template steps with the
 // slot's target overrides applied (per-intent). Steps is empty for a workout
-// with no template.
+// with no template. For a multisport workout (Sport == "multisport") Steps is
+// nil and Segments carries the ordered per-segment programs instead.
 type Program struct {
 	WorkoutID uuid.UUID               `json:"workout_id"`
 	Sport     string                  `json:"sport"`
 	Name      *string                 `json:"name,omitempty"`
 	Steps     []workouttemplates.Step `json:"steps"`
+	// Segments is populated only for a multisport workout: the multisport
+	// template's segments in order, each with its own sport and resolved steps
+	// (or, for a transition segment, its duration). Empty/omitted for a
+	// single-sport workout.
+	Segments []ProgramSegment `json:"segments,omitempty"`
+}
+
+// ProgramSegment is one leg of a multisport effective program: its sport, its
+// resolved step program (resolved by that segment's own sport), and — for a
+// transition segment — its duration with no steps.
+type ProgramSegment struct {
+	Sport    string                     `json:"sport"`
+	Steps    []workouttemplates.Step    `json:"steps,omitempty"`
+	Duration *workouttemplates.Duration `json:"duration,omitempty"`
 }

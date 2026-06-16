@@ -42,12 +42,17 @@ const (
 	SportStrength Sport = "strength"
 	SportYoga     Sport = "yoga"
 	SportMobility Sport = "mobility"
-	SportOther    Sport = "other"
+	// SportMultisport is a workout-level sport for a structured brick/triathlon
+	// row that materializes from a multisport template. It is NOT a template
+	// sport — `transition` only ever appears as a segment sport inside a
+	// multisport template, never as a workout row's sport.
+	SportMultisport Sport = "multisport"
+	SportOther      Sport = "other"
 )
 
 func ValidSport(s string) bool {
 	switch Sport(s) {
-	case SportRun, SportBike, SportSwim, SportStrength, SportYoga, SportMobility, SportOther:
+	case SportRun, SportBike, SportSwim, SportStrength, SportYoga, SportMobility, SportMultisport, SportOther:
 		return true
 	}
 	return false
@@ -148,6 +153,12 @@ type Workout struct {
 	// activities carry neither.
 	TemplateID *uuid.UUID `json:"template_id,omitempty"`
 	PlanSlotID *uuid.UUID `json:"plan_slot_id,omitempty"`
+
+	// MultisportTemplateID (per multisport-phase-2) is the multisport template a
+	// planned multisport workout (`sport='multisport'`) was materialized from —
+	// set instead of TemplateID for a brick/triathlon row. Nullable; single-sport
+	// and imported activities carry it as nil.
+	MultisportTemplateID *uuid.UUID `json:"multisport_template_id,omitempty"`
 
 	// Garmin scheduling ids (per add-garmin-scheduling), both nullable opaque
 	// Garmin identifiers: the structured workout created in the Garmin library

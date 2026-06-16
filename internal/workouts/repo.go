@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -150,15 +150,18 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 }
 
 // PlannedSlotInput is the data the training-plan materializer supplies to
-// create/refresh one planned workout from a plan slot.
+// create/refresh one planned workout from a plan slot. Exactly one of TemplateID
+// (single-sport slot) or MultisportTemplateID (multisport slot) is set; for a
+// multisport slot Sport is "multisport".
 type PlannedSlotInput struct {
-	PlanSlotID   uuid.UUID
-	TemplateID   uuid.UUID
-	Sport        string
-	Name         *string
-	StartedAt    time.Time
-	EndedAt      time.Time
-	SessionGroup *string
+	PlanSlotID           uuid.UUID
+	TemplateID           *uuid.UUID
+	MultisportTemplateID *uuid.UUID
+	Sport                string
+	Name                 *string
+	StartedAt            time.Time
+	EndedAt              time.Time
+	SessionGroup         *string
 }
 
 // UpsertPlannedFromSlot creates (or refreshes) the planned workout for a plan
@@ -177,26 +180,27 @@ func (r *Repo) UpsertPlannedFromSlot(ctx context.Context, q store.Querier, in Pl
 	const sql = `
         INSERT INTO workouts (
             id, source, sport, name, status,
-            started_at, ended_at, template_id, plan_slot_id, session_group,
+            started_at, ended_at, template_id, multisport_template_id, plan_slot_id, session_group,
             created_at, updated_at
         ) VALUES (
             gen_random_uuid(), 'manual', $1, $2, 'planned',
-            $3, $4, $5, $6, $7,
+            $3, $4, $5, $6, $7, $8,
             now(), now()
         )
         ON CONFLICT (plan_slot_id) WHERE plan_slot_id IS NOT NULL DO UPDATE SET
-            sport         = EXCLUDED.sport,
-            name          = EXCLUDED.name,
-            status        = 'planned',
-            template_id   = EXCLUDED.template_id,
-            started_at    = EXCLUDED.started_at,
-            ended_at      = EXCLUDED.ended_at,
-            session_group = EXCLUDED.session_group,
-            updated_at    = now()
+            sport                  = EXCLUDED.sport,
+            name                   = EXCLUDED.name,
+            status                 = 'planned',
+            template_id            = EXCLUDED.template_id,
+            multisport_template_id = EXCLUDED.multisport_template_id,
+            started_at             = EXCLUDED.started_at,
+            ended_at               = EXCLUDED.ended_at,
+            session_group          = EXCLUDED.session_group,
+            updated_at             = now()
         WHERE workouts.status = 'planned'
         RETURNING ` + selectCols
 	row := q.QueryRow(ctx, sql,
-		in.Sport, in.Name, in.StartedAt, in.EndedAt, in.TemplateID, in.PlanSlotID, in.SessionGroup,
+		in.Sport, in.Name, in.StartedAt, in.EndedAt, in.TemplateID, in.MultisportTemplateID, in.PlanSlotID, in.SessionGroup,
 	)
 	w, err := scanWorkout(row)
 	if errors.Is(err, ErrNotFound) {
@@ -731,6 +735,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&w.AvgCadence, &w.AvgStrideM, &w.MaxHR, &w.AerobicTE, &w.AnaerobicTE,
 		&w.SecsInZone1, &w.SecsInZone2, &w.SecsInZone3, &w.SecsInZone4, &w.SecsInZone5,
 		&w.HumidityPct, &w.WindSpeedMPS,
+		&w.MultisportTemplateID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

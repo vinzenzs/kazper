@@ -89,26 +89,28 @@ type SlotDurationOverrideArg struct {
 }
 
 type AddPlanSlotArgs struct {
-	PlanID            string                    `json:"plan_id" jsonschema:"the plan UUID"`
-	WeekID            string                    `json:"week_id" jsonschema:"the week UUID"`
-	Weekday           int                       `json:"weekday" jsonschema:"day of week 0 (Monday) through 6 (Sunday)"`
-	Ordinal           int                       `json:"ordinal" jsonschema:"order of this session within the day (0-based)"`
-	TemplateID        string                    `json:"template_id" jsonschema:"the workout-template UUID this slot schedules"`
-	TimeOfDay         *string                   `json:"time_of_day,omitempty" jsonschema:"optional local start time HH:MM or HH:MM:SS"`
-	TargetOverrides   []SlotTargetOverrideArg   `json:"target_overrides,omitempty" jsonschema:"optional per-intent target overrides that supersede the template's targets (e.g. progress an interval pace across weeks); at most one per intent"`
-	DurationOverrides []SlotDurationOverrideArg `json:"duration_overrides,omitempty" jsonschema:"optional per-intent duration overrides that supersede the template's step durations (e.g. progress a tempo block 75min→80min across weeks) and drive the materialized session length; at most one per intent"`
-	IdempotencyKey    string                    `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
+	PlanID               string                    `json:"plan_id" jsonschema:"the plan UUID"`
+	WeekID               string                    `json:"week_id" jsonschema:"the week UUID"`
+	Weekday              int                       `json:"weekday" jsonschema:"day of week 0 (Monday) through 6 (Sunday)"`
+	Ordinal              int                       `json:"ordinal" jsonschema:"order of this session within the day (0-based)"`
+	TemplateID           string                    `json:"template_id,omitempty" jsonschema:"the single-sport workout-template UUID this slot schedules; provide EXACTLY ONE of template_id or multisport_template_id"`
+	MultisportTemplateID string                    `json:"multisport_template_id,omitempty" jsonschema:"the multisport-template UUID this slot schedules (a triathlon/brick); provide EXACTLY ONE of template_id or multisport_template_id. A multisport slot does not accept target_overrides/duration_overrides"`
+	TimeOfDay            *string                   `json:"time_of_day,omitempty" jsonschema:"optional local start time HH:MM or HH:MM:SS"`
+	TargetOverrides      []SlotTargetOverrideArg   `json:"target_overrides,omitempty" jsonschema:"optional per-intent target overrides that supersede the template's targets (e.g. progress an interval pace across weeks); at most one per intent; single-sport slots only"`
+	DurationOverrides    []SlotDurationOverrideArg `json:"duration_overrides,omitempty" jsonschema:"optional per-intent duration overrides that supersede the template's step durations (e.g. progress a tempo block 75min→80min across weeks) and drive the materialized session length; at most one per intent; single-sport slots only"`
+	IdempotencyKey       string                    `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
 
 type PatchPlanSlotArgs struct {
-	PlanID            string                     `json:"plan_id" jsonschema:"the plan UUID"`
-	SlotID            string                     `json:"slot_id" jsonschema:"the slot UUID"`
-	Weekday           *int                       `json:"weekday,omitempty" jsonschema:"optional new weekday 0..6"`
-	Ordinal           *int                       `json:"ordinal,omitempty" jsonschema:"optional new within-day order"`
-	TemplateID        *string                    `json:"template_id,omitempty" jsonschema:"optional new template UUID"`
-	TimeOfDay         *string                    `json:"time_of_day,omitempty" jsonschema:"optional new local start time HH:MM or HH:MM:SS"`
-	TargetOverrides   *[]SlotTargetOverrideArg   `json:"target_overrides,omitempty" jsonschema:"optional replacement override list (replaces wholesale; empty list clears all overrides)"`
-	DurationOverrides *[]SlotDurationOverrideArg `json:"duration_overrides,omitempty" jsonschema:"optional replacement duration-override list (replaces wholesale; empty list clears all duration overrides)"`
+	PlanID               string                     `json:"plan_id" jsonschema:"the plan UUID"`
+	SlotID               string                     `json:"slot_id" jsonschema:"the slot UUID"`
+	Weekday              *int                       `json:"weekday,omitempty" jsonschema:"optional new weekday 0..6"`
+	Ordinal              *int                       `json:"ordinal,omitempty" jsonschema:"optional new within-day order"`
+	TemplateID           *string                    `json:"template_id,omitempty" jsonschema:"optional new single-sport template UUID; switches the slot to single-sport (clears any multisport reference). Set EXACTLY ONE of template_id or multisport_template_id"`
+	MultisportTemplateID *string                    `json:"multisport_template_id,omitempty" jsonschema:"optional new multisport-template UUID; switches the slot to multisport (clears any single-sport reference and rejects overrides). Set EXACTLY ONE of template_id or multisport_template_id"`
+	TimeOfDay            *string                    `json:"time_of_day,omitempty" jsonschema:"optional new local start time HH:MM or HH:MM:SS"`
+	TargetOverrides      *[]SlotTargetOverrideArg   `json:"target_overrides,omitempty" jsonschema:"optional replacement override list (replaces wholesale; empty list clears all overrides)"`
+	DurationOverrides    *[]SlotDurationOverrideArg `json:"duration_overrides,omitempty" jsonschema:"optional replacement duration-override list (replaces wholesale; empty list clears all duration overrides)"`
 }
 
 type GetWorkoutProgramArgs struct {
@@ -282,7 +284,7 @@ func trainingPlanSpecs() []Spec {
 		// ----- slot -----
 		{
 			Name:        "add_plan_slot",
-			Description: "Add a day-slot to a plan week: a weekday (0=Mon..6=Sun), a within-day ordinal, the workout-template to schedule, an optional time_of_day, and optional per-intent target_overrides (progress an interval pace across weeks — run/bike use pace in sec/km, swim uses swim_pace in sec/100m) and duration_overrides (progress a block's length, e.g. 75min→80min) so one template can progress across the plan.",
+			Description: "Add a day-slot to a plan week: a weekday (0=Mon..6=Sun), a within-day ordinal, the template to schedule (EXACTLY ONE of template_id for a single-sport session or multisport_template_id for a triathlon/brick), an optional time_of_day, and optional per-intent target_overrides (progress an interval pace across weeks — run/bike use pace in sec/km, swim uses swim_pace in sec/100m) and duration_overrides (progress a block's length, e.g. 75min→80min) so one template can progress across the plan. Overrides apply to single-sport slots only.",
 			SchemaType:  AddPlanSlotArgs{},
 			Tier:        TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
@@ -290,7 +292,13 @@ func trainingPlanSpecs() []Spec {
 				if err := DecodeInto(in, &a); err != nil {
 					return HTTPCall{}, err
 				}
-				payload := map[string]any{"weekday": a.Weekday, "ordinal": a.Ordinal, "template_id": a.TemplateID, "time_of_day": a.TimeOfDay}
+				payload := map[string]any{"weekday": a.Weekday, "ordinal": a.Ordinal, "time_of_day": a.TimeOfDay}
+				if a.TemplateID != "" {
+					payload["template_id"] = a.TemplateID
+				}
+				if a.MultisportTemplateID != "" {
+					payload["multisport_template_id"] = a.MultisportTemplateID
+				}
 				if a.TargetOverrides != nil {
 					payload["target_overrides"] = a.TargetOverrides
 				}
@@ -306,7 +314,7 @@ func trainingPlanSpecs() []Spec {
 		},
 		{
 			Name:        "patch_plan_slot",
-			Description: "Update a slot's weekday / ordinal / template_id / time_of_day / target_overrides / duration_overrides (each override list replaces wholesale; empty clears). Re-materialize to retarget the planned workout.",
+			Description: "Update a slot's weekday / ordinal / template reference (template_id OR multisport_template_id — switching kind clears the other) / time_of_day / target_overrides / duration_overrides (each override list replaces wholesale; empty clears; multisport slots reject overrides). Re-materialize to retarget the planned workout.",
 			SchemaType:  PatchPlanSlotArgs{},
 			Tier:        TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
@@ -323,6 +331,9 @@ func trainingPlanSpecs() []Spec {
 				}
 				if a.TemplateID != nil {
 					payload["template_id"] = *a.TemplateID
+				}
+				if a.MultisportTemplateID != nil {
+					payload["multisport_template_id"] = *a.MultisportTemplateID
 				}
 				if a.TimeOfDay != nil {
 					payload["time_of_day"] = *a.TimeOfDay

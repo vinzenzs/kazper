@@ -303,12 +303,14 @@ func (h *Handlers) deleteWeek(c *gin.Context) {
 // ----- slot -----
 
 type createSlotRequest struct {
-	Weekday           int                    `json:"weekday"`
-	Ordinal           int                    `json:"ordinal"`
-	TemplateID        uuid.UUID              `json:"template_id"`
-	TimeOfDay         *string                `json:"time_of_day,omitempty"`
-	TargetOverrides   []SlotTargetOverride   `json:"target_overrides,omitempty"`
-	DurationOverrides []SlotDurationOverride `json:"duration_overrides,omitempty"`
+	Weekday int `json:"weekday"`
+	Ordinal int `json:"ordinal"`
+	// Exactly one of TemplateID (single-sport) / MultisportTemplateID must be set.
+	TemplateID           *uuid.UUID             `json:"template_id,omitempty"`
+	MultisportTemplateID *uuid.UUID             `json:"multisport_template_id,omitempty"`
+	TimeOfDay            *string                `json:"time_of_day,omitempty"`
+	TargetOverrides      []SlotTargetOverride   `json:"target_overrides,omitempty"`
+	DurationOverrides    []SlotDurationOverride `json:"duration_overrides,omitempty"`
 }
 
 // createSlot godoc
@@ -320,7 +322,7 @@ type createSlotRequest struct {
 // @Param        weekId  path  string             true  "Week UUID"
 // @Param        body    body  createSlotRequest  true  "Slot"
 // @Success      201  {object}  PlanSlot
-// @Failure      400  {object}  map[string]string  "invalid_json | weekday_invalid | template_id_required | time_of_day_invalid | template_not_found | override_intent_invalid | override_intent_duplicate | override_target_invalid | override_duration_invalid"
+// @Failure      400  {object}  map[string]string  "invalid_json | weekday_invalid | template_id_required | template_reference_ambiguous | overrides_unsupported_for_multisport | time_of_day_invalid | template_not_found | override_intent_invalid | override_intent_duplicate | override_target_invalid | override_duration_invalid"
 // @Failure      404  {object}  map[string]string  "plan_week_not_found"
 // @Security     BearerAuth
 // @Router       /training-plans/{id}/weeks/{weekId}/slots [post]
@@ -335,7 +337,7 @@ func (h *Handlers) createSlot(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	out, err := h.svc.CreateSlot(c.Request.Context(), weekID, SlotInput{Weekday: req.Weekday, Ordinal: req.Ordinal, TemplateID: req.TemplateID, TimeOfDay: req.TimeOfDay, TargetOverrides: req.TargetOverrides, DurationOverrides: req.DurationOverrides})
+	out, err := h.svc.CreateSlot(c.Request.Context(), weekID, SlotInput{Weekday: req.Weekday, Ordinal: req.Ordinal, TemplateID: req.TemplateID, MultisportTemplateID: req.MultisportTemplateID, TimeOfDay: req.TimeOfDay, TargetOverrides: req.TargetOverrides, DurationOverrides: req.DurationOverrides})
 	if err != nil {
 		respondNotFoundOr(c, err)
 		return
@@ -377,6 +379,14 @@ func (h *Handlers) patchSlot(c *gin.Context) {
 			return
 		}
 		p.TemplateID = &u
+	}
+	if v, present := raw["multisport_template_id"]; present {
+		var u uuid.UUID
+		if json.Unmarshal(v, &u) != nil {
+			respondError(c, http.StatusBadRequest, "invalid_json")
+			return
+		}
+		p.MultisportTemplateID = &u
 	}
 	if v, present := raw["time_of_day"]; present {
 		p.SetTime = true
@@ -473,7 +483,7 @@ func (h *Handlers) materialize(c *gin.Context) {
 
 // workoutProgram godoc
 // @Summary      Get a planned workout's effective program (template steps + slot target/duration overrides)
-// @Description  Resolves the workout's template steps with its plan-slot target and duration overrides applied per intent. A workout with no template returns its sport/name and an empty step list.
+// @Description  Resolves the workout's template steps with its plan-slot target and duration overrides applied per intent. A workout with no template returns its sport/name and an empty step list. A multisport workout returns sport "multisport" and an ordered `segments` list — each segment with its own sport and resolved steps (or a transition's duration) — instead of a flat step list.
 // @Tags         workouts
 // @Produce      json
 // @Param        id  path  string  true  "Workout UUID"
@@ -563,7 +573,8 @@ func respondNotFoundOr(c *gin.Context, err error) {
 func respondServiceError(c *gin.Context, err error) {
 	for _, e := range []error{
 		ErrNameRequired, ErrStartDateInvalid, ErrOrdinalInvalid, ErrWeekdayInvalid,
-		ErrTimeOfDayInvalid, ErrTemplateRequired, ErrScopeInvalid,
+		ErrTimeOfDayInvalid, ErrTemplateRequired, ErrTemplateAmbiguous,
+		ErrOverridesOnMultisport, ErrScopeInvalid,
 		ErrTemplateMissing, ErrWeekOrdinalTaken,
 		ErrOverrideIntentInvalid, ErrOverrideDuplicate, ErrOverrideTargetInvalid,
 		ErrOverrideDurationInvalid,

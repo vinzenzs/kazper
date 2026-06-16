@@ -303,6 +303,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Cross-inject athlete-config so EffectiveProgram resolves zone-reference
 	// targets into absolute power_w/hr_bpm ranges (mirrors SetWorkoutsRepo).
 	trainingPlanSvc.SetAthleteConfigRepo(athleteConfigRepo)
+	// Cross-inject the multisport-template repo so EffectiveProgram resolves a
+	// multisport workout's per-segment programs (each by its own sport).
+	trainingPlanSvc.SetMultisportRepo(multisportRepo)
 	trainingplan.NewHandlers(trainingPlanSvc).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)

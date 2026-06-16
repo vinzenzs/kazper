@@ -2228,6 +2228,8 @@ definitions:
         type: array
       id:
         type: string
+      multisport_template_id:
+        type: string
       ordinal:
         type: integer
       plan_week_id:
@@ -2241,6 +2243,10 @@ definitions:
           $ref: '#/definitions/trainingplan.SlotTargetOverride'
         type: array
       template_id:
+        description: |-
+          TemplateID references a single-sport workout_templates row; nil for a
+          multisport slot. MultisportTemplateID references a multisport_templates row;
+          nil for a single-sport slot. Exactly one is set.
         type: string
       time_of_day:
         type: string
@@ -2275,6 +2281,15 @@ definitions:
     properties:
       name:
         type: string
+      segments:
+        description: |-
+          Segments is populated only for a multisport workout: the multisport
+          template's segments in order, each with its own sport and resolved steps
+          (or, for a transition segment, its duration). Empty/omitted for a
+          single-sport workout.
+        items:
+          $ref: '#/definitions/trainingplan.ProgramSegment'
+        type: array
       sport:
         type: string
       steps:
@@ -2283,6 +2298,17 @@ definitions:
         type: array
       workout_id:
         type: string
+    type: object
+  trainingplan.ProgramSegment:
+    properties:
+      duration:
+        $ref: '#/definitions/workouttemplates.Duration'
+      sport:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/workouttemplates.Step'
+        type: array
     type: object
   trainingplan.SlotDurationOverride:
     properties:
@@ -2315,6 +2341,8 @@ definitions:
         items:
           $ref: '#/definitions/trainingplan.SlotDurationOverride'
         type: array
+      multisport_template_id:
+        type: string
       ordinal:
         type: integer
       target_overrides:
@@ -2322,6 +2350,8 @@ definitions:
           $ref: '#/definitions/trainingplan.SlotTargetOverride'
         type: array
       template_id:
+        description: Exactly one of TemplateID (single-sport) / MultisportTemplateID
+          must be set.
         type: string
       time_of_day:
         type: string
@@ -2527,6 +2557,7 @@ definitions:
     - strength
     - yoga
     - mobility
+    - multisport
     - other
     type: string
     x-enum-varnames:
@@ -2536,6 +2567,7 @@ definitions:
     - SportStrength
     - SportYoga
     - SportMobility
+    - SportMultisport
     - SportOther
   workouts.Status:
     enum:
@@ -2603,6 +2635,13 @@ definitions:
         type: number
       max_hr:
         type: integer
+      multisport_template_id:
+        description: |-
+          MultisportTemplateID (per multisport-phase-2) is the multisport template a
+          planned multisport workout (`sport='multisport'`) was materialized from —
+          set instead of TemplateID for a brick/triathlon row. Nullable; single-sport
+          and imported activities carry it as nil.
+        type: string
       name:
         type: string
       needs_link:
@@ -7579,9 +7618,10 @@ paths:
           schema:
             $ref: '#/definitions/trainingplan.PlanSlot'
         "400":
-          description: invalid_json | weekday_invalid | template_id_required | time_of_day_invalid
-            | template_not_found | override_intent_invalid | override_intent_duplicate
-            | override_target_invalid | override_duration_invalid
+          description: invalid_json | weekday_invalid | template_id_required | template_reference_ambiguous
+            | overrides_unsupported_for_multisport | time_of_day_invalid | template_not_found
+            | override_intent_invalid | override_intent_duplicate | override_target_invalid
+            | override_duration_invalid
           schema:
             additionalProperties:
               type: string
@@ -8344,7 +8384,9 @@ paths:
     get:
       description: Resolves the workout's template steps with its plan-slot target
         and duration overrides applied per intent. A workout with no template returns
-        its sport/name and an empty step list.
+        its sport/name and an empty step list. A multisport workout returns sport
+        "multisport" and an ordered `segments` list — each segment with its own sport
+        and resolved steps (or a transition's duration) — instead of a flat step list.
       parameters:
       - description: Workout UUID
         in: path

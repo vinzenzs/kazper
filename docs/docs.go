@@ -7084,7 +7084,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "invalid_json | weekday_invalid | template_id_required | time_of_day_invalid | template_not_found | override_intent_invalid | override_intent_duplicate | override_target_invalid | override_duration_invalid",
+                        "description": "invalid_json | weekday_invalid | template_id_required | template_reference_ambiguous | overrides_unsupported_for_multisport | time_of_day_invalid | template_not_found | override_intent_invalid | override_intent_duplicate | override_target_invalid | override_duration_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -8229,7 +8229,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Resolves the workout's template steps with its plan-slot target and duration overrides applied per intent. A workout with no template returns its sport/name and an empty step list.",
+                "description": "Resolves the workout's template steps with its plan-slot target and duration overrides applied per intent. A workout with no template returns its sport/name and an empty step list. A multisport workout returns sport \"multisport\" and an ordered ` + "`" + `segments` + "`" + ` list — each segment with its own sport and resolved steps (or a transition's duration) — instead of a flat step list.",
                 "produces": [
                     "application/json"
                 ],
@@ -11577,6 +11577,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "multisport_template_id": {
+                    "type": "string"
+                },
                 "ordinal": {
                     "type": "integer"
                 },
@@ -11591,6 +11594,7 @@ const docTemplate = `{
                     }
                 },
                 "template_id": {
+                    "description": "TemplateID references a single-sport workout_templates row; nil for a\nmultisport slot. MultisportTemplateID references a multisport_templates row;\nnil for a single-sport slot. Exactly one is set.",
                     "type": "string"
                 },
                 "time_of_day": {
@@ -11643,6 +11647,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "segments": {
+                    "description": "Segments is populated only for a multisport workout: the multisport\ntemplate's segments in order, each with its own sport and resolved steps\n(or, for a transition segment, its duration). Empty/omitted for a\nsingle-sport workout.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/trainingplan.ProgramSegment"
+                    }
+                },
                 "sport": {
                     "type": "string"
                 },
@@ -11654,6 +11665,23 @@ const docTemplate = `{
                 },
                 "workout_id": {
                     "type": "string"
+                }
+            }
+        },
+        "trainingplan.ProgramSegment": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "$ref": "#/definitions/workouttemplates.Duration"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workouttemplates.Step"
+                    }
                 }
             }
         },
@@ -11705,6 +11733,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/trainingplan.SlotDurationOverride"
                     }
                 },
+                "multisport_template_id": {
+                    "type": "string"
+                },
                 "ordinal": {
                     "type": "integer"
                 },
@@ -11715,6 +11746,7 @@ const docTemplate = `{
                     }
                 },
                 "template_id": {
+                    "description": "Exactly one of TemplateID (single-sport) / MultisportTemplateID must be set.",
                     "type": "string"
                 },
                 "time_of_day": {
@@ -12013,6 +12045,7 @@ const docTemplate = `{
                 "strength",
                 "yoga",
                 "mobility",
+                "multisport",
                 "other"
             ],
             "x-enum-varnames": [
@@ -12022,6 +12055,7 @@ const docTemplate = `{
                 "SportStrength",
                 "SportYoga",
                 "SportMobility",
+                "SportMultisport",
                 "SportOther"
             ]
         },
@@ -12101,6 +12135,10 @@ const docTemplate = `{
                 },
                 "max_hr": {
                     "type": "integer"
+                },
+                "multisport_template_id": {
+                    "description": "MultisportTemplateID (per multisport-phase-2) is the multisport template a\nplanned multisport workout (` + "`" + `sport='multisport'` + "`" + `) was materialized from —\nset instead of TemplateID for a brick/triathlon row. Nullable; single-sport\nand imported activities carry it as nil.",
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"

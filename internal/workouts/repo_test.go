@@ -452,7 +452,7 @@ func seedSlot(t *testing.T, pool interface {
 func plannedInput(slotID, templateID uuid.UUID) workouts.PlannedSlotInput {
 	return workouts.PlannedSlotInput{
 		PlanSlotID: slotID,
-		TemplateID: templateID,
+		TemplateID: &templateID,
 		Sport:      "run",
 		Name:       ptrStr("Easy run"),
 		StartedAt:  time.Date(2026, 6, 1, 6, 0, 0, 0, time.UTC),

@@ -97,6 +97,10 @@ type fakePlan struct {
 	// steps, when non-nil, is the effective program returned verbatim — used to
 	// assert the push path forwards already-resolved targets to the bridge.
 	steps []workouttemplates.Step
+	// segments, when non-nil, makes EffectiveProgram return a MULTISPORT program
+	// (Sport "multisport", these segments, nil Steps) — used to assert the push
+	// path sends the multi-segment bridge form.
+	segments []trainingplan.ProgramSegment
 }
 
 func (f *fakePlan) PlannedWorkoutsInScope(_ context.Context, _ uuid.UUID, _ trainingplan.Scope) ([]uuid.UUID, error) {
@@ -110,6 +114,13 @@ func (f *fakePlan) ResolveSteps(_ context.Context, steps []workouttemplates.Step
 }
 
 func (f *fakePlan) EffectiveProgram(_ context.Context, workoutID uuid.UUID) (*trainingplan.Program, error) {
+	if f.segments != nil {
+		return &trainingplan.Program{
+			WorkoutID: workoutID,
+			Sport:     "multisport",
+			Segments:  f.segments,
+		}, nil
+	}
 	steps := f.steps
 	if steps == nil {
 		steps = []workouttemplates.Step{{Type: "step", Intent: "active",

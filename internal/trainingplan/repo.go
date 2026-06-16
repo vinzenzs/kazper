@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/store"
 	"github.com/vinzenzs/kazper/internal/workouttemplates"
 )
@@ -38,7 +39,7 @@ func NewRepo(q store.Querier) *Repo {
 const (
 	planCols = `id, name, race_id, to_char(start_date, 'YYYY-MM-DD') AS start_date, notes, methodology, created_at, updated_at`
 	weekCols = `id, plan_id, ordinal, phase_id, notes, created_at, updated_at`
-	slotCols = `id, plan_week_id, weekday, ordinal, template_id, to_char(time_of_day, 'HH24:MI:SS') AS time_of_day, target_overrides, duration_overrides, created_at, updated_at`
+	slotCols = `id, plan_week_id, weekday, ordinal, template_id, multisport_template_id, to_char(time_of_day, 'HH24:MI:SS') AS time_of_day, target_overrides, duration_overrides, created_at, updated_at`
 )
 
 // ----- plan -----
@@ -210,10 +211,10 @@ func (r *Repo) CreateSlot(ctx context.Context, s *PlanSlot) (*PlanSlot, error) {
 		return nil, err
 	}
 	row := r.q.QueryRow(ctx, `
-        INSERT INTO plan_slots (plan_week_id, weekday, ordinal, template_id, time_of_day, target_overrides, duration_overrides, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5::time, $6::jsonb, $7::jsonb, now(), now())
+        INSERT INTO plan_slots (plan_week_id, weekday, ordinal, template_id, multisport_template_id, time_of_day, target_overrides, duration_overrides, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6::time, $7::jsonb, $8::jsonb, now(), now())
         RETURNING `+slotCols,
-		s.PlanWeekID, s.Weekday, s.Ordinal, s.TemplateID, s.TimeOfDay, overrides, durations,
+		s.PlanWeekID, s.Weekday, s.Ordinal, s.TemplateID, s.MultisportTemplateID, s.TimeOfDay, overrides, durations,
 	)
 	out, err := scanSlot(row)
 	return out, mapWriteErr(err)
@@ -239,10 +240,10 @@ func (r *Repo) UpdateSlot(ctx context.Context, s *PlanSlot) (*PlanSlot, error) {
 	}
 	row := r.q.QueryRow(ctx, `
         UPDATE plan_slots
-        SET weekday = $2, ordinal = $3, template_id = $4, time_of_day = $5::time, target_overrides = $6::jsonb, duration_overrides = $7::jsonb, updated_at = now()
+        SET weekday = $2, ordinal = $3, template_id = $4, multisport_template_id = $5, time_of_day = $6::time, target_overrides = $7::jsonb, duration_overrides = $8::jsonb, updated_at = now()
         WHERE id = $1
         RETURNING `+slotCols,
-		s.ID, s.Weekday, s.Ordinal, s.TemplateID, s.TimeOfDay, overrides, durations,
+		s.ID, s.Weekday, s.Ordinal, s.TemplateID, s.MultisportTemplateID, s.TimeOfDay, overrides, durations,
 	)
 	out, err := scanSlot(row)
 	if errors.Is(err, ErrPlanNotFound) {
@@ -304,33 +305,44 @@ func (r *Repo) PlannedWorkoutsInScope(ctx context.Context, planID uuid.UUID, kin
 }
 
 // materializeSlot is one slot joined with its week ordinal and template detail,
-// everything Materialize needs to compute a planned workout.
+// everything Materialize needs to compute a planned workout. A slot is either
+// single-sport (TemplateID set, Template* fields populated) or multisport
+// (MultisportTemplateID set, Multisport* fields populated).
 type materializeSlot struct {
-	SlotID              uuid.UUID
-	WeekOrdinal         int
-	Weekday             int
-	SlotOrdinal         int
-	TimeOfDay           *string
-	TemplateID          uuid.UUID
+	SlotID      uuid.UUID
+	WeekOrdinal int
+	Weekday     int
+	SlotOrdinal int
+	TimeOfDay   *string
+	// Single-sport template detail (nil/zero for a multisport slot).
+	TemplateID          *uuid.UUID
 	TemplateSport       string
 	TemplateName        string
 	TemplateDurationSec *int
 	TemplateSteps       []workouttemplates.Step
 	DurationOverrides   []SlotDurationOverride
+	// Multisport template detail (nil/zero for a single-sport slot).
+	MultisportTemplateID *uuid.UUID
+	MultisportName       string
+	MultisportSegments   []multisport.Segment
 }
 
 // loadMaterializeSlots returns every slot of a plan joined with its week ordinal
-// and template detail, ordered by (week, weekday, slot). Runs against the given
+// and template detail, ordered by (week, weekday, slot). A slot may reference a
+// single-sport template OR a multisport template, so both are LEFT JOINed and
+// exactly one set of detail columns is non-null per row. Runs against the given
 // Querier so it can share the materialize transaction.
 func (r *Repo) loadMaterializeSlots(ctx context.Context, q store.Querier, planID uuid.UUID) ([]materializeSlot, error) {
 	rows, err := q.Query(ctx, `
         SELECT s.id, w.ordinal, s.weekday, s.ordinal,
                to_char(s.time_of_day, 'HH24:MI:SS'),
-               t.id, t.sport, t.name, t.estimated_duration_sec, t.steps,
-               s.duration_overrides
+               s.template_id, t.sport, t.name, t.estimated_duration_sec, t.steps,
+               s.duration_overrides,
+               s.multisport_template_id, mt.name, mt.segments
         FROM plan_slots s
         JOIN plan_weeks w ON w.id = s.plan_week_id
-        JOIN workout_templates t ON t.id = s.template_id
+        LEFT JOIN workout_templates t ON t.id = s.template_id
+        LEFT JOIN multisport_templates mt ON mt.id = s.multisport_template_id
         WHERE w.plan_id = $1
         ORDER BY w.ordinal ASC, s.weekday ASC, s.ordinal ASC`, planID)
 	if err != nil {
@@ -340,11 +352,25 @@ func (r *Repo) loadMaterializeSlots(ctx context.Context, q store.Querier, planID
 	var out []materializeSlot
 	for rows.Next() {
 		var m materializeSlot
-		var steps, durations []byte
+		var (
+			steps, durations, segments []byte
+			tmplSport, tmplName        *string
+			msName                     *string
+		)
 		if err := rows.Scan(&m.SlotID, &m.WeekOrdinal, &m.Weekday, &m.SlotOrdinal,
-			&m.TimeOfDay, &m.TemplateID, &m.TemplateSport, &m.TemplateName, &m.TemplateDurationSec,
-			&steps, &durations); err != nil {
+			&m.TimeOfDay, &m.TemplateID, &tmplSport, &tmplName, &m.TemplateDurationSec,
+			&steps, &durations,
+			&m.MultisportTemplateID, &msName, &segments); err != nil {
 			return nil, fmt.Errorf("scan materialize slot: %w", err)
+		}
+		if tmplSport != nil {
+			m.TemplateSport = *tmplSport
+		}
+		if tmplName != nil {
+			m.TemplateName = *tmplName
+		}
+		if msName != nil {
+			m.MultisportName = *msName
 		}
 		if len(steps) > 0 {
 			if err := json.Unmarshal(steps, &m.TemplateSteps); err != nil {
@@ -354,6 +380,11 @@ func (r *Repo) loadMaterializeSlots(ctx context.Context, q store.Querier, planID
 		if len(durations) > 0 {
 			if err := json.Unmarshal(durations, &m.DurationOverrides); err != nil {
 				return nil, fmt.Errorf("scan materialize slot duration_overrides: %w", err)
+			}
+		}
+		if len(segments) > 0 {
+			if err := json.Unmarshal(segments, &m.MultisportSegments); err != nil {
+				return nil, fmt.Errorf("scan materialize slot segments: %w", err)
 			}
 		}
 		out = append(out, m)
@@ -394,7 +425,7 @@ func scanWeek(s scanner) (*PlanWeek, error) {
 func scanSlot(s scanner) (*PlanSlot, error) {
 	var sl PlanSlot
 	var overrides, durations []byte
-	err := s.Scan(&sl.ID, &sl.PlanWeekID, &sl.Weekday, &sl.Ordinal, &sl.TemplateID, &sl.TimeOfDay, &overrides, &durations, &sl.CreatedAt, &sl.UpdatedAt)
+	err := s.Scan(&sl.ID, &sl.PlanWeekID, &sl.Weekday, &sl.Ordinal, &sl.TemplateID, &sl.MultisportTemplateID, &sl.TimeOfDay, &overrides, &durations, &sl.CreatedAt, &sl.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrPlanNotFound // remapped by callers to ErrSlotNotFound

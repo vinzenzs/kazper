@@ -12,10 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/store"
 	"github.com/vinzenzs/kazper/internal/workouts"
 	"github.com/vinzenzs/kazper/internal/workouttemplates"
 )
+
+// multisportRepo is the narrow view of the multisport-template repo
+// EffectiveProgram needs to resolve a multisport workout's segments. Satisfied
+// by *multisport.Repo; cross-injected (nil-safe) to keep multisport an optional
+// dependency, mirroring SetAthleteConfigRepo.
+type multisportRepo interface {
+	GetByID(ctx context.Context, id string) (*multisport.Template, error)
+}
 
 // Validation errors map 1:1 to API error codes.
 var (
@@ -25,6 +34,8 @@ var (
 	ErrWeekdayInvalid          = errors.New("weekday_invalid")
 	ErrTimeOfDayInvalid        = errors.New("time_of_day_invalid")
 	ErrTemplateRequired        = errors.New("template_id_required")
+	ErrTemplateAmbiguous       = errors.New("template_reference_ambiguous")
+	ErrOverridesOnMultisport   = errors.New("overrides_unsupported_for_multisport")
 	ErrScopeInvalid            = errors.New("scope_invalid")
 	ErrOverrideIntentInvalid   = errors.New("override_intent_invalid")
 	ErrOverrideDuplicate       = errors.New("override_intent_duplicate")
@@ -49,7 +60,16 @@ type Service struct {
 	workoutsRepo      *workouts.Repo
 	templatesRepo     *workouttemplates.Repo
 	athleteConfigRepo *athleteconfig.Repo
+	multisportRepo    multisportRepo
 	loc               *time.Location
+}
+
+// SetMultisportRepo cross-injects the multisport-template repo EffectiveProgram
+// uses to resolve a multisport workout's per-segment programs. Optional: when
+// unset, a multisport workout's effective program returns no segments. Wired in
+// httpserver.Run() to keep multisport an optional dependency and avoid a cycle.
+func (s *Service) SetMultisportRepo(r multisportRepo) {
+	s.multisportRepo = r
 }
 
 // SetAthleteConfigRepo cross-injects the athlete-config singleton repo used by
@@ -195,23 +215,31 @@ func (s *Service) DeleteWeek(ctx context.Context, weekID uuid.UUID) error {
 // ----- slot -----
 
 type SlotInput struct {
-	Weekday           int
-	Ordinal           int
-	TemplateID        uuid.UUID
-	TimeOfDay         *string
-	TargetOverrides   []SlotTargetOverride
-	DurationOverrides []SlotDurationOverride
+	Weekday              int
+	Ordinal              int
+	TemplateID           *uuid.UUID
+	MultisportTemplateID *uuid.UUID
+	TimeOfDay            *string
+	TargetOverrides      []SlotTargetOverride
+	DurationOverrides    []SlotDurationOverride
 }
 
 func (s *Service) CreateSlot(ctx context.Context, weekID uuid.UUID, in SlotInput) (*PlanSlot, error) {
 	if in.Weekday < 0 || in.Weekday > 6 {
 		return nil, ErrWeekdayInvalid
 	}
-	if in.TemplateID == uuid.Nil {
-		return nil, ErrTemplateRequired
+	tmplID := nonNilUUID(in.TemplateID)
+	msTmplID := nonNilUUID(in.MultisportTemplateID)
+	if err := validateTemplateXOR(tmplID, msTmplID); err != nil {
+		return nil, err
 	}
 	if in.TimeOfDay != nil && !validTime(*in.TimeOfDay) {
 		return nil, ErrTimeOfDayInvalid
+	}
+	// Overrides are a single-sport-only concept: a multisport slot materializes
+	// the template as authored (intent collides across segment sports).
+	if msTmplID != nil && (len(in.TargetOverrides) > 0 || len(in.DurationOverrides) > 0) {
+		return nil, ErrOverridesOnMultisport
 	}
 	if err := validateOverrides(in.TargetOverrides); err != nil {
 		return nil, err
@@ -224,18 +252,40 @@ func (s *Service) CreateSlot(ctx context.Context, weekID uuid.UUID, in SlotInput
 	}
 	return s.repo.CreateSlot(ctx, &PlanSlot{
 		PlanWeekID: weekID, Weekday: in.Weekday, Ordinal: in.Ordinal,
-		TemplateID: in.TemplateID, TimeOfDay: in.TimeOfDay,
+		TemplateID: tmplID, MultisportTemplateID: msTmplID, TimeOfDay: in.TimeOfDay,
 		TargetOverrides: in.TargetOverrides, DurationOverrides: in.DurationOverrides,
 	})
 }
 
+// nonNilUUID returns p unless it points at uuid.Nil, in which case it returns nil
+// — so a zero-value id supplied by a caller is treated as "no reference".
+func nonNilUUID(p *uuid.UUID) *uuid.UUID {
+	if p == nil || *p == uuid.Nil {
+		return nil
+	}
+	return p
+}
+
+// validateTemplateXOR enforces that exactly one of the two template references is
+// set: neither → ErrTemplateRequired, both → ErrTemplateAmbiguous.
+func validateTemplateXOR(tmplID, msTmplID *uuid.UUID) error {
+	switch {
+	case tmplID == nil && msTmplID == nil:
+		return ErrTemplateRequired
+	case tmplID != nil && msTmplID != nil:
+		return ErrTemplateAmbiguous
+	}
+	return nil
+}
+
 type SlotPatch struct {
-	Weekday      *int
-	Ordinal      *int
-	TemplateID   *uuid.UUID
-	SetTime      bool
-	TimeOfDay    *string
-	SetOverrides bool
+	Weekday              *int
+	Ordinal              *int
+	TemplateID           *uuid.UUID
+	MultisportTemplateID *uuid.UUID
+	SetTime              bool
+	TimeOfDay            *string
+	SetOverrides         bool
 	// TargetOverrides is the replacement list when SetOverrides is true; an
 	// empty/nil slice clears all overrides.
 	TargetOverrides []SlotTargetOverride
@@ -259,11 +309,19 @@ func (s *Service) PatchSlot(ctx context.Context, slotID uuid.UUID, p SlotPatch) 
 	if p.Ordinal != nil {
 		sl.Ordinal = *p.Ordinal
 	}
-	if p.TemplateID != nil {
-		if *p.TemplateID == uuid.Nil {
-			return nil, ErrTemplateRequired
-		}
-		sl.TemplateID = *p.TemplateID
+	// A patch may switch the slot's template kind. Supplying both references at
+	// once is ambiguous; supplying one switches to that kind and clears the other.
+	patchTmpl := nonNilUUID(p.TemplateID)
+	patchMS := nonNilUUID(p.MultisportTemplateID)
+	if patchTmpl != nil && patchMS != nil {
+		return nil, ErrTemplateAmbiguous
+	}
+	if patchTmpl != nil {
+		sl.TemplateID = patchTmpl
+		sl.MultisportTemplateID = nil
+	} else if patchMS != nil {
+		sl.MultisportTemplateID = patchMS
+		sl.TemplateID = nil
 	}
 	if p.SetTime {
 		if p.TimeOfDay != nil && !validTime(*p.TimeOfDay) {
@@ -282,6 +340,11 @@ func (s *Service) PatchSlot(ctx context.Context, slotID uuid.UUID, p SlotPatch) 
 			return nil, err
 		}
 		sl.DurationOverrides = p.DurationOverrides
+	}
+	// Overrides never apply to a multisport slot — reject the resulting state if
+	// it is multisport yet carries any override (fail loud, not silent).
+	if sl.MultisportTemplateID != nil && (len(sl.TargetOverrides) > 0 || len(sl.DurationOverrides) > 0) {
+		return nil, ErrOverridesOnMultisport
 	}
 	return s.repo.UpdateSlot(ctx, sl)
 }
@@ -379,16 +442,7 @@ func (s *Service) Materialize(ctx context.Context, planID uuid.UUID, scope Scope
 				continue
 			}
 			started := s.startTime(date, sl)
-			// Session length, in order: the effective program's summed step
-			// durations when fully time-bounded (so duration_overrides move the
-			// window), else the template's estimated_duration_sec, else fallback.
-			durSec := fallbackDurationSec
-			effSteps := applyOverrides(sl.TemplateSteps, nil, sl.DurationOverrides)
-			if eff, ok := effectiveSessionDurationSec(effSteps); ok {
-				durSec = eff
-			} else if sl.TemplateDurationSec != nil && *sl.TemplateDurationSec > 0 {
-				durSec = *sl.TemplateDurationSec
-			}
+			durSec := s.materializeDurationSec(sl)
 			ended := started.Add(time.Duration(durSec) * time.Second)
 
 			var sessionGroup *string
@@ -396,16 +450,26 @@ func (s *Service) Materialize(ctx context.Context, planID uuid.UUID, scope Scope
 				g := fmt.Sprintf("plan:%s:w%d:d%d", planID, sl.WeekOrdinal, sl.Weekday)
 				sessionGroup = &g
 			}
-			name := sl.TemplateName
-			w, err := s.workoutsRepo.UpsertPlannedFromSlot(ctx, tx, workouts.PlannedSlotInput{
+			in := workouts.PlannedSlotInput{
 				PlanSlotID:   sl.SlotID,
-				TemplateID:   sl.TemplateID,
-				Sport:        sl.TemplateSport,
-				Name:         &name,
 				StartedAt:    started.UTC(),
 				EndedAt:      ended.UTC(),
 				SessionGroup: sessionGroup,
-			})
+			}
+			if sl.MultisportTemplateID != nil {
+				// A multisport slot emits a sport='multisport' planned row keyed to
+				// the multisport template (no single-sport template_id).
+				name := sl.MultisportName
+				in.Sport = string(workouts.SportMultisport)
+				in.Name = &name
+				in.MultisportTemplateID = sl.MultisportTemplateID
+			} else {
+				name := sl.TemplateName
+				in.Sport = sl.TemplateSport
+				in.Name = &name
+				in.TemplateID = sl.TemplateID
+			}
+			w, err := s.workoutsRepo.UpsertPlannedFromSlot(ctx, tx, in)
 			if err != nil {
 				return err
 			}
@@ -472,6 +536,11 @@ func (s *Service) EffectiveProgram(ctx context.Context, workoutID uuid.UUID) (*P
 		return nil, err
 	}
 	prog := &Program{WorkoutID: w.ID, Sport: string(w.Sport), Name: w.Name, Steps: []workouttemplates.Step{}}
+	// A multisport workout resolves into ordered per-segment programs instead of a
+	// flat step list — each segment's steps resolved by that segment's own sport.
+	if w.Sport == workouts.SportMultisport {
+		return s.multisportEffectiveProgram(ctx, w, prog)
+	}
 	if w.TemplateID == nil {
 		return prog, nil
 	}
@@ -489,6 +558,35 @@ func (s *Service) EffectiveProgram(ctx context.Context, workoutID uuid.UUID) (*P
 	}
 	prog.Steps = applyOverrides(tmpl.Steps, targets, durations)
 	prog.Steps = s.resolveProgramTargets(ctx, prog.Steps, prog.Sport)
+	return prog, nil
+}
+
+// multisportEffectiveProgram resolves a multisport workout's effective program:
+// the referenced multisport template's segments in order, each segment's steps
+// run through the same zone→absolute resolution pass keyed by THAT segment's
+// sport (a bike segment resolves power_zone to power_w and may carry a
+// secondary_target; run/swim pass through). Transition segments surface in order
+// with their duration and no steps. No slot overrides apply (a multisport slot
+// rejects them at create/patch). When the multisport repo is unwired or the
+// template is missing, the program is returned with no segments.
+func (s *Service) multisportEffectiveProgram(ctx context.Context, w *workouts.Workout, prog *Program) (*Program, error) {
+	prog.Steps = nil
+	if s.multisportRepo == nil || w.MultisportTemplateID == nil {
+		return prog, nil
+	}
+	tmpl, err := s.multisportRepo.GetByID(ctx, w.MultisportTemplateID.String())
+	if err != nil {
+		return nil, err
+	}
+	segs := make([]ProgramSegment, 0, len(tmpl.Segments))
+	for _, seg := range tmpl.Segments {
+		ps := ProgramSegment{Sport: seg.Sport, Duration: seg.Duration}
+		if !seg.IsTransition() {
+			ps.Steps = s.resolveProgramTargets(ctx, seg.Steps, seg.Sport)
+		}
+		segs = append(segs, ps)
+	}
+	prog.Segments = segs
 	return prog, nil
 }
 
@@ -556,6 +654,78 @@ func applyOverrideToStep(st workouttemplates.Step, tByIntent map[string]workoutt
 		st.Duration = &dd
 	}
 	return st
+}
+
+// materializeDurationSec derives a slot's planned-workout length in seconds. For
+// a single-sport slot, in order: the effective program's summed step durations
+// when fully time-bounded (so duration_overrides move the window), else the
+// template's estimated_duration_sec, else the one-hour fallback. For a
+// multisport slot (no overrides), in order: the summed segment step durations
+// when every step across all segments is time-bounded, else the best-effort sum
+// of bounded segment durations, else the one-hour fallback.
+func (s *Service) materializeDurationSec(sl materializeSlot) int {
+	if sl.MultisportTemplateID != nil {
+		if eff, ok := multisportSessionDurationSec(sl.MultisportSegments); ok {
+			return eff
+		}
+		if sum := multisportFallbackDurationSec(sl.MultisportSegments); sum > 0 {
+			return sum
+		}
+		return fallbackDurationSec
+	}
+	effSteps := applyOverrides(sl.TemplateSteps, nil, sl.DurationOverrides)
+	if eff, ok := effectiveSessionDurationSec(effSteps); ok {
+		return eff
+	}
+	if sl.TemplateDurationSec != nil && *sl.TemplateDurationSec > 0 {
+		return *sl.TemplateDurationSec
+	}
+	return fallbackDurationSec
+}
+
+// multisportSessionDurationSec sums a multisport template's wall-clock length
+// across its segments, reporting ok=true only when every segment is fully
+// time-bounded: each sport segment's steps via effectiveSessionDurationSec and
+// each transition segment via a time-kind Duration. Otherwise ok=false so the
+// caller falls back.
+func multisportSessionDurationSec(segments []multisport.Segment) (int, bool) {
+	if len(segments) == 0 {
+		return 0, false
+	}
+	total := 0
+	for _, seg := range segments {
+		if seg.IsTransition() {
+			if seg.Duration == nil || seg.Duration.Kind != workouttemplates.DurationTime || seg.Duration.Seconds == nil {
+				return 0, false
+			}
+			total += *seg.Duration.Seconds
+			continue
+		}
+		secs, ok := effectiveSessionDurationSec(seg.Steps)
+		if !ok {
+			return 0, false
+		}
+		total += secs
+	}
+	return total, true
+}
+
+// multisportFallbackDurationSec sums whatever bounded wall-clock length a
+// multisport template's segments contribute, ignoring unbounded steps — the
+// best-effort "summed segment durations" fallback. Returns 0 when nothing is
+// time-bounded.
+func multisportFallbackDurationSec(segments []multisport.Segment) int {
+	total := 0
+	for _, seg := range segments {
+		if seg.IsTransition() {
+			if seg.Duration != nil && seg.Duration.Kind == workouttemplates.DurationTime && seg.Duration.Seconds != nil {
+				total += *seg.Duration.Seconds
+			}
+			continue
+		}
+		total += workouttemplates.SumTimedDurationSec(seg.Steps)
+	}
+	return total
 }
 
 // effectiveSessionDurationSec sums the time-bounded durations of a resolved
