@@ -544,6 +544,198 @@ const docTemplate = `{
                 }
             }
         },
+        "/coach/recommendations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns recommendations whose date falls in [from, to] (inclusive local dates), newest-first, optionally narrowed to one scope.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-recommendations"
+                ],
+                "summary": "List coach recommendations in a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by scope: fueling | training | recovery | race | general",
+                        "name": "scope",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ recommendations: [...] }",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | date_invalid | window_invalid | tz_invalid | scope_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Appends one coach-authored recommendation to the dated log. A storage primitive only — the server stores the supplied text verbatim and never generates or interprets a recommendation, and recording one does NOT change any enforced goal/override target. Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-recommendations"
+                ],
+                "summary": "Record a coach recommendation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Recommendation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/coachrecs.createRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/coachrecs.Recommendation"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | date_invalid | scope_invalid | recommendation_required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/coach/recommendations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-recommendations"
+                ],
+                "summary": "Get a coach recommendation by id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Recommendation UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/coachrecs.Recommendation"
+                        }
+                    },
+                    "404": {
+                        "description": "recommendation_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a superseded/incorrect recommendation. Corrections are a delete followed by a re-log (there is no PATCH).",
+                "tags": [
+                    "coach-recommendations"
+                ],
+                "summary": "Delete a coach recommendation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Recommendation UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "recommendation_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/context/daily": {
             "get": {
                 "security": [
@@ -8931,6 +9123,67 @@ const docTemplate = `{
                 },
                 "tss": {
                     "type": "number"
+                }
+            }
+        },
+        "coachrecs.Recommendation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recommendation": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/coachrecs.Scope"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "coachrecs.Scope": {
+            "type": "string",
+            "enum": [
+                "fueling",
+                "training",
+                "recovery",
+                "race",
+                "general"
+            ],
+            "x-enum-varnames": [
+                "ScopeFueling",
+                "ScopeTraining",
+                "ScopeRecovery",
+                "ScopeRace",
+                "ScopeGeneral"
+            ]
+        },
+        "coachrecs.createRequest": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recommendation": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
                 }
             }
         },

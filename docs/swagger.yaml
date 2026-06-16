@@ -378,6 +378,49 @@ definitions:
       tss:
         type: number
     type: object
+  coachrecs.Recommendation:
+    properties:
+      created_at:
+        type: string
+      date:
+        description: YYYY-MM-DD
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      recommendation:
+        type: string
+      scope:
+        $ref: '#/definitions/coachrecs.Scope'
+      updated_at:
+        type: string
+    type: object
+  coachrecs.Scope:
+    enum:
+    - fueling
+    - training
+    - recovery
+    - race
+    - general
+    type: string
+    x-enum-varnames:
+    - ScopeFueling
+    - ScopeTraining
+    - ScopeRecovery
+    - ScopeRace
+    - ScopeGeneral
+  coachrecs.createRequest:
+    properties:
+      date:
+        type: string
+      reason:
+        type: string
+      recommendation:
+        type: string
+      scope:
+        type: string
+    type: object
   dailycontext.AdherenceBlock:
     properties:
       adherence:
@@ -3235,6 +3278,134 @@ paths:
       summary: Resume a chat session paused awaiting a write confirmation
       tags:
       - chat
+  /coach/recommendations:
+    get:
+      description: Returns recommendations whose date falls in [from, to] (inclusive
+        local dates), newest-first, optionally narrowed to one scope.
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      - description: 'Filter by scope: fueling | training | recovery | race | general'
+        in: query
+        name: scope
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ recommendations: [...] }'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: window_required | date_invalid | window_invalid | tz_invalid
+            | scope_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List coach recommendations in a date window
+      tags:
+      - coach-recommendations
+    post:
+      consumes:
+      - application/json
+      description: Appends one coach-authored recommendation to the dated log. A storage
+        primitive only — the server stores the supplied text verbatim and never generates
+        or interprets a recommendation, and recording one does NOT change any enforced
+        goal/override target. Standard `Idempotency-Key` header supported.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Recommendation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/coachrecs.createRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/coachrecs.Recommendation'
+        "400":
+          description: invalid_json | date_invalid | scope_invalid | recommendation_required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Record a coach recommendation
+      tags:
+      - coach-recommendations
+  /coach/recommendations/{id}:
+    delete:
+      description: Removes a superseded/incorrect recommendation. Corrections are
+        a delete followed by a re-log (there is no PATCH).
+      parameters:
+      - description: Recommendation UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: recommendation_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a coach recommendation
+      tags:
+      - coach-recommendations
+    get:
+      parameters:
+      - description: Recommendation UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/coachrecs.Recommendation'
+        "404":
+          description: recommendation_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a coach recommendation by id
+      tags:
+      - coach-recommendations
   /context/daily:
     get:
       description: One read that returns the day's adherence + nutrition totals +

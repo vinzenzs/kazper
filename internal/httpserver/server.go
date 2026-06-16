@@ -18,6 +18,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/chat"
 	"github.com/vinzenzs/kazper/internal/chatsessions"
 	"github.com/vinzenzs/kazper/internal/coachcontext"
+	"github.com/vinzenzs/kazper/internal/coachrecs"
 	"github.com/vinzenzs/kazper/internal/config"
 	"github.com/vinzenzs/kazper/internal/cookidoo"
 	"github.com/vinzenzs/kazper/internal/dailycontext"
@@ -207,6 +208,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	gearSvc := gear.NewService(gearRepo)
 	personalRecordsRepo := personalrecords.NewRepo(pool)
 	personalRecordsSvc := personalrecords.NewService(personalRecordsRepo)
+	coachRecsSvc := coachrecs.NewService(coachrecs.NewRepo(pool))
 	athleteConfigRepo := athleteconfig.NewRepo(pool)
 	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo)
 	// Cross-inject athlete-config so the workouts service can derive a bike
@@ -318,6 +320,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	dailysummary.NewHandlers(dailySummarySvc).Register(api)
 	gear.NewHandlers(gearSvc).Register(api)
 	personalrecords.NewHandlers(personalRecordsSvc).Register(api)
+	coachrecs.NewHandlers(coachRecsSvc, cfg.DefaultUserTZ, logger).Register(api)
 	athleteconfig.NewHandlers(athleteConfigSvc).Register(api)
 	devices.NewHandlers(devicesSvc).Register(api)
 	healthvitals.NewHandlers(healthVitalsSvc).Register(api)
