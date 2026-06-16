@@ -1,11 +1,12 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (79 implemented, 0 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-16 | reverse-direction-workout-reconciliation | Auto-reconciliation ran only forward (at completed-activity ingest), matching against an existing open planned workout on the exact local day — so an activity imported before its plan materialized, or landing a day off, orphaned into a standalone row needing a manual `fulfill`. Adds reconcile-at-materialize (a slot adopts a matching unlinked completed activity) and a ±1-day tolerance (same-day preferred) for both directions. | Vinzenz Stadtmueller | [`08109fd`](https://github.com/vinzenzs/kazper/commit/08109fd) |
 | 2026-06-16 | derive-intensity-factor-from-ftp | `athlete_config.ftp_watts` and a workout's `normalized_power_w` are both captured today, but the one value they trivially produce — cycling Intensity Factor (`IF = NP / FTP`) — is never derived. The `athlete-config` spec explicitly deferred this consumption… | Vinzenz Stadtmueller | [`5a3370d`](https://github.com/vinzenzs/kazper/commit/5a3370d) |
 | 2026-06-16 | multisport-phase-3 | `multisport-phase-2` wired multisport templates into the plan and left two explicit open questions about how a brick *reads* once it's in the system. Both are coach-facing polish, not new mechanics: a multisport template exposes no duration, and load-by-sport buckets a brick under one opaque `multisport` key… | Vinzenz Stadtmueller | [`645690f`](https://github.com/vinzenzs/kazper/commit/645690f) |
 | 2026-06-16 | multisport-phase-2 | Phase 1 (`add-multisport-structured-workouts`) shipped multisport **templates** with their own library, validation, and a direct compile-and-schedule-to-Garmin action — but they live entirely outsi… | Vinzenz Stadtmueller | [`97ba9a6`](https://github.com/vinzenzs/kazper/commit/97ba9a6) |
