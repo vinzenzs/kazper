@@ -74,10 +74,11 @@ _TARGET_TYPE = {
     "swim_pace": (6, "pace.zone"),  # same Garmin pace gate; units differ (sec/100m)
     "hr_bpm": (4, "heart.rate.zone"),
     "power_w": (2, "power.zone"),
-    # Garmin's cadence target (id 3) is sport-agnostic: the watch reads the
-    # rpm/spm range as bike rpm or run spm by the workout's sport — no separate
+    # Garmin's cadence target (id 3, canonical key "cadence" — verified live
+    # 2026-06-16 by read-back) is sport-agnostic: the watch reads the rpm/spm
+    # range as bike rpm or run spm by the workout's sport — no separate
     # run.cadence target type. Backend gates cadence to bike/run.
-    "cadence": (3, "cadence.zone"),
+    "cadence": (3, "cadence"),
     "rpe": (1, "no.target"),  # Garmin has no RPE target; carry it as untargeted
 }
 

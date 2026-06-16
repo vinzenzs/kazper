@@ -182,7 +182,7 @@ def test_cadence_target_emits_value_range(sport):
     ])
     step = p["workoutSegments"][0]["workoutSteps"][0]
     assert step["targetType"]["workoutTargetTypeId"] == 3
-    assert step["targetType"]["workoutTargetTypeKey"] == "cadence.zone"
+    assert step["targetType"]["workoutTargetTypeKey"] == "cadence"
     assert step["targetValueOne"] == 88
     assert step["targetValueTwo"] == 92
 
