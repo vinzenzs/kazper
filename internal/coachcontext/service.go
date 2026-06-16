@@ -11,11 +11,19 @@ import (
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/bodyweight"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/numfmt"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/workouts"
 )
+
+// multisportRepo is the narrow read view the training-context load summary needs
+// to decompose a multisport workout into its segment sports. Satisfied by
+// *multisport.Repo; cross-injected (nil-safe) so multisport stays optional.
+type multisportRepo interface {
+	GetByID(ctx context.Context, id string) (*multisport.Template, error)
+}
 
 // Window defaults and clamps for the aggregate reads.
 const (
@@ -37,7 +45,15 @@ type Service struct {
 	phasesRepo        *trainingphases.PhasesRepo
 	athleteConfigRepo *athleteconfig.Repo
 	bodyWeightRepo    *bodyweight.Repo
+	multisportRepo    multisportRepo
 }
+
+// SetMultisportRepo cross-injects the multisport-template repo the recent-load
+// summary uses to decompose a multisport workout into its segment sports.
+// Optional: when unset, a multisport workout stays a single `multisport` entry
+// in by_sport. Wired in httpserver.Run() to keep multisport optional and avoid
+// an import cycle.
+func (s *Service) SetMultisportRepo(r multisportRepo) { s.multisportRepo = r }
 
 func NewService(
 	workoutsRepo *workouts.Repo,
@@ -151,7 +167,7 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 			return fmt.Errorf("recent workouts: %w", err)
 		}
 		out.RecentWorkouts = toLite(ws)
-		out.RecentLoad = summarize(ws)
+		out.RecentLoad = summarize(ws, s.segmentSportResolver(gctx))
 		return nil
 	})
 
@@ -232,7 +248,12 @@ func toLite(ws []*workouts.Workout) []*WorkoutLite {
 	return out
 }
 
-func summarize(ws []*workouts.Workout) LoadSummary {
+// summarize aggregates a workout window. resolveSegments, when non-nil, maps a
+// multisport workout's template id to its non-transition segment sports so a
+// brick credits each leg in by_sport; count/duration/kcal still treat it as one
+// session. A nil resolver (or an unresolved id) leaves the workout as a single
+// `multisport` entry.
+func summarize(ws []*workouts.Workout, resolveSegments func(templateID string) ([]string, bool)) LoadSummary {
 	s := LoadSummary{BySport: map[string]int{}}
 	var dur, kcal float64
 	for _, w := range ws {
@@ -241,9 +262,43 @@ func summarize(ws []*workouts.Workout) LoadSummary {
 		if w.KcalBurned != nil {
 			kcal += *w.KcalBurned
 		}
+		if w.Sport == workouts.SportMultisport && w.MultisportTemplateID != nil && resolveSegments != nil {
+			if sports, ok := resolveSegments(w.MultisportTemplateID.String()); ok {
+				for _, sp := range sports {
+					s.BySport[sp]++
+				}
+				continue
+			}
+		}
 		s.BySport[string(w.Sport)]++
 	}
 	s.TotalDurationMin = numfmt.Round1(dur)
 	s.TotalKcal = numfmt.Round1(kcal)
 	return s
+}
+
+// segmentSportResolver returns a best-effort resolver from a multisport
+// template id to its non-transition segment sports, memoized within the call.
+// Returns ok=false (caller falls back to the `multisport` bucket) when the repo
+// is unset, the template is missing, or the load fails — never errors.
+func (s *Service) segmentSportResolver(ctx context.Context) func(string) ([]string, bool) {
+	if s.multisportRepo == nil {
+		return func(string) ([]string, bool) { return nil, false }
+	}
+	cache := map[string][]string{}
+	return func(id string) ([]string, bool) {
+		if sports, seen := cache[id]; seen {
+			return sports, len(sports) > 0
+		}
+		var sports []string
+		if t, err := s.multisportRepo.GetByID(ctx, id); err == nil && t != nil {
+			for _, seg := range t.Segments {
+				if !seg.IsTransition() {
+					sports = append(sports, seg.Sport)
+				}
+			}
+		}
+		cache[id] = sports
+		return sports, len(sports) > 0
+	}
 }

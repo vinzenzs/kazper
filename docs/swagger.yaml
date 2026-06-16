@@ -1156,6 +1156,12 @@ definitions:
     properties:
       created_at:
         type: string
+      estimated_duration_sec:
+        description: |-
+          EstimatedDurationSec is derived on read (sum of segment durations), never
+          persisted; omitted when the total is not fully time-bounded. See
+          estimatedDurationSec.
+        type: integer
       id:
         type: string
       name:

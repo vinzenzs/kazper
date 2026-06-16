@@ -337,6 +337,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)
+	// Cross-inject multisport so the recent-load by_sport summary decomposes a
+	// multisport workout into its segment sports (multisport-phase-3).
+	coachCtxSvc.SetMultisportRepo(multisportRepo)
 	coachcontext.NewHandlers(coachCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
 	// engages when an Idempotency-Key header is present, and the chat client does

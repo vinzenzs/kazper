@@ -9,26 +9,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/bodyweight"
 	"github.com/vinzenzs/kazper/internal/coachcontext"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
+	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/store/storetest"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/workouts"
+	wt "github.com/vinzenzs/kazper/internal/workouttemplates"
 )
 
 func ptr[T any](v T) *T { return &v }
 
 type fix struct {
-	svc      *coachcontext.Service
-	workouts *workouts.Repo
-	fitness  *fitnessmetrics.Repo
-	recovery *recoverymetrics.Repo
-	phases   *trainingphases.PhasesRepo
-	athlete  *athleteconfig.Repo
-	weight   *bodyweight.Repo
+	svc        *coachcontext.Service
+	pool       *pgxpool.Pool
+	workouts   *workouts.Repo
+	fitness    *fitnessmetrics.Repo
+	recovery   *recoverymetrics.Repo
+	phases     *trainingphases.PhasesRepo
+	athlete    *athleteconfig.Repo
+	weight     *bodyweight.Repo
+	multisport *multisport.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -40,10 +46,37 @@ func setup(t *testing.T) *fix {
 	ph := trainingphases.NewPhasesRepo(pool)
 	ac := athleteconfig.NewRepo(pool)
 	bw := bodyweight.NewRepo(pool)
+	ms := multisport.NewRepo(pool)
+	svc := coachcontext.NewService(w, fm, rm, ph, ac, bw)
+	svc.SetMultisportRepo(ms)
 	return &fix{
-		svc:      coachcontext.NewService(w, fm, rm, ph, ac, bw),
-		workouts: w, fitness: fm, recovery: rm, phases: ph, athlete: ac, weight: bw,
+		svc: svc, pool: pool,
+		workouts: w, fitness: fm, recovery: rm, phases: ph, athlete: ac, weight: bw, multisport: ms,
 	}
+}
+
+// seedMultisportWorkout creates a multisport template and a completed
+// multisport workout referencing it (the general Upsert path doesn't write
+// multisport_template_id, so the row is inserted directly).
+func seedMultisportWorkout(t *testing.T, f *fix, day time.Time, sportSegments []string) {
+	t.Helper()
+	ctx := context.Background()
+	segs := make([]multisport.Segment, 0, len(sportSegments)*2)
+	for i, sp := range sportSegments {
+		if i > 0 {
+			segs = append(segs, multisport.Segment{Sport: multisport.SportTransition, Duration: &wt.Duration{Kind: wt.DurationLapButton}})
+		}
+		segs = append(segs, multisport.Segment{Sport: sp, Steps: []wt.Step{
+			{Type: wt.NodeStep, Intent: wt.IntentActive, Duration: &wt.Duration{Kind: wt.DurationTime, Seconds: ptr(600)}, Target: &wt.Target{Kind: wt.TargetNone}},
+		}})
+	}
+	tmpl, err := f.multisport.Create(ctx, &multisport.Template{Name: "brick", Segments: segs})
+	require.NoError(t, err)
+	_, err = f.pool.Exec(ctx,
+		`INSERT INTO workouts (id, source, sport, status, started_at, ended_at, multisport_template_id)
+		 VALUES ($1, 'manual', 'multisport', 'completed', $2, $3, $4)`,
+		uuid.New(), day, day.Add(90*time.Minute), tmpl.ID)
+	require.NoError(t, err)
 }
 
 func seedWeight(t *testing.T, f *fix, at time.Time, kg float64) {
@@ -132,6 +165,29 @@ func TestBuildTraining_HappyPath(t *testing.T) {
 	for _, w := range out.UpcomingWorkouts {
 		assert.Equal(t, "planned", w.Status)
 	}
+}
+
+func TestBuildTraining_MultisportDecomposesBySport(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	// A plain completed run plus a completed multisport (swim→bike→run) brick,
+	// both in the 14-day lookback window.
+	seedWorkout(t, f, time.Date(2026, 7, 13, 9, 0, 0, 0, loc), workouts.SportRun, workouts.StatusCompleted, 60, 600)
+	seedMultisportWorkout(t, f, time.Date(2026, 7, 14, 7, 0, 0, 0, loc), []string{"swim", "bike", "run"})
+
+	out, err := f.svc.BuildTraining(ctx, date, loc, 0, 0)
+	require.NoError(t, err)
+
+	// Two sessions; the brick decomposes into its segment sports.
+	assert.Equal(t, 2, out.RecentLoad.Count, "two sessions (brick counts once)")
+	assert.Equal(t, 2, out.RecentLoad.BySport["run"], "plain run + the brick's run leg")
+	assert.Equal(t, 1, out.RecentLoad.BySport["swim"], "from the brick")
+	assert.Equal(t, 1, out.RecentLoad.BySport["bike"], "from the brick")
+	assert.Zero(t, out.RecentLoad.BySport["multisport"], "the brick is decomposed, not bucketed")
+	assert.Zero(t, out.RecentLoad.BySport["transition"], "transitions never appear")
 }
 
 func TestBuildTraining_CoveringPhaseCarriesMethodology(t *testing.T) {

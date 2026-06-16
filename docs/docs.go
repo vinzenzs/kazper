@@ -10045,6 +10045,10 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "estimated_duration_sec": {
+                    "description": "EstimatedDurationSec is derived on read (sum of segment durations), never\npersisted; omitted when the total is not fully time-bounded. See\nestimatedDurationSec.",
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },

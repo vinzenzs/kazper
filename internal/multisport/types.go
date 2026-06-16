@@ -24,11 +24,15 @@ const SportTransition = "transition"
 // non-empty list of segments. Unlike a single-sport template there is no
 // top-level sport — the sport lives per segment.
 type Template struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Segments  []Segment `json:"segments"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// EstimatedDurationSec is derived on read (sum of segment durations), never
+	// persisted; omitted when the total is not fully time-bounded. See
+	// estimatedDurationSec.
+	EstimatedDurationSec *int      `json:"estimated_duration_sec,omitempty"`
+	Segments             []Segment `json:"segments"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // Segment is one leg of a multisport session. A non-transition segment carries

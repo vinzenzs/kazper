@@ -35,17 +35,41 @@ func (s *Service) Create(ctx context.Context, t *Template) (*Template, error) {
 		return nil, err
 	}
 	t.Name = strings.TrimSpace(t.Name)
-	return s.repo.Create(ctx, t)
+	created, err := s.repo.Create(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	return stampDuration(created), nil
 }
 
 // Get returns one template by id.
 func (s *Service) Get(ctx context.Context, id string) (*Template, error) {
-	return s.repo.GetByID(ctx, id)
+	t, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return stampDuration(t), nil
 }
 
 // List returns all templates, newest first.
 func (s *Service) List(ctx context.Context) ([]*Template, error) {
-	return s.repo.List(ctx)
+	ts, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range ts {
+		stampDuration(t)
+	}
+	return ts, nil
+}
+
+// stampDuration sets the read-only derived EstimatedDurationSec from the
+// template's segments and returns the same pointer for chaining.
+func stampDuration(t *Template) *Template {
+	if t != nil {
+		t.EstimatedDurationSec = estimatedDurationSec(t.Segments)
+	}
+	return t
 }
 
 // Delete removes a template by id.
