@@ -1,11 +1,12 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (81 implemented, 0 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (82 implemented, 0 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-16 | persist-coach-recommendations | When the coach reasons "today's carb target is 220g because of tomorrow's long ride," that rationale is ephemeral — reconstructed each session. Adds a thin `coach_recommendations` log (dated, scoped) so the agent records advice it synthesized and reads it back across sessions, mirrored as four MCP tools. A storage primitive only: the API stores authored text verbatim and never synthesizes or mutates an enforced target (priorities #6F). | Vinzenz Stadtmueller | [`347bcee`](https://github.com/vinzenzs/kazper/commit/347bcee) |
 | 2026-06-16 | add-companion-train-screen | The backend is a full endurance-training engine (plans, multisport, Garmin scheduling, zone/power targets, recovery, race fueling) but the Flutter companion surfaces none of it structurally — everything you can glance at is nutrition. Adds a first-class read-only "Train" screen framed strictly as a fueling lens: every element answers "so how do I feed this session?" | Vinzenz Stadtmueller | [`618cc55`](https://github.com/vinzenzs/kazper/commit/618cc55) |
 | 2026-06-16 | plan-adherence-analytics | The planned↔completed linkage is fully built (materialize stamps `plan_slot_id`; forward+reverse reconciliation fulfill in place), but nothing reads back how well the plan was followed. Adds a `GET /workouts/adherence` window read — completed/missed/upcoming/unplanned counts, completion rate over due sessions, planned-vs-actual duration & TSS, by-sport — optionally plan-scoped, plus an MCP tool. Read-only, no migration. | Vinzenz Stadtmueller | [`9eff7c9`](https://github.com/vinzenzs/kazper/commit/9eff7c9) |
 | 2026-06-16 | reverse-direction-workout-reconciliation | Auto-reconciliation ran only forward (at completed-activity ingest), matching against an existing open planned workout on the exact local day — so an activity imported before its plan materialized, or landing a day off, orphaned into a standalone row needing a manual `fulfill`. Adds reconcile-at-materialize (a slot adopts a matching unlinked completed activity) and a ±1-day tolerance (same-day preferred) for both directions. | Vinzenz Stadtmueller | [`08109fd`](https://github.com/vinzenzs/kazper/commit/08109fd) |
