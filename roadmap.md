@@ -1,11 +1,13 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (79 implemented, 0 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-16 by the `roadmap` skill (81 implemented, 0 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-16 | add-companion-train-screen | The backend is a full endurance-training engine (plans, multisport, Garmin scheduling, zone/power targets, recovery, race fueling) but the Flutter companion surfaces none of it structurally — everything you can glance at is nutrition. Adds a first-class read-only "Train" screen framed strictly as a fueling lens: every element answers "so how do I feed this session?" | Vinzenz Stadtmueller | [`618cc55`](https://github.com/vinzenzs/kazper/commit/618cc55) |
+| 2026-06-16 | plan-adherence-analytics | The planned↔completed linkage is fully built (materialize stamps `plan_slot_id`; forward+reverse reconciliation fulfill in place), but nothing reads back how well the plan was followed. Adds a `GET /workouts/adherence` window read — completed/missed/upcoming/unplanned counts, completion rate over due sessions, planned-vs-actual duration & TSS, by-sport — optionally plan-scoped, plus an MCP tool. Read-only, no migration. | Vinzenz Stadtmueller | [`9eff7c9`](https://github.com/vinzenzs/kazper/commit/9eff7c9) |
 | 2026-06-16 | reverse-direction-workout-reconciliation | Auto-reconciliation ran only forward (at completed-activity ingest), matching against an existing open planned workout on the exact local day — so an activity imported before its plan materialized, or landing a day off, orphaned into a standalone row needing a manual `fulfill`. Adds reconcile-at-materialize (a slot adopts a matching unlinked completed activity) and a ±1-day tolerance (same-day preferred) for both directions. | Vinzenz Stadtmueller | [`08109fd`](https://github.com/vinzenzs/kazper/commit/08109fd) |
 | 2026-06-16 | derive-intensity-factor-from-ftp | `athlete_config.ftp_watts` and a workout's `normalized_power_w` are both captured today, but the one value they trivially produce — cycling Intensity Factor (`IF = NP / FTP`) — is never derived. The `athlete-config` spec explicitly deferred this consumption… | Vinzenz Stadtmueller | [`5a3370d`](https://github.com/vinzenzs/kazper/commit/5a3370d) |
 | 2026-06-16 | multisport-phase-3 | `multisport-phase-2` wired multisport templates into the plan and left two explicit open questions about how a brick *reads* once it's in the system. Both are coach-facing polish, not new mechanics: a multisport template exposes no duration, and load-by-sport buckets a brick under one opaque `multisport` key… | Vinzenz Stadtmueller | [`645690f`](https://github.com/vinzenzs/kazper/commit/645690f) |
