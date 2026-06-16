@@ -7902,6 +7902,66 @@
                 }
             }
         },
+        "/workouts/adherence": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. \"Now\" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Plan-adherence analytics over a date window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD (local)",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD (local); max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Restrict to workouts whose plan slot belongs to this plan UUID",
+                        "name": "plan_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/workouts.AdherenceSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "window_required | window_invalid | range_too_large | tz_invalid | plan_id_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/bulk": {
             "post": {
                 "security": [
@@ -11968,6 +12028,55 @@
                 },
                 "workout_id": {
                     "type": "string"
+                }
+            }
+        },
+        "workouts.AdherenceSummary": {
+            "type": "object",
+            "properties": {
+                "adherence_rate": {
+                    "type": "number"
+                },
+                "by_sport": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/workouts.BySportCount"
+                    }
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "completed_duration_min": {
+                    "type": "number"
+                },
+                "completed_tss": {
+                    "type": "number"
+                },
+                "missed": {
+                    "type": "integer"
+                },
+                "planned_duration_min": {
+                    "type": "number"
+                },
+                "planned_tss": {
+                    "type": "number"
+                },
+                "unplanned": {
+                    "type": "integer"
+                },
+                "upcoming": {
+                    "type": "integer"
+                }
+            }
+        },
+        "workouts.BySportCount": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "integer"
+                },
+                "missed": {
+                    "type": "integer"
                 }
             }
         },

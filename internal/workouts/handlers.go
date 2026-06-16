@@ -32,6 +32,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/workouts", h.create)
 	rg.POST("/workouts/bulk", h.bulkCreate)
 	rg.GET("/workouts", h.list)
+	rg.GET("/workouts/adherence", h.adherence)
 	rg.GET("/workouts/:id", h.get)
 	rg.PATCH("/workouts/:id", h.patch)
 	rg.DELETE("/workouts/:id", h.delete)
@@ -324,6 +325,73 @@ func (h *Handlers) list(c *gin.Context) {
 		out = append(out, w)
 	}
 	c.JSON(http.StatusOK, gin.H{"workouts": out})
+}
+
+// adherence godoc
+// @Summary      Plan-adherence analytics over a date window
+// @Description  Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. "Now" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.
+// @Tags         workouts
+// @Produce      json
+// @Param        from     query  string  true   "Inclusive start date YYYY-MM-DD (local)"
+// @Param        to       query  string  true   "Inclusive end date YYYY-MM-DD (local); max 92-day span"
+// @Param        tz       query  string  false  "IANA timezone (defaults to DEFAULT_USER_TZ)"
+// @Param        plan_id  query  string  false  "Restrict to workouts whose plan slot belongs to this plan UUID"
+// @Success      200  {object}  AdherenceSummary
+// @Failure      400  {object}  map[string]interface{}  "window_required | window_invalid | range_too_large | tz_invalid | plan_id_invalid"
+// @Security     BearerAuth
+// @Router       /workouts/adherence [get]
+func (h *Handlers) adherence(c *gin.Context) {
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+	if fromStr == "" || toStr == "" {
+		respondError(c, http.StatusBadRequest, "window_required")
+		return
+	}
+	loc := h.svc.DefaultLocation()
+	if tz := c.Query("tz"); tz != "" {
+		l, err := time.LoadLocation(tz)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "tz_invalid")
+			return
+		}
+		loc = l
+	}
+	fromDay, err := time.ParseInLocation("2006-01-02", fromStr, loc)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "window_invalid")
+		return
+	}
+	toDay, err := time.ParseInLocation("2006-01-02", toStr, loc)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "window_invalid")
+		return
+	}
+	if toDay.Before(fromDay) {
+		respondError(c, http.StatusBadRequest, "window_invalid")
+		return
+	}
+	if days := int(toDay.Sub(fromDay).Hours()/24) + 1; days > maxWindowDays {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "range_too_large", "max_days": maxWindowDays})
+		return
+	}
+	var planID *uuid.UUID
+	if pid := c.Query("plan_id"); pid != "" {
+		u, err := uuid.Parse(pid)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "plan_id_invalid")
+			return
+		}
+		planID = &u
+	}
+	// Inclusive local-date window → half-open [fromDay 00:00, (toDay+1) 00:00).
+	from := fromDay
+	to := toDay.AddDate(0, 0, 1)
+	sum, err := h.svc.Adherence(c.Request.Context(), from, to, planID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "adherence_failed")
+		return
+	}
+	c.JSON(http.StatusOK, sum)
 }
 
 // get godoc

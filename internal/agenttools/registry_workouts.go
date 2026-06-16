@@ -54,6 +54,13 @@ type GetWorkoutArgs struct {
 	ID string `json:"id" jsonschema:"the workout id"`
 }
 
+type WorkoutAdherenceArgs struct {
+	From    string  `json:"from" jsonschema:"inclusive start date YYYY-MM-DD (local)"`
+	To      string  `json:"to" jsonschema:"inclusive end date YYYY-MM-DD (local); max 92-day span"`
+	TZ      *string `json:"tz,omitempty" jsonschema:"optional IANA timezone for the date window and the now-comparison (defaults to the configured user timezone)"`
+	PlanID  *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
+}
+
 type PatchWorkoutArgs struct {
 	ID         string   `json:"id" jsonschema:"the workout id to update"`
 	Name       *string  `json:"name,omitempty" jsonschema:"new label"`
@@ -375,6 +382,34 @@ func workoutsSpecs() []Spec {
 					q.Set("post_window_min", strconv.Itoa(*a.PostWindowMin))
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/" + url.PathEscape(a.WorkoutID) + "/fueling", Query: q}, nil
+			},
+		},
+		{
+			Name: "workout_adherence",
+			Description: "Plan-adherence analytics over a date window: how well the athlete followed the plan. " +
+				"Classifies each workout in [from, to] as completed (a planned session that was done), missed " +
+				"(a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with " +
+				"no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over " +
+				"DUE sessions only (null when none are due — e.g. a future-only window), planned-vs-actual " +
+				"duration_min and tss, and a `by_sport` completed/missed breakdown. Pass `plan_id` to scope to one " +
+				"plan. Read-only; 'now' is the server clock in the resolved timezone.",
+			SchemaType: WorkoutAdherenceArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a WorkoutAdherenceArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.TZ != nil {
+					q.Set("tz", *a.TZ)
+				}
+				if a.PlanID != nil {
+					q.Set("plan_id", *a.PlanID)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/adherence", Query: q}, nil
 			},
 		},
 	}
