@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:kazper/data/repository.dart';
 import 'package:kazper/domain/models.dart';
 import 'package:kazper/domain/planning.dart';
+import 'package:kazper/domain/training.dart';
 
 /// Behaviour-only fake — no Drift, no Dio. Tests set the public fields to wire
 /// responses and read [meals]/[deletedMeals]/[hydration] to assert writes.
@@ -58,6 +59,19 @@ class FakeRepository implements Repository {
 
   @override
   Future<Goals?> fetchGoals() async => goals;
+
+  // Train screen wiring.
+  TrainingDay? cachedTraining;
+  TrainingDay? freshTraining;
+
+  @override
+  Future<TrainingDay?> cachedTrainingDay(String date) async => cachedTraining;
+
+  @override
+  Future<TrainingDay> fetchTrainingDay(String date) async =>
+      freshTraining ??
+      cachedTraining ??
+      TrainingDay(date: date, sessions: const []);
 
   @override
   Future<Product?> cachedProduct(String id) async => cachedProductValue;

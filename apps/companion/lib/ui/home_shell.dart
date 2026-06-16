@@ -4,16 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/app_providers.dart';
 import '../state/recent_provider.dart';
 import '../state/today_provider.dart';
+import '../state/train_provider.dart';
 import '../data/db/app_database.dart';
 import '../data/sync/replay_triggers.dart';
 import 'camera/camera_page.dart';
 import 'chat/chat_page.dart';
 import 'recent/recent_page.dart';
 import 'today/today_page.dart';
+import 'train/train_page.dart';
 
-/// The four-screen shell: Today, Camera, Recent, Chat. The chat slot was
-/// reserved in v1 and is activated here (add-companion-chat) without changing
-/// the nav layout.
+/// The five-screen shell: Today, Train, Camera, Recent, Chat. Train is the
+/// fueling-lens-on-training surface (add-companion-train-screen); Chat is the
+/// in-app coach (add-companion-chat).
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -25,7 +27,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
   ReplayTriggers? _triggers;
 
-  static const _pages = [TodayPage(), CameraPage(), RecentPage(), ChatPage()];
+  static const _pages = [
+    TodayPage(),
+    TrainPage(),
+    CameraPage(),
+    RecentPage(),
+    ChatPage(),
+  ];
 
   @override
   void initState() {
@@ -71,7 +79,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             case 0:
               ref.read(todayProvider.notifier).refresh();
               ref.read(hydrationDailyProvider.notifier).refresh();
-            case 2:
+            case 1:
+              ref.read(trainProvider.notifier).refresh();
+            case 3:
               ref.read(recentProvider.notifier).refresh();
           }
         },
@@ -80,6 +90,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               icon: Icon(Icons.today_outlined),
               selectedIcon: Icon(Icons.today),
               label: 'Today'),
+          NavigationDestination(
+              icon: Icon(Icons.fitness_center_outlined),
+              selectedIcon: Icon(Icons.fitness_center),
+              label: 'Train'),
           NavigationDestination(
               icon: Icon(Icons.photo_camera_outlined),
               selectedIcon: Icon(Icons.photo_camera),

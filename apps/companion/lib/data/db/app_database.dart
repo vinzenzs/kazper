@@ -10,6 +10,7 @@ import 'dao/plan_cache_dao.dart';
 import 'dao/products_cache_dao.dart';
 import 'dao/recent_summary_dao.dart';
 import 'dao/shopping_cache_dao.dart';
+import 'dao/training_day_dao.dart';
 import 'dao/widget_failures_dao.dart';
 
 part 'app_database.g.dart';
@@ -113,6 +114,18 @@ class ShoppingCache extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Stale-while-revalidate cache of the Train screen's assembled training-day
+/// payload (add-companion-train-screen), keyed by local date. Stores the whole
+/// assembled envelope (sessions + targets + fuel) as JSON.
+class TrainingDayCache extends Table {
+  TextColumn get date => text()();
+  TextColumn get payloadJson => text()();
+  DateTimeColumn get refreshedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {date};
+}
+
 @DriftDatabase(
   tables: [
     ProductsCache,
@@ -122,6 +135,7 @@ class ShoppingCache extends Table {
     ChatMessages,
     PlanCache,
     ShoppingCache,
+    TrainingDayCache,
   ],
   daos: [
     ProductsCacheDao,
@@ -131,6 +145,7 @@ class ShoppingCache extends Table {
     ChatMessagesDao,
     PlanCacheDao,
     ShoppingCacheDao,
+    TrainingDayDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -139,7 +154,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -167,6 +182,12 @@ class AppDatabase extends _$AppDatabase {
             }
             if (!await _tableExists('shopping_cache')) {
               await m.createTable(shoppingCache);
+            }
+          }
+          // v4: training-day cache for the Train screen (add-companion-train-screen).
+          if (from < 4) {
+            if (!await _tableExists('training_day_cache')) {
+              await m.createTable(trainingDayCache);
             }
           }
         },

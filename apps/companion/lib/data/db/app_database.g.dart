@@ -3199,6 +3199,284 @@ class ShoppingCacheCompanion extends UpdateCompanion<ShoppingCacheData> {
   }
 }
 
+class $TrainingDayCacheTable extends TrainingDayCache
+    with TableInfo<$TrainingDayCacheTable, TrainingDayCacheData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TrainingDayCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<String> date = GeneratedColumn<String>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _refreshedAtMeta = const VerificationMeta(
+    'refreshedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> refreshedAt = GeneratedColumn<DateTime>(
+    'refreshed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [date, payloadJson, refreshedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'training_day_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TrainingDayCacheData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadJsonMeta);
+    }
+    if (data.containsKey('refreshed_at')) {
+      context.handle(
+        _refreshedAtMeta,
+        refreshedAt.isAcceptableOrUnknown(
+          data['refreshed_at']!,
+          _refreshedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_refreshedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {date};
+  @override
+  TrainingDayCacheData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TrainingDayCacheData(
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      )!,
+      refreshedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}refreshed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $TrainingDayCacheTable createAlias(String alias) {
+    return $TrainingDayCacheTable(attachedDatabase, alias);
+  }
+}
+
+class TrainingDayCacheData extends DataClass
+    implements Insertable<TrainingDayCacheData> {
+  final String date;
+  final String payloadJson;
+  final DateTime refreshedAt;
+  const TrainingDayCacheData({
+    required this.date,
+    required this.payloadJson,
+    required this.refreshedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['date'] = Variable<String>(date);
+    map['payload_json'] = Variable<String>(payloadJson);
+    map['refreshed_at'] = Variable<DateTime>(refreshedAt);
+    return map;
+  }
+
+  TrainingDayCacheCompanion toCompanion(bool nullToAbsent) {
+    return TrainingDayCacheCompanion(
+      date: Value(date),
+      payloadJson: Value(payloadJson),
+      refreshedAt: Value(refreshedAt),
+    );
+  }
+
+  factory TrainingDayCacheData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TrainingDayCacheData(
+      date: serializer.fromJson<String>(json['date']),
+      payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      refreshedAt: serializer.fromJson<DateTime>(json['refreshedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'date': serializer.toJson<String>(date),
+      'payloadJson': serializer.toJson<String>(payloadJson),
+      'refreshedAt': serializer.toJson<DateTime>(refreshedAt),
+    };
+  }
+
+  TrainingDayCacheData copyWith({
+    String? date,
+    String? payloadJson,
+    DateTime? refreshedAt,
+  }) => TrainingDayCacheData(
+    date: date ?? this.date,
+    payloadJson: payloadJson ?? this.payloadJson,
+    refreshedAt: refreshedAt ?? this.refreshedAt,
+  );
+  TrainingDayCacheData copyWithCompanion(TrainingDayCacheCompanion data) {
+    return TrainingDayCacheData(
+      date: data.date.present ? data.date.value : this.date,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      refreshedAt: data.refreshedAt.present
+          ? data.refreshedAt.value
+          : this.refreshedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TrainingDayCacheData(')
+          ..write('date: $date, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('refreshedAt: $refreshedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(date, payloadJson, refreshedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TrainingDayCacheData &&
+          other.date == this.date &&
+          other.payloadJson == this.payloadJson &&
+          other.refreshedAt == this.refreshedAt);
+}
+
+class TrainingDayCacheCompanion extends UpdateCompanion<TrainingDayCacheData> {
+  final Value<String> date;
+  final Value<String> payloadJson;
+  final Value<DateTime> refreshedAt;
+  final Value<int> rowid;
+  const TrainingDayCacheCompanion({
+    this.date = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.refreshedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TrainingDayCacheCompanion.insert({
+    required String date,
+    required String payloadJson,
+    required DateTime refreshedAt,
+    this.rowid = const Value.absent(),
+  }) : date = Value(date),
+       payloadJson = Value(payloadJson),
+       refreshedAt = Value(refreshedAt);
+  static Insertable<TrainingDayCacheData> custom({
+    Expression<String>? date,
+    Expression<String>? payloadJson,
+    Expression<DateTime>? refreshedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (date != null) 'date': date,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (refreshedAt != null) 'refreshed_at': refreshedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TrainingDayCacheCompanion copyWith({
+    Value<String>? date,
+    Value<String>? payloadJson,
+    Value<DateTime>? refreshedAt,
+    Value<int>? rowid,
+  }) {
+    return TrainingDayCacheCompanion(
+      date: date ?? this.date,
+      payloadJson: payloadJson ?? this.payloadJson,
+      refreshedAt: refreshedAt ?? this.refreshedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (date.present) {
+      map['date'] = Variable<String>(date.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (refreshedAt.present) {
+      map['refreshed_at'] = Variable<DateTime>(refreshedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TrainingDayCacheCompanion(')
+          ..write('date: $date, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('refreshedAt: $refreshedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3209,6 +3487,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ChatMessagesTable chatMessages = $ChatMessagesTable(this);
   late final $PlanCacheTable planCache = $PlanCacheTable(this);
   late final $ShoppingCacheTable shoppingCache = $ShoppingCacheTable(this);
+  late final $TrainingDayCacheTable trainingDayCache = $TrainingDayCacheTable(
+    this,
+  );
   late final ProductsCacheDao productsCacheDao = ProductsCacheDao(
     this as AppDatabase,
   );
@@ -3228,6 +3509,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final ShoppingCacheDao shoppingCacheDao = ShoppingCacheDao(
     this as AppDatabase,
   );
+  late final TrainingDayDao trainingDayDao = TrainingDayDao(
+    this as AppDatabase,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3240,6 +3524,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     chatMessages,
     planCache,
     shoppingCache,
+    trainingDayCache,
   ];
 }
 
@@ -4915,6 +5200,182 @@ typedef $$ShoppingCacheTableProcessedTableManager =
       ShoppingCacheData,
       PrefetchHooks Function()
     >;
+typedef $$TrainingDayCacheTableCreateCompanionBuilder =
+    TrainingDayCacheCompanion Function({
+      required String date,
+      required String payloadJson,
+      required DateTime refreshedAt,
+      Value<int> rowid,
+    });
+typedef $$TrainingDayCacheTableUpdateCompanionBuilder =
+    TrainingDayCacheCompanion Function({
+      Value<String> date,
+      Value<String> payloadJson,
+      Value<DateTime> refreshedAt,
+      Value<int> rowid,
+    });
+
+class $$TrainingDayCacheTableFilterComposer
+    extends Composer<_$AppDatabase, $TrainingDayCacheTable> {
+  $$TrainingDayCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get refreshedAt => $composableBuilder(
+    column: $table.refreshedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TrainingDayCacheTableOrderingComposer
+    extends Composer<_$AppDatabase, $TrainingDayCacheTable> {
+  $$TrainingDayCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get refreshedAt => $composableBuilder(
+    column: $table.refreshedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TrainingDayCacheTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TrainingDayCacheTable> {
+  $$TrainingDayCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get refreshedAt => $composableBuilder(
+    column: $table.refreshedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$TrainingDayCacheTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TrainingDayCacheTable,
+          TrainingDayCacheData,
+          $$TrainingDayCacheTableFilterComposer,
+          $$TrainingDayCacheTableOrderingComposer,
+          $$TrainingDayCacheTableAnnotationComposer,
+          $$TrainingDayCacheTableCreateCompanionBuilder,
+          $$TrainingDayCacheTableUpdateCompanionBuilder,
+          (
+            TrainingDayCacheData,
+            BaseReferences<
+              _$AppDatabase,
+              $TrainingDayCacheTable,
+              TrainingDayCacheData
+            >,
+          ),
+          TrainingDayCacheData,
+          PrefetchHooks Function()
+        > {
+  $$TrainingDayCacheTableTableManager(
+    _$AppDatabase db,
+    $TrainingDayCacheTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TrainingDayCacheTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TrainingDayCacheTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TrainingDayCacheTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> date = const Value.absent(),
+                Value<String> payloadJson = const Value.absent(),
+                Value<DateTime> refreshedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TrainingDayCacheCompanion(
+                date: date,
+                payloadJson: payloadJson,
+                refreshedAt: refreshedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String date,
+                required String payloadJson,
+                required DateTime refreshedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => TrainingDayCacheCompanion.insert(
+                date: date,
+                payloadJson: payloadJson,
+                refreshedAt: refreshedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TrainingDayCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TrainingDayCacheTable,
+      TrainingDayCacheData,
+      $$TrainingDayCacheTableFilterComposer,
+      $$TrainingDayCacheTableOrderingComposer,
+      $$TrainingDayCacheTableAnnotationComposer,
+      $$TrainingDayCacheTableCreateCompanionBuilder,
+      $$TrainingDayCacheTableUpdateCompanionBuilder,
+      (
+        TrainingDayCacheData,
+        BaseReferences<
+          _$AppDatabase,
+          $TrainingDayCacheTable,
+          TrainingDayCacheData
+        >,
+      ),
+      TrainingDayCacheData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4933,4 +5394,6 @@ class $AppDatabaseManager {
       $$PlanCacheTableTableManager(_db, _db.planCache);
   $$ShoppingCacheTableTableManager get shoppingCache =>
       $$ShoppingCacheTableTableManager(_db, _db.shoppingCache);
+  $$TrainingDayCacheTableTableManager get trainingDayCache =>
+      $$TrainingDayCacheTableTableManager(_db, _db.trainingDayCache);
 }

@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' show Value;
 
 import '../domain/models.dart';
 import '../domain/planning.dart';
+import '../domain/training.dart';
 import 'db/app_database.dart';
 import 'net/api_client.dart';
 import 'net/idempotency.dart';
@@ -63,6 +64,14 @@ abstract class Repository {
     required String mealType,
     required DateTime loggedAt,
   });
+
+  /// Cached assembled training day for [date], or null if nothing is cached.
+  Future<TrainingDay?> cachedTrainingDay(String date);
+
+  /// Assembles today's prescribed session(s) + their fuel from
+  /// `GET /context/training`, `GET /workouts/{id}/program`, and
+  /// `GET /race-prep/recommend-workout-fuel`; writes through to the cache.
+  Future<TrainingDay> fetchTrainingDay(String date);
 
   // --- Write path (enqueued in the outbox) ----------------------------------
 
@@ -181,6 +190,190 @@ class ApiRepository implements Repository {
           .toList(),
     );
     return summary;
+  }
+
+  @override
+  Future<TrainingDay?> cachedTrainingDay(String date) async {
+    final payload = await db.trainingDayDao.getForDate(date);
+    if (payload == null) return null;
+    return TrainingDay.fromJson(payload);
+  }
+
+  @override
+  Future<TrainingDay> fetchTrainingDay(String date) async {
+    // 1. The day's prescribed sessions = upcoming planned workouts whose LOCAL
+    //    start date is today. /context/training returns a lookahead window; we
+    //    keep only today's.
+    final ctx = await api.dio.get<Map<String, dynamic>>(
+      '/context/training',
+      queryParameters: {'date': date},
+    );
+    final upcoming = ((ctx.data?['upcoming_workouts'] as List?) ?? const [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .where((w) => _localYmd(DateTime.parse(w['started_at'] as String)) == date)
+        .toList();
+
+    // 2. Per session: resolved targets + the fuel it demands (best-effort).
+    final sessions = <TrainSession>[];
+    for (final w in upcoming) {
+      final id = w['id'] as String;
+      sessions.add(TrainSession(
+        workoutId: id,
+        sport: w['sport'] as String,
+        name: w['name'] as String?,
+        startedAt: DateTime.parse(w['started_at'] as String),
+        durationMin: (w['duration_min'] as num).toDouble(),
+        targets: await _sessionTargets(id),
+        fuel: await _sessionFuel(id),
+      ));
+    }
+    final day = TrainingDay(date: date, sessions: sessions);
+    await db.trainingDayDao.upsertForDate(date: date, payload: day.toJson());
+    return day;
+  }
+
+  String _localYmd(DateTime utc) {
+    final d = utc.toLocal();
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year.toString().padLeft(4, '0')}-$mm-$dd';
+  }
+
+  /// Compact resolved-target lines for a session's program (per-segment for
+  /// multisport). Best-effort: returns empty on any failure — the fuel is the
+  /// hero, targets are context.
+  Future<List<String>> _sessionTargets(String workoutId) async {
+    try {
+      final resp = await api.dio
+          .get<Map<String, dynamic>>('/workouts/$workoutId/program');
+      final prog = resp.data ?? const {};
+      final out = <String>[];
+      final segments = prog['segments'] as List?;
+      if (segments != null && segments.isNotEmpty) {
+        for (final raw in segments) {
+          final seg = (raw as Map).cast<String, dynamic>();
+          final sport = seg['sport'] as String?;
+          for (final t in _targetsFromSteps(seg['steps'] as List?)) {
+            out.add(sport != null ? '$sport · $t' : t);
+          }
+        }
+      } else {
+        out.addAll(_targetsFromSteps(prog['steps'] as List?));
+      }
+      return out.toSet().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  List<String> _targetsFromSteps(List? steps) {
+    final out = <String>[];
+    for (final raw in steps ?? const []) {
+      final s = (raw as Map).cast<String, dynamic>();
+      if (s['type'] == 'repeat') {
+        out.addAll(_targetsFromSteps(s['steps'] as List?));
+        continue;
+      }
+      final f = _formatTarget((s['target'] as Map?)?.cast<String, dynamic>());
+      if (f != null) out.add(f);
+    }
+    return out;
+  }
+
+  String? _formatTarget(Map<String, dynamic>? t) {
+    if (t == null) return null;
+    final lo = t['low'] as int?;
+    final hi = t['high'] as int?;
+    final body = switch (t['kind'] as String?) {
+      'power_w' => _range(lo, hi, 'W'),
+      'hr_bpm' => _range(lo, hi, 'bpm'),
+      'cadence' => _range(lo, hi, 'rpm'),
+      'rpe' => _range(lo, hi, 'RPE'),
+      'power_zone' => 'power Z${_zoneRange(lo, hi)}',
+      'hr_zone' => 'HR Z${_zoneRange(lo, hi)}',
+      'pace' => _pace(t['low_sec_per_km'] as int?, t['high_sec_per_km'] as int?, '/km'),
+      'swim_pace' =>
+        _pace(t['low_sec_per_100m'] as int?, t['high_sec_per_100m'] as int?, '/100m'),
+      _ => null,
+    };
+    if (body == null) return null;
+    final origin = t['origin'] as String?;
+    return (origin != null && origin.isNotEmpty) ? '$origin · $body' : body;
+  }
+
+  String? _range(int? lo, int? hi, String unit) {
+    if (lo == null && hi == null) return null;
+    if (lo != null && hi != null && lo != hi) return '$lo–$hi $unit';
+    return '${hi ?? lo} $unit';
+  }
+
+  String _zoneRange(int? lo, int? hi) =>
+      (lo != null && hi != null && lo != hi) ? '$lo–$hi' : '${hi ?? lo}';
+
+  String? _pace(int? lo, int? hi, String suffix) {
+    String fmt(int s) => '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+    if (lo == null && hi == null) return null;
+    if (lo != null && hi != null && lo != hi) return '${fmt(lo)}–${fmt(hi)}$suffix';
+    return '${fmt(hi ?? lo!)}$suffix';
+  }
+
+  Future<SessionFuel?> _sessionFuel(String workoutId) async {
+    try {
+      final resp = await api.dio.get<Map<String, dynamic>>(
+        '/race-prep/recommend-workout-fuel',
+        queryParameters: {'workout_id': workoutId},
+      );
+      return _fuelFromJson(resp.data ?? const {});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  SessionFuel _fuelFromJson(Map<String, dynamic> j) {
+    final pre = <String>[], intra = <String>[], post = <String>[];
+
+    final p = (j['pre_workout'] as Map?)?.cast<String, dynamic>();
+    if (p != null) {
+      final carbs = (p['carbs_g'] as num?)?.round();
+      final w = (p['window_minutes_before'] as List?)?.cast<num>();
+      if (carbs != null) {
+        final when = (w != null && w.length == 2) ? '${w[0]}–${w[1]} min before' : 'before';
+        pre.add('$carbs g carb · $when');
+      }
+    }
+
+    final i = (j['intra_workout'] as Map?)?.cast<String, dynamic>();
+    if (i != null && (i['applicable'] as bool? ?? false)) {
+      final parts = <String>[];
+      final c = (i['carbs_g_per_hour'] as num?)?.round();
+      final na = (i['sodium_mg_per_hour'] as num?)?.round();
+      final fl = (i['fluid_ml_per_hour'] as num?)?.round();
+      if (c != null) parts.add('$c g/h carb');
+      if (na != null) parts.add('$na mg/h Na');
+      if (fl != null) parts.add('$fl ml/h fluid');
+      if (parts.isNotEmpty) intra.add(parts.join(' · '));
+    }
+
+    final po = (j['post_workout'] as Map?)?.cast<String, dynamic>();
+    if (po != null) {
+      final parts = <String>[];
+      final c = (po['carbs_g'] as num?)?.round();
+      final pr = (po['protein_g'] as num?)?.round();
+      final w = (po['window_minutes_after'] as List?)?.cast<num>();
+      if (c != null) parts.add('$c g carb');
+      if (pr != null) parts.add('$pr g protein');
+      if (parts.isNotEmpty) {
+        final when = (w != null && w.length == 2) ? ' · within ${w[1]} min' : '';
+        post.add('${parts.join(' · ')}$when');
+      }
+    }
+
+    return SessionFuel(
+      pre: pre,
+      intra: intra,
+      post: post,
+      notes: ((j['notes'] as List?) ?? const []).cast<String>(),
+    );
   }
 
   @override
