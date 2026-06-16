@@ -469,7 +469,11 @@ func (s *Service) Materialize(ctx context.Context, planID uuid.UUID, scope Scope
 				in.Name = &name
 				in.TemplateID = sl.TemplateID
 			}
-			w, err := s.workoutsRepo.UpsertPlannedFromSlot(ctx, tx, in)
+			// Reverse-direction reconciliation: a single-sport slot adopts an
+			// already-imported completed activity (same sport, ±1 local day) instead
+			// of creating a duplicate planned row; otherwise the planned row is
+			// upserted as before. Idempotent on re-materialize.
+			w, err := s.workoutsRepo.ReconcileSlotOrUpsertPlanned(ctx, tx, in, s.loc)
 			if err != nil {
 				return err
 			}

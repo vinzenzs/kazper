@@ -197,11 +197,13 @@ func (s *Service) reconcileUpsert(ctx context.Context, w *Workout) (*Workout, bo
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		} else {
-			// First sight → candidate match on sport + local calendar day.
+			// First sight → candidate match on sport within ±1 local day, with an
+			// exact same-day preference (reverse-direction-workout-reconciliation).
 			cands, err := tr.FindOpenPlanned(ctx, string(w.Sport), w.StartedAt, s.loc.String())
 			if err != nil {
 				return err
 			}
+			cands = preferSameDay(cands, w.StartedAt, s.loc)
 			switch len(cands) {
 			case 1:
 				merged, err := tr.Merge(ctx, cands[0].ID, w)

@@ -217,6 +217,48 @@ func (r *Repo) getByPlanSlotID(ctx context.Context, q store.Querier, planSlotID 
 	return scanWorkout(row)
 }
 
+// Adopt links an existing completed activity to a plan slot (the reverse of the
+// forward Merge): sets plan_slot_id and template_id from the slot, clears
+// needs_link, and leaves status='completed' plus the activity's actual metrics
+// and name intact. The guard (status='completed' AND plan_slot_id IS NULL)
+// makes a concurrent double-adopt a no-op (ErrNotFound).
+func (r *Repo) Adopt(ctx context.Context, q store.Querier, completedID uuid.UUID, in PlannedSlotInput) (*Workout, error) {
+	const sql = `UPDATE workouts SET
+            plan_slot_id = $2,
+            template_id  = $3,
+            needs_link   = false,
+            updated_at   = now()
+        WHERE id = $1 AND status = 'completed' AND plan_slot_id IS NULL
+        RETURNING ` + selectCols
+	row := q.QueryRow(ctx, sql, completedID, in.PlanSlotID, in.TemplateID)
+	return scanWorkout(row)
+}
+
+// ReconcileSlotOrUpsertPlanned materializes a plan slot with reverse-direction
+// reconciliation. If the slot already has a workout row, it takes the existing
+// status='planned'-guarded UpsertPlannedFromSlot path (idempotent re-materialize).
+// On the first materialize of a single-sport slot it adopts exactly one matching
+// unlinked completed activity (same sport, ±1 local day, same-day preferred);
+// otherwise — zero or >1 candidates, or a multisport slot — it inserts the
+// planned row as usual. Runs against the caller's Querier (materialize's tx).
+func (r *Repo) ReconcileSlotOrUpsertPlanned(ctx context.Context, q store.Querier, in PlannedSlotInput, loc *time.Location) (*Workout, error) {
+	if _, err := r.getByPlanSlotID(ctx, q, in.PlanSlotID); err == nil {
+		return r.UpsertPlannedFromSlot(ctx, q, in) // re-materialize: existing guarded path
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if in.MultisportTemplateID == nil { // multisport slots have no completed activity to adopt
+		cands, err := r.FindAdoptableCompleted(ctx, q, in.Sport, in.StartedAt, loc.String())
+		if err != nil {
+			return nil, err
+		}
+		if cands = preferSameDay(cands, in.StartedAt, loc); len(cands) == 1 {
+			return r.Adopt(ctx, q, cands[0].ID, in)
+		}
+	}
+	return r.UpsertPlannedFromSlot(ctx, q, in)
+}
+
 // AdhocPlannedInput is the data needed to create a one-off planned workout from
 // a template that is NOT bound to a training-plan slot (e.g. ad-hoc yoga/mobility
 // scheduled straight to a date). plan_slot_id stays NULL; the row otherwise looks
@@ -264,13 +306,15 @@ func (r *Repo) GetByExternalID(ctx context.Context, externalID string) (*Workout
 }
 
 // FindOpenPlanned returns open planned workouts (status='planned',
-// external_id IS NULL) of the given sport whose started_at falls on the same
-// LOCAL calendar day as `start`, comparing in the IANA timezone `tz`. The
-// reconciliation candidate query (design D2/D6).
+// external_id IS NULL) of the given sport whose started_at falls within ±1
+// LOCAL calendar day of `start`, comparing in the IANA timezone `tz`. The caller
+// applies preferSameDay so an exact-day candidate wins over an adjacent one
+// (reverse-direction-workout-reconciliation; the reconciliation candidate query).
 func (r *Repo) FindOpenPlanned(ctx context.Context, sport string, start time.Time, tz string) ([]*Workout, error) {
 	const q = `SELECT ` + selectCols + ` FROM workouts
         WHERE status = 'planned' AND external_id IS NULL AND sport = $1
-          AND (started_at AT TIME ZONE $3)::date = ($2 AT TIME ZONE $3)::date
+          AND (started_at AT TIME ZONE $3)::date
+              BETWEEN ($2 AT TIME ZONE $3)::date - 1 AND ($2 AT TIME ZONE $3)::date + 1
         ORDER BY started_at ASC`
 	rows, err := r.q.Query(ctx, q, sport, start, tz)
 	if err != nil {
@@ -286,6 +330,54 @@ func (r *Repo) FindOpenPlanned(ctx context.Context, sport string, start time.Tim
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+// FindAdoptableCompleted returns completed activities that a materializing slot
+// could adopt: status='completed', not yet linked to a slot (plan_slot_id IS
+// NULL), a real import (external_id IS NOT NULL), the given sport, within ±1
+// local day of `start` (the slot's date) in timezone `tz`. The caller applies
+// preferSameDay. This is the reverse direction of FindOpenPlanned.
+func (r *Repo) FindAdoptableCompleted(ctx context.Context, q store.Querier, sport string, start time.Time, tz string) ([]*Workout, error) {
+	const sql = `SELECT ` + selectCols + ` FROM workouts
+        WHERE status = 'completed' AND plan_slot_id IS NULL AND external_id IS NOT NULL AND sport = $1
+          AND (started_at AT TIME ZONE $3)::date
+              BETWEEN ($2 AT TIME ZONE $3)::date - 1 AND ($2 AT TIME ZONE $3)::date + 1
+        ORDER BY started_at ASC`
+	rows, err := q.Query(ctx, sql, sport, start, tz)
+	if err != nil {
+		return nil, fmt.Errorf("find adoptable completed: %w", err)
+	}
+	defer rows.Close()
+	var out []*Workout
+	for rows.Next() {
+		w, err := scanWorkout(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// preferSameDay implements the ±1-day same-day preference: if any candidate
+// falls on the same local day as `anchor`, only those are returned; otherwise
+// the adjacent-day candidates are returned. So "one same-day + one adjacent-day"
+// resolves to a single (same-day) match rather than an ambiguous decline.
+func preferSameDay(cands []*Workout, anchor time.Time, loc *time.Location) []*Workout {
+	const dayLayout = "2006-01-02"
+	aday := anchor.In(loc).Format(dayLayout)
+	var same, adj []*Workout
+	for _, c := range cands {
+		if c.StartedAt.In(loc).Format(dayLayout) == aday {
+			same = append(same, c)
+		} else {
+			adj = append(adj, c)
+		}
+	}
+	if len(same) > 0 {
+		return same
+	}
+	return adj
 }
 
 // Merge fulfills the planned workout `plannedID` in place with the actuals from
