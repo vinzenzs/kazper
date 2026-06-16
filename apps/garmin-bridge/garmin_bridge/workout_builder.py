@@ -118,10 +118,15 @@ def build_payload(sport: str, name: str, steps: list[dict[str, Any]]) -> dict[st
 #   id 10 → "multi_sport"      id 9 → "hiit"   (a first guess of 9 pushed the
 #   workout to the watch as HIIT — the exact silent failure the _SPORT note warns
 #   about).
-# The reachable Garmin client vocabulary (garminconnect/garth) has NO distinct
-# "transition" workout sportType, and Garmin accepts a transition segment typed
-# multi_sport(10), so T1/T2 segments compile as multi_sport-typed duration
-# segments. The per-segment sport ids come from the verified _SPORT map.
+# There is NO "transition" workout sportType. Confirmed by an exhaustive live id
+# probe (2026-06-16): the complete valid workout-service vocabulary is ids 1..13
+# (run, bike, other, swim, strength, cardio, yoga, pilates, hiit, multi_sport,
+# mobility, walking, rucking); id 0 and every id >= 14 store as sportTypeId 0
+# (no sport), and none normalizes to "transition" — it exists only as an ACTIVITY
+# type, not a workout sportType (hence its absence from garminconnect/garth).
+# Garmin accepts a transition segment typed multi_sport(10), so T1/T2 segments
+# compile as multi_sport-typed duration segments. Per-segment sport ids come from
+# the verified _SPORT map.
 _MULTISPORT_SPORT = (10, "multi_sport")
 _TRANSITION_SPORT = (10, "multi_sport")
 
