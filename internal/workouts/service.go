@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/vinzenzs/kazper/internal/athleteconfig"
+	"github.com/vinzenzs/kazper/internal/numfmt"
 	"github.com/vinzenzs/kazper/internal/store"
 )
 
@@ -71,6 +73,12 @@ type Service struct {
 	repo *Repo
 	pool *pgxpool.Pool
 	loc  *time.Location
+
+	// athleteConfigRepo is the optional, cross-injected athlete-config singleton
+	// repo used to derive a bike workout's intensity_factor from ftp_watts. Nil
+	// when unwired (e.g. unit tests) — derivation then fails closed (no IF, no
+	// error). Mirrors trainingplan's SetAthleteConfigRepo cross-injection.
+	athleteConfigRepo *athleteconfig.Repo
 }
 
 // NewService wires the repo, the pool (for the reconciliation transaction), and
@@ -82,6 +90,17 @@ func NewService(repo *Repo, pool *pgxpool.Pool, localTZ string) *Service {
 		loc = time.UTC
 	}
 	return &Service{repo: repo, pool: pool, loc: loc}
+}
+
+// SetAthleteConfigRepo cross-injects the athlete-config singleton repo used to
+// derive a bike workout's intensity_factor from ftp_watts when the caller
+// supplies normalized_power_w but no intensity_factor. Optional: when unset (or
+// it returns no config / no FTP), IF is left as the caller provided it. Mirrors
+// the trainingplan SetAthleteConfigRepo cross-injection; wired in
+// httpserver.Run() to keep athleteconfig an optional dependency and avoid an
+// import cycle.
+func (s *Service) SetAthleteConfigRepo(r *athleteconfig.Repo) {
+	s.athleteConfigRepo = r
 }
 
 // CreateInput is the payload for POST /workouts.
@@ -134,7 +153,7 @@ type CreateInput struct {
 // planned workout — see reconcileUpsert). The returned bool is true when a new
 // row was inserted; false when an existing row was updated or merged.
 func (s *Service) Upsert(ctx context.Context, in CreateInput) (*Workout, bool, error) {
-	w, err := s.buildWorkout(in)
+	w, err := s.buildWorkout(ctx, in)
 	if err != nil {
 		return nil, false, err
 	}
@@ -416,7 +435,7 @@ type BulkItemResult struct {
 func (s *Service) BulkUpsert(ctx context.Context, items []CreateInput) []BulkItemResult {
 	results := make([]BulkItemResult, len(items))
 	for i, in := range items {
-		w, err := s.buildWorkout(in)
+		w, err := s.buildWorkout(ctx, in)
 		if err != nil {
 			results[i] = BulkItemResult{Index: i, Err: err}
 			continue
@@ -431,7 +450,7 @@ func (s *Service) BulkUpsert(ctx context.Context, items []CreateInput) []BulkIte
 	return results
 }
 
-func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
+func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, error) {
 	if !ValidSource(in.Source) {
 		return nil, ErrSourceInvalid
 	}
@@ -513,7 +532,7 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 		ElevationGainM:   in.ElevationGainM,
 		ElevationLossM:   in.ElevationLossM,
 		NormalizedPowerW: in.NormalizedPowerW,
-		IntensityFactor:  in.IntensityFactor,
+		IntensityFactor:  s.deriveIntensityFactor(ctx, Sport(in.Sport), in.NormalizedPowerW, in.IntensityFactor),
 		AvgCadence:       in.AvgCadence,
 		AvgStrideM:       in.AvgStrideM,
 		MaxHR:            in.MaxHR,
@@ -529,6 +548,31 @@ func (s *Service) buildWorkout(in CreateInput) (*Workout, error) {
 		Splits:           in.Splits,
 		Sets:             in.Sets,
 	}, nil
+}
+
+// deriveIntensityFactor returns the intensity_factor to store for a workout.
+// A caller-supplied IF always wins — when supplied is non-nil it is returned
+// verbatim and no derivation runs (rounding happens at the response boundary).
+// Otherwise, for a bike workout with normalized_power_w > 0 and an athlete-config
+// ftp_watts > 0, it returns Round2(np/ftp). Every other case (non-bike sport,
+// missing/zero NP, unwired or empty config, ftp_watts ≤ 0) returns nil — the
+// write proceeds with IF left NULL and no error is surfaced. IF is computed
+// against the FTP in effect at write time; it is never recomputed later.
+func (s *Service) deriveIntensityFactor(ctx context.Context, sport Sport, np *int, supplied *float64) *float64 {
+	if supplied != nil {
+		return supplied
+	}
+	// Pre-gate before touching the DB: FTP is a cycling metric, so only bike
+	// workouts with a usable normalized power are eligible.
+	if sport != SportBike || np == nil || *np <= 0 || s.athleteConfigRepo == nil {
+		return nil
+	}
+	cfg, err := s.athleteConfigRepo.Get(ctx)
+	if err != nil || cfg == nil || cfg.FtpWatts == nil || *cfg.FtpWatts <= 0 {
+		return nil
+	}
+	v := numfmt.Round2(float64(*np) / float64(*cfg.FtpWatts))
+	return &v
 }
 
 // validateSplits checks each split has a non-negative index and non-negative

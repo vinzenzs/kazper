@@ -22,3 +22,9 @@ func Round1Ptr(p *float64) *float64 {
 	r := Round1(*p)
 	return &r
 }
+
+// Round2 rounds f to two decimal places. Used where a value is stored at 2dp
+// (e.g. a workout's intensity_factor, a NUMERIC(4,2) column).
+func Round2(f float64) float64 {
+	return math.Round(f*100) / 100
+}

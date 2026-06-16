@@ -209,6 +209,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	personalRecordsSvc := personalrecords.NewService(personalRecordsRepo)
 	athleteConfigRepo := athleteconfig.NewRepo(pool)
 	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo)
+	// Cross-inject athlete-config so the workouts service can derive a bike
+	// workout's intensity_factor from ftp_watts (mirrors the same optional-setter
+	// convention as trainingPlanSvc.SetAthleteConfigRepo).
+	workoutsSvc.SetAthleteConfigRepo(athleteConfigRepo)
 	devicesSvc := devices.NewService(devices.NewRepo(pool))
 	healthVitalsSvc := healthvitals.NewService(healthvitals.NewRepo(pool))
 	achievementsSvc := achievements.NewService(achievements.NewRepo(pool))
