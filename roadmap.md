@@ -1,11 +1,13 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-21 by the `roadmap` skill (83 implemented, 1 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-21 by the `roadmap` skill (85 implemented, 0 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-21 | widen-coach-recs-to-memory | The two coach surfaces (in-app chat + MCP agent) share structured state but nothing the coach learns *by talking to you*. Widens `coach_recommendations` into a general `coach_memory` — a recommendation becomes one `kind` alongside dateless facts/preferences/constraints/observations, with a review/expire lifecycle and a confirm-in-place PATCH. Folded into `/context/daily` + `/context/training` so each surface grounds on what the other was told — DB as shared brain, transcripts stay private. | Vinzenz Stadtmueller | [`5268f85`](https://github.com/vinzenzs/kazper/commit/5268f85) |
+| 2026-06-21 | add-macrocycle-planning | A `training-phase` is a typed date range, but there's no concept of the *season* those blocks add up to — no way to say "this base→build→peak→race-week sequence is one annual progression toward my September A-race." Adds a macrocycle (season) layer over phases: phase↔macrocycle linkage, a `/context/training` season block (race anchor, days-to-race, current period position), and MCP tools. | Vinzenz Stadtmueller | [`d25a968`](https://github.com/vinzenzs/kazper/commit/d25a968) |
 | 2026-06-21 | add-workout-training-focus | A workout records *what* happened (sport, HR, power, TSS) but not the training *intent*. Adds an optional `training_focus` enum classifying each session's intensity band against the 7-zone German Trainingsbereiche model (recovery/GA1/GA2/development/competition-specific/peak/strength-endurance) — nullable, validated, tri-state on PATCH — so adherence and fueling can tell base volume from competition-specific work. | Vinzenz Stadtmueller | [`a677724`](https://github.com/vinzenzs/kazper/commit/a677724) |
 | 2026-06-16 | persist-coach-recommendations | When the coach reasons "today's carb target is 220g because of tomorrow's long ride," that rationale is ephemeral — reconstructed each session. Adds a thin `coach_recommendations` log (dated, scoped) so the agent records advice it synthesized and reads it back across sessions, mirrored as four MCP tools. A storage primitive only: the API stores authored text verbatim and never synthesizes or mutates an enforced target (priorities #6F). | Vinzenz Stadtmueller | [`347bcee`](https://github.com/vinzenzs/kazper/commit/347bcee) |
 | 2026-06-16 | add-companion-train-screen | The backend is a full endurance-training engine (plans, multisport, Garmin scheduling, zone/power targets, recovery, race fueling) but the Flutter companion surfaces none of it structurally — everything you can glance at is nutrition. Adds a first-class read-only "Train" screen framed strictly as a fueling lens: every element answers "so how do I feed this session?" | Vinzenz Stadtmueller | [`618cc55`](https://github.com/vinzenzs/kazper/commit/618cc55) |
@@ -92,9 +94,7 @@ _Generated from OpenSpec changes. Last refreshed: 2026-06-21 by the `roadmap` sk
 
 ## Planned
 
-| Change | Summary | Proposed by | Proposed |
-|---|---|---|---|
-| add-macrocycle-planning | The system models a single training block (a typed `training-phase` date range) but has no concept of the *season* those blocks add up to — nowhere to say this base→build→peak→race-week→recovery sequence is one annual progression toward a September A-race, and nothing telling the coach where today sits in that arc. Adds macrocycle planning. | Vinzenz Stadtmueller | uncommitted |
+_No planned changes — every OpenSpec change is implemented and archived._
 
 ---
 _To regenerate: ask Claude "update the roadmap"._
