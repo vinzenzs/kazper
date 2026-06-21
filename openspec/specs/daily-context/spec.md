@@ -3,9 +3,7 @@
 ## Purpose
 
 Expose a single read-only endpoint that composes the day's full state — adherence, nutrition totals, hydration ml, workouts, workout-fuel entries, body-weight state, training-phase context, and goal-override presence — into one JSON bundle. The capability defines NO new tables and performs NO writes; every datum comes from an existing repo's read method. Recommended as the first call of a session so the agent can ground its reasoning in one round trip instead of five-to-seven separate slice queries. For per-entry detail or range queries the dedicated capabilities (`summary`, `workouts`, `hydration`, `workout-fuel`, etc.) remain the right surface — `daily-context` deliberately omits those in favor of a stable composition.
-
 ## Requirements
-
 ### Requirement: Daily context aggregator endpoint
 
 The system SHALL expose `GET /context/daily?date=YYYY-MM-DD&tz=…` returning a single JSON bundle that composes the day's adherence, nutrition totals, hydration ml, workouts, workout-fuel entries, body-weight state, training-phase context, and goal-override presence into one response. The endpoint SHALL perform NO writes and SHALL define NO new tables; every datum SHALL come from an existing repo's read method. `date` is required; `tz` defaults to the configured `DEFAULT_USER_TZ` when omitted.
@@ -153,3 +151,29 @@ The system SHALL extend the `GET /context/daily` bundle with a `hydration_balanc
 - **THEN** `hydration` reflects only the logged intake (`total_ml`, `entries_count`)
 - **AND** `hydration_balance` reflects only the Garmin estimate (`sweat_loss_ml`, `activity_intake_ml`, `goal_ml`)
 - **AND** neither block's fields leak into the other
+
+### Requirement: The daily context response carries active coach memory
+
+The `GET /context/daily` aggregator response SHALL include a `memory` block listing active
+coach-memory items relevant to the requested date: every standing item (`status = active`,
+not expired, kind in `fact | preference | constraint | observation`) plus any
+`recommendation` whose `date` is the requested date. Each item past its `review_at`
+(`review_at <= today`) SHALL carry `needs_review: true`. Items with `status = archived` or
+`expires_at` before today SHALL be excluded. The aggregator performs no synthesis over
+memory — it returns the stored items verbatim.
+
+#### Scenario: Standing facts ride the daily context
+
+- **WHEN** an active `constraint` exists and the client requests `/context/daily` for any date
+- **THEN** the `memory` block includes that constraint
+
+#### Scenario: Items due for review are flagged
+
+- **WHEN** an active item's `review_at` is on or before today
+- **THEN** its entry in the `memory` block carries `needs_review: true`
+
+#### Scenario: Expired and archived items are excluded
+
+- **WHEN** an item is archived or its `expires_at` is before today
+- **THEN** it does not appear in the `memory` block
+
