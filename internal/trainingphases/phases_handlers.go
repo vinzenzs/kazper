@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/vinzenzs/kazper/internal/numfmt"
 )
 
 const dateFormat = "2006-01-02"
@@ -33,13 +35,17 @@ func (h *PhasesHandlers) Register(rg *gin.RouterGroup) {
 // createRequest is the JSON shape POST /phases accepts. Date fields are
 // YYYY-MM-DD strings.
 type createRequest struct {
-	Name              string  `json:"name"`
-	Type              string  `json:"type"`
-	StartDate         string  `json:"start_date"`
-	EndDate           string  `json:"end_date"`
-	DefaultTemplateID *string `json:"default_template_id,omitempty"`
-	Notes             *string `json:"notes,omitempty"`
-	Methodology       *string `json:"methodology,omitempty"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"`
+	StartDate         string   `json:"start_date"`
+	EndDate           string   `json:"end_date"`
+	DefaultTemplateID *string  `json:"default_template_id,omitempty"`
+	Notes             *string  `json:"notes,omitempty"`
+	Methodology       *string  `json:"methodology,omitempty"`
+	MacrocycleID      *string  `json:"macrocycle_id,omitempty"`
+	MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty"`
+	TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty"`
+	TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty"`
 }
 
 // create godoc
@@ -77,12 +83,15 @@ func (h *PhasesHandlers) create(c *gin.Context) {
 		return
 	}
 	in := CreateInput{
-		Name:        req.Name,
-		Type:        PhaseType(req.Type),
-		StartDate:   startDate,
-		EndDate:     endDate,
-		Notes:       req.Notes,
-		Methodology: req.Methodology,
+		Name:              req.Name,
+		Type:              PhaseType(req.Type),
+		StartDate:         startDate,
+		EndDate:           endDate,
+		Notes:             req.Notes,
+		Methodology:       req.Methodology,
+		MacrocycleOrdinal: req.MacrocycleOrdinal,
+		TargetWeeklyTSS:   req.TargetWeeklyTSS,
+		TargetWeeklyHours: req.TargetWeeklyHours,
 	}
 	if req.DefaultTemplateID != nil && *req.DefaultTemplateID != "" {
 		tid, err := uuid.Parse(*req.DefaultTemplateID)
@@ -92,12 +101,20 @@ func (h *PhasesHandlers) create(c *gin.Context) {
 		}
 		in.DefaultTemplateID = &tid
 	}
+	if req.MacrocycleID != nil && *req.MacrocycleID != "" {
+		mid, err := uuid.Parse(*req.MacrocycleID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "macrocycle_id_invalid"})
+			return
+		}
+		in.MacrocycleID = &mid
+	}
 	p, err := h.svc.Create(c.Request.Context(), in)
 	if err != nil {
 		respondPhaseError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"phase": p})
+	c.JSON(http.StatusCreated, gin.H{"phase": roundPhase(p)})
 }
 
 // get godoc
@@ -121,7 +138,7 @@ func (h *PhasesHandlers) get(c *gin.Context) {
 		respondPhaseError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"phase": p})
+	c.JSON(http.StatusOK, gin.H{"phase": roundPhase(p)})
 }
 
 // list godoc
@@ -168,6 +185,9 @@ func (h *PhasesHandlers) list(c *gin.Context) {
 	if ps == nil {
 		ps = []*Phase{}
 	}
+	for _, p := range ps {
+		roundPhase(p)
+	}
 	c.JSON(http.StatusOK, gin.H{"phases": ps})
 }
 
@@ -176,13 +196,17 @@ func (h *PhasesHandlers) list(c *gin.Context) {
 // UUID string = set. Mirrors the meal/hydration workout_id convention from
 // add-meal-workout-link.
 type patchRequest struct {
-	Name              *string `json:"name,omitempty"`
-	Type              *string `json:"type,omitempty"`
-	StartDate         *string `json:"start_date,omitempty"`
-	EndDate           *string `json:"end_date,omitempty"`
-	DefaultTemplateID *string `json:"default_template_id,omitempty"`
-	Notes             *string `json:"notes,omitempty"`
-	Methodology       *string `json:"methodology,omitempty"`
+	Name              *string  `json:"name,omitempty"`
+	Type              *string  `json:"type,omitempty"`
+	StartDate         *string  `json:"start_date,omitempty"`
+	EndDate           *string  `json:"end_date,omitempty"`
+	DefaultTemplateID *string  `json:"default_template_id,omitempty"`
+	Notes             *string  `json:"notes,omitempty"`
+	Methodology       *string  `json:"methodology,omitempty"`
+	MacrocycleID      *string  `json:"macrocycle_id,omitempty"`
+	MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty"`
+	TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty"`
+	TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty"`
 }
 
 // patch godoc
@@ -217,9 +241,24 @@ func (h *PhasesHandlers) patch(c *gin.Context) {
 		return
 	}
 	p := PatchParams{
-		Name:        req.Name,
-		Notes:       req.Notes,
-		Methodology: req.Methodology,
+		Name:              req.Name,
+		Notes:             req.Notes,
+		Methodology:       req.Methodology,
+		MacrocycleOrdinal: req.MacrocycleOrdinal,
+		TargetWeeklyTSS:   req.TargetWeeklyTSS,
+		TargetWeeklyHours: req.TargetWeeklyHours,
+	}
+	if req.MacrocycleID != nil {
+		if *req.MacrocycleID == "" {
+			p.ClearMacrocycleID = true
+		} else {
+			mid, err := uuid.Parse(*req.MacrocycleID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "macrocycle_id_invalid"})
+				return
+			}
+			p.MacrocycleID = &mid
+		}
 	}
 	if req.Type != nil {
 		t := PhaseType(*req.Type)
@@ -258,7 +297,7 @@ func (h *PhasesHandlers) patch(c *gin.Context) {
 		respondPhaseError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"phase": out})
+	c.JSON(http.StatusOK, gin.H{"phase": roundPhase(out)})
 }
 
 // delete godoc
@@ -283,10 +322,22 @@ func (h *PhasesHandlers) delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// roundPhase rounds the progression targets to 1dp at the response boundary
+// (mutates in place and returns the same pointer).
+func roundPhase(p *Phase) *Phase {
+	p.TargetWeeklyTSS = numfmt.Round1Ptr(p.TargetWeeklyTSS)
+	p.TargetWeeklyHours = numfmt.Round1Ptr(p.TargetWeeklyHours)
+	return p
+}
+
 func respondPhaseError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrPhaseNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "phase_not_found"})
+	case errors.Is(err, ErrMacrocycleNotFound):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "macrocycle_not_found"})
+	case errors.Is(err, ErrTargetInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "target_invalid"})
 	case errors.Is(err, ErrPhaseNameInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "phase_name_invalid"})
 	case errors.Is(err, ErrPhaseNameTooLong):

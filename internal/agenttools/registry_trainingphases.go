@@ -33,14 +33,18 @@ type tpGoalRange struct {
 
 // CreatePhaseArgs is the input to create_phase.
 type CreatePhaseArgs struct {
-	Name              string  `json:"name" jsonschema:"phase name (user-chosen, e.g. 'build-block-2')"`
-	Type              string  `json:"type" jsonschema:"one of: base, build, peak, recovery, race_week, off_season, other"`
-	StartDate         string  `json:"start_date" jsonschema:"inclusive start date in YYYY-MM-DD"`
-	EndDate           string  `json:"end_date" jsonschema:"inclusive end date in YYYY-MM-DD (must be >= start_date)"`
-	DefaultTemplateID *string `json:"default_template_id,omitempty" jsonschema:"optional goal-template UUID; when set, the template's bounds drive adherence on every date in the phase (subject to per-date overrides winning)"`
-	Notes             *string `json:"notes,omitempty" jsonschema:"optional free-text notes"`
-	Methodology       *string `json:"methodology,omitempty" jsonschema:"optional curated Markdown 'why this phase' prose (citations, narrative) the coach reads when grounding advice — distinct from operational notes; surfaced in the /context/training covering phase"`
-	IdempotencyKey    string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
+	Name              string   `json:"name" jsonschema:"phase name (user-chosen, e.g. 'build-block-2')"`
+	Type              string   `json:"type" jsonschema:"one of: base, build, peak, recovery, race_week, off_season, other"`
+	StartDate         string   `json:"start_date" jsonschema:"inclusive start date in YYYY-MM-DD"`
+	EndDate           string   `json:"end_date" jsonschema:"inclusive end date in YYYY-MM-DD (must be >= start_date)"`
+	DefaultTemplateID *string  `json:"default_template_id,omitempty" jsonschema:"optional goal-template UUID; when set, the template's bounds drive adherence on every date in the phase (subject to per-date overrides winning)"`
+	Notes             *string  `json:"notes,omitempty" jsonschema:"optional free-text notes"`
+	Methodology       *string  `json:"methodology,omitempty" jsonschema:"optional curated Markdown 'why this phase' prose (citations, narrative) the coach reads when grounding advice — distinct from operational notes; surfaced in the /context/training covering phase"`
+	MacrocycleID      *string  `json:"macrocycle_id,omitempty" jsonschema:"optional macrocycle (season) UUID this phase belongs to; planning metadata only, does not change adherence"`
+	MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty" jsonschema:"optional position of this phase in the season's progression (1-based ordering hint)"`
+	TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty" jsonschema:"optional per-period planning target for weekly TSS (the deliberate load ramp); declared intent, not compared to actuals"`
+	TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty" jsonschema:"optional per-period planning target for weekly training hours"`
+	IdempotencyKey    string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
 
 // ListPhasesArgs is the input to list_phases.
@@ -56,15 +60,19 @@ type GetPhaseArgs struct {
 
 // UpdatePhaseArgs is the input to update_phase.
 type UpdatePhaseArgs struct {
-	PhaseID           string  `json:"phase_id" jsonschema:"phase UUID"`
-	Name              *string `json:"name,omitempty"`
-	Type              *string `json:"type,omitempty" jsonschema:"one of: base, build, peak, recovery, race_week, off_season, other"`
-	StartDate         *string `json:"start_date,omitempty"`
-	EndDate           *string `json:"end_date,omitempty"`
-	DefaultTemplateID *string `json:"default_template_id,omitempty" jsonschema:"empty string clears, UUID string sets, missing leaves unchanged"`
-	Notes             *string `json:"notes,omitempty"`
-	Methodology       *string `json:"methodology,omitempty" jsonschema:"optional curated Markdown 'why this phase' prose the coach reads; replaces wholesale when supplied, leaves unchanged when omitted"`
-	IdempotencyKey    string  `json:"idempotency_key,omitempty"`
+	PhaseID           string   `json:"phase_id" jsonschema:"phase UUID"`
+	Name              *string  `json:"name,omitempty"`
+	Type              *string  `json:"type,omitempty" jsonschema:"one of: base, build, peak, recovery, race_week, off_season, other"`
+	StartDate         *string  `json:"start_date,omitempty"`
+	EndDate           *string  `json:"end_date,omitempty"`
+	DefaultTemplateID *string  `json:"default_template_id,omitempty" jsonschema:"empty string clears, UUID string sets, missing leaves unchanged"`
+	Notes             *string  `json:"notes,omitempty"`
+	Methodology       *string  `json:"methodology,omitempty" jsonschema:"optional curated Markdown 'why this phase' prose the coach reads; replaces wholesale when supplied, leaves unchanged when omitted"`
+	MacrocycleID      *string  `json:"macrocycle_id,omitempty" jsonschema:"empty string clears the season link, UUID string sets it, missing leaves unchanged"`
+	MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty" jsonschema:"position of this phase in the season's progression (1-based)"`
+	TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty" jsonschema:"per-period planning target for weekly TSS"`
+	TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty" jsonschema:"per-period planning target for weekly training hours"`
+	IdempotencyKey    string   `json:"idempotency_key,omitempty"`
 }
 
 // DeletePhaseArgs is the input to delete_phase.
@@ -132,13 +140,17 @@ func trainingPhasesSpecs() []Spec {
 					return HTTPCall{}, err
 				}
 				payload := struct {
-					Name              string  `json:"name"`
-					Type              string  `json:"type"`
-					StartDate         string  `json:"start_date"`
-					EndDate           string  `json:"end_date"`
-					DefaultTemplateID *string `json:"default_template_id,omitempty"`
-					Notes             *string `json:"notes,omitempty"`
-					Methodology       *string `json:"methodology,omitempty"`
+					Name              string   `json:"name"`
+					Type              string   `json:"type"`
+					StartDate         string   `json:"start_date"`
+					EndDate           string   `json:"end_date"`
+					DefaultTemplateID *string  `json:"default_template_id,omitempty"`
+					Notes             *string  `json:"notes,omitempty"`
+					Methodology       *string  `json:"methodology,omitempty"`
+					MacrocycleID      *string  `json:"macrocycle_id,omitempty"`
+					MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty"`
+					TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty"`
+					TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty"`
 				}{
 					Name:              a.Name,
 					Type:              a.Type,
@@ -147,6 +159,10 @@ func trainingPhasesSpecs() []Spec {
 					DefaultTemplateID: a.DefaultTemplateID,
 					Notes:             a.Notes,
 					Methodology:       a.Methodology,
+					MacrocycleID:      a.MacrocycleID,
+					MacrocycleOrdinal: a.MacrocycleOrdinal,
+					TargetWeeklyTSS:   a.TargetWeeklyTSS,
+					TargetWeeklyHours: a.TargetWeeklyHours,
 				}
 				body, err := json.Marshal(payload)
 				if err != nil {
@@ -197,13 +213,17 @@ func trainingPhasesSpecs() []Spec {
 					return HTTPCall{}, err
 				}
 				payload := struct {
-					Name              *string `json:"name,omitempty"`
-					Type              *string `json:"type,omitempty"`
-					StartDate         *string `json:"start_date,omitempty"`
-					EndDate           *string `json:"end_date,omitempty"`
-					DefaultTemplateID *string `json:"default_template_id,omitempty"`
-					Notes             *string `json:"notes,omitempty"`
-					Methodology       *string `json:"methodology,omitempty"`
+					Name              *string  `json:"name,omitempty"`
+					Type              *string  `json:"type,omitempty"`
+					StartDate         *string  `json:"start_date,omitempty"`
+					EndDate           *string  `json:"end_date,omitempty"`
+					DefaultTemplateID *string  `json:"default_template_id,omitempty"`
+					Notes             *string  `json:"notes,omitempty"`
+					Methodology       *string  `json:"methodology,omitempty"`
+					MacrocycleID      *string  `json:"macrocycle_id,omitempty"`
+					MacrocycleOrdinal *int     `json:"macrocycle_ordinal,omitempty"`
+					TargetWeeklyTSS   *float64 `json:"target_weekly_tss,omitempty"`
+					TargetWeeklyHours *float64 `json:"target_weekly_hours,omitempty"`
 				}{
 					Name:              a.Name,
 					Type:              a.Type,
@@ -212,6 +232,10 @@ func trainingPhasesSpecs() []Spec {
 					DefaultTemplateID: a.DefaultTemplateID,
 					Notes:             a.Notes,
 					Methodology:       a.Methodology,
+					MacrocycleID:      a.MacrocycleID,
+					MacrocycleOrdinal: a.MacrocycleOrdinal,
+					TargetWeeklyTSS:   a.TargetWeeklyTSS,
+					TargetWeeklyHours: a.TargetWeeklyHours,
 				}
 				body, err := json.Marshal(payload)
 				if err != nil {

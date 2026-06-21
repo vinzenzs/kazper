@@ -34,6 +34,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/hydration"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
 	"github.com/vinzenzs/kazper/internal/idempotency"
+	"github.com/vinzenzs/kazper/internal/macrocycle"
 	"github.com/vinzenzs/kazper/internal/mealplan"
 	"github.com/vinzenzs/kazper/internal/meals"
 	"github.com/vinzenzs/kazper/internal/multisport"
@@ -179,6 +180,13 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	templatesSvc := trainingphases.NewTemplatesService(templatesRepo)
 	phasesRepo := trainingphases.NewPhasesRepo(pool)
 	phasesSvc := trainingphases.NewPhasesService(phasesRepo, templatesRepo)
+	// Macrocycle season container (add-macrocycle-planning). The repo doubles as
+	// the phase service's macrocycle_id FK checker (interface-based, so
+	// trainingphases doesn't import macrocycle — macrocycle reads training_phases
+	// for its member list, which would otherwise cycle). The service is wired
+	// below once racesRepo exists.
+	macrocycleRepo := macrocycle.NewRepo(pool)
+	phasesSvc.SetMacrocycleChecker(macrocycleRepo)
 	goalsResolver := goals.NewResolver(
 		goalsRepo, goalsOverridesRepo,
 		trainingphases.NewPhaseLookupAdapter(phasesRepo),
@@ -231,7 +239,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	racesSvc := races.NewService(pool, races.NewRepo(pool))
+	racesRepo := races.NewRepo(pool)
+	racesSvc := races.NewService(pool, racesRepo)
+	// Macrocycle service needs the races repo for race_id FK validation; the
+	// repo was created above (it backs the phase service's macrocycle checker).
+	macrocycleSvc := macrocycle.NewService(macrocycleRepo, racesRepo)
 	// Meal plan: planned-meal CRUD + the eaten transition. Cross-inject the
 	// products repo (FK validation, mirroring mealsSvc.SetWorkoutsRepo) and the
 	// meals service (the eaten transition logs a real meal entry atomically).
@@ -292,6 +304,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	goals.NewOverridesHandlers(goalsOverridesRepo).Register(api)
 	trainingphases.NewTemplatesHandlers(templatesSvc).Register(api)
 	trainingphases.NewPhasesHandlers(phasesSvc).Register(api)
+	macrocycle.NewHandlers(macrocycleSvc).Register(api)
 	hydration.NewHandlers(hydrationSvc).Register(api)
 	hydration.NewSummaryHandlers(hydrationSvc, cfg.DefaultUserTZ, logger).Register(api)
 	racePrepHandlers := raceprep.NewHandlers(racePrepSvc)
@@ -347,6 +360,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Cross-inject multisport so the recent-load by_sport summary decomposes a
 	// multisport workout into its segment sports (multisport-phase-3).
 	coachCtxSvc.SetMultisportRepo(multisportRepo)
+	// Cross-inject the macrocycle repo so /context/training surfaces the season
+	// covering the anchor date + the current period's position (add-macrocycle-planning).
+	coachCtxSvc.SetMacrocycleRepo(macrocycleRepo)
 	coachcontext.NewHandlers(coachCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
 	// engages when an Idempotency-Key header is present, and the chat client does

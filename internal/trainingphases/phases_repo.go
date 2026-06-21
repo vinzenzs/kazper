@@ -31,6 +31,7 @@ func NewPhasesRepo(q store.Querier) *PhasesRepo {
 const phasesSelectCols = `
     p.id, p.name, p.type, p.start_date, p.end_date,
     p.default_template_id, p.notes, p.methodology,
+    p.macrocycle_id, p.macrocycle_ordinal, p.target_weekly_tss, p.target_weekly_hours,
     p.created_at, p.updated_at,
     t.name
 `
@@ -49,12 +50,15 @@ func (r *PhasesRepo) Insert(ctx context.Context, p *Phase) error {
 	now := time.Now().UTC()
 	const q = `
         INSERT INTO training_phases
-            (id, name, type, start_date, end_date, default_template_id, notes, methodology, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+            (id, name, type, start_date, end_date, default_template_id, notes, methodology,
+             macrocycle_id, macrocycle_ordinal, target_weekly_tss, target_weekly_hours,
+             created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
     `
 	if _, err := r.q.Exec(ctx, q,
 		p.ID, p.Name, string(p.Type), p.StartDate, p.EndDate,
-		p.DefaultTemplateID, p.Notes, p.Methodology, now,
+		p.DefaultTemplateID, p.Notes, p.Methodology,
+		p.MacrocycleID, p.MacrocycleOrdinal, p.TargetWeeklyTSS, p.TargetWeeklyHours, now,
 	); err != nil {
 		return fmt.Errorf("insert phase: %w", err)
 	}
@@ -127,21 +131,37 @@ func (r *PhasesRepo) PhaseFor(ctx context.Context, date time.Time) (*Phase, erro
 // ClearDefaultTemplateID=true; a non-nil DefaultTemplateID sets a new value;
 // nil with Clear=false means leave unchanged.
 type PatchParams struct {
-	Name                     *string
-	Type                     *PhaseType
-	StartDate                *time.Time
-	EndDate                  *time.Time
-	DefaultTemplateID        *uuid.UUID
-	ClearDefaultTemplateID   bool
-	Notes                    *string
-	Methodology              *string
+	Name                   *string
+	Type                   *PhaseType
+	StartDate              *time.Time
+	EndDate                *time.Time
+	DefaultTemplateID      *uuid.UUID
+	ClearDefaultTemplateID bool
+	Notes                  *string
+	Methodology            *string
+	// Macrocycle membership tri-state: ClearMacrocycleID clears the season link,
+	// a non-nil MacrocycleID sets it, nil+Clear=false leaves it unchanged. The
+	// three nullable targets follow the clear/set pattern of the other nullable
+	// fields (a Clear flag drives the SET to NULL).
+	MacrocycleID           *uuid.UUID
+	ClearMacrocycleID      bool
+	MacrocycleOrdinal      *int
+	ClearMacrocycleOrdinal bool
+	TargetWeeklyTSS        *float64
+	ClearTargetWeeklyTSS   bool
+	TargetWeeklyHours      *float64
+	ClearTargetWeeklyHours bool
 }
 
 // HasUpdates reports whether at least one field is set.
 func (p PatchParams) HasUpdates() bool {
 	return p.Name != nil || p.Type != nil || p.StartDate != nil || p.EndDate != nil ||
 		p.DefaultTemplateID != nil || p.ClearDefaultTemplateID || p.Notes != nil ||
-		p.Methodology != nil
+		p.Methodology != nil ||
+		p.MacrocycleID != nil || p.ClearMacrocycleID ||
+		p.MacrocycleOrdinal != nil || p.ClearMacrocycleOrdinal ||
+		p.TargetWeeklyTSS != nil || p.ClearTargetWeeklyTSS ||
+		p.TargetWeeklyHours != nil || p.ClearTargetWeeklyHours
 }
 
 // Patch applies a partial update to a phase.
@@ -186,6 +206,34 @@ func (r *PhasesRepo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) err
 		args = append(args, *p.Methodology)
 		next++
 	}
+	if p.ClearMacrocycleID {
+		sets = append(sets, "macrocycle_id = NULL")
+	} else if p.MacrocycleID != nil {
+		sets = append(sets, fmt.Sprintf("macrocycle_id = $%d", next))
+		args = append(args, *p.MacrocycleID)
+		next++
+	}
+	if p.ClearMacrocycleOrdinal {
+		sets = append(sets, "macrocycle_ordinal = NULL")
+	} else if p.MacrocycleOrdinal != nil {
+		sets = append(sets, fmt.Sprintf("macrocycle_ordinal = $%d", next))
+		args = append(args, *p.MacrocycleOrdinal)
+		next++
+	}
+	if p.ClearTargetWeeklyTSS {
+		sets = append(sets, "target_weekly_tss = NULL")
+	} else if p.TargetWeeklyTSS != nil {
+		sets = append(sets, fmt.Sprintf("target_weekly_tss = $%d", next))
+		args = append(args, *p.TargetWeeklyTSS)
+		next++
+	}
+	if p.ClearTargetWeeklyHours {
+		sets = append(sets, "target_weekly_hours = NULL")
+	} else if p.TargetWeeklyHours != nil {
+		sets = append(sets, fmt.Sprintf("target_weekly_hours = $%d", next))
+		args = append(args, *p.TargetWeeklyHours)
+		next++
+	}
 	if len(sets) == 1 {
 		// No fields to update; confirm the row exists.
 		if _, err := r.GetByID(ctx, id); err != nil {
@@ -228,6 +276,7 @@ func scanPhase(s scanner) (*Phase, error) {
 	if err := s.Scan(
 		&p.ID, &p.Name, &typeStr, &p.StartDate, &p.EndDate,
 		&p.DefaultTemplateID, &p.Notes, &p.Methodology,
+		&p.MacrocycleID, &p.MacrocycleOrdinal, &p.TargetWeeklyTSS, &p.TargetWeeklyHours,
 		&p.CreatedAt, &p.UpdatedAt,
 		&templateName,
 	); err != nil {

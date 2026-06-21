@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/bodyweight"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
+	"github.com/vinzenzs/kazper/internal/macrocycle"
 	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/numfmt"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
@@ -23,6 +25,13 @@ import (
 // *multisport.Repo; cross-injected (nil-safe) so multisport stays optional.
 type multisportRepo interface {
 	GetByID(ctx context.Context, id string) (*multisport.Template, error)
+}
+
+// macrocycleLookup is the narrow read the training context needs to surface the
+// season covering the anchor date. Satisfied by *macrocycle.Repo; cross-injected
+// (nil-safe) so the macrocycle block stays optional.
+type macrocycleLookup interface {
+	CoveringFor(ctx context.Context, date time.Time) (*macrocycle.Covering, error)
 }
 
 // Window defaults and clamps for the aggregate reads.
@@ -46,6 +55,7 @@ type Service struct {
 	athleteConfigRepo *athleteconfig.Repo
 	bodyWeightRepo    *bodyweight.Repo
 	multisportRepo    multisportRepo
+	macrocycleRepo    macrocycleLookup
 }
 
 // SetMultisportRepo cross-injects the multisport-template repo the recent-load
@@ -54,6 +64,11 @@ type Service struct {
 // in by_sport. Wired in httpserver.Run() to keep multisport optional and avoid
 // an import cycle.
 func (s *Service) SetMultisportRepo(r multisportRepo) { s.multisportRepo = r }
+
+// SetMacrocycleRepo cross-injects the macrocycle repo the training bundle uses
+// to surface the season covering the anchor date. Optional: when unset, the
+// `macrocycle` block is always null. Wired in httpserver.Run().
+func (s *Service) SetMacrocycleRepo(r macrocycleLookup) { s.macrocycleRepo = r }
 
 func NewService(
 	workoutsRepo *workouts.Repo,
@@ -110,6 +125,12 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 
 	g, gctx := errgroup.WithContext(ctx)
 
+	// Covering phase's season linkage, captured for the post-Wait computation of
+	// current_phase_ordinal (the phase and macrocycle legs run concurrently, so
+	// the cross-reference is resolved after both complete).
+	var coveringPhaseMacroID *uuid.UUID
+	var coveringPhaseOrdinal *int
+
 	// Phase covering the date.
 	g.Go(func() error {
 		p, err := s.phasesRepo.PhaseFor(gctx, date)
@@ -120,6 +141,39 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 			return fmt.Errorf("phase for date: %w", err)
 		}
 		out.Phase = &PhaseLite{ID: p.ID, Name: p.Name, Type: p.Type, StartDate: p.StartDate, EndDate: p.EndDate, Methodology: p.Methodology}
+		coveringPhaseMacroID = p.MacrocycleID
+		coveringPhaseOrdinal = p.MacrocycleOrdinal
+		return nil
+	})
+
+	// Macrocycle (season) covering the date. Optional — nil repo or no covering
+	// season leaves out.Macrocycle nil. current_phase_ordinal is filled after Wait.
+	g.Go(func() error {
+		if s.macrocycleRepo == nil {
+			return nil
+		}
+		cov, err := s.macrocycleRepo.CoveringFor(gctx, date)
+		if err != nil {
+			if errors.Is(err, macrocycle.ErrMacrocycleNotFound) {
+				return nil
+			}
+			return fmt.Errorf("covering macrocycle: %w", err)
+		}
+		ml := &MacrocycleLite{
+			ID:           cov.ID,
+			Name:         cov.Name,
+			StartDate:    cov.StartDate,
+			EndDate:      cov.EndDate,
+			RaceID:       cov.RaceID,
+			RaceName:     cov.RaceName,
+			RaceDate:     cov.RaceDate,
+			TotalPeriods: cov.TotalPeriods,
+		}
+		if cov.RaceDate != nil {
+			d := daysBetween(date, *cov.RaceDate)
+			ml.DaysToRace = &d
+		}
+		out.Macrocycle = ml
 		return nil
 	})
 
@@ -186,7 +240,21 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	// Resolve current_phase_ordinal: only when the covering phase belongs to the
+	// covering season (its macrocycle_id matches). Otherwise it stays null while
+	// total_periods still reflects the season's member count.
+	if out.Macrocycle != nil && coveringPhaseMacroID != nil && *coveringPhaseMacroID == out.Macrocycle.ID {
+		out.Macrocycle.CurrentPhaseOrdinal = coveringPhaseOrdinal
+	}
 	return out, nil
+}
+
+// daysBetween returns the whole-day gap from `from` to `to`, comparing calendar
+// dates (ignoring clock time and zone) so days_to_race is a clean date delta.
+func daysBetween(from, to time.Time) int {
+	f := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	t := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+	return int(t.Sub(f).Hours() / 24)
 }
 
 // BuildRecovery returns the recovery context bundle for date: the latest

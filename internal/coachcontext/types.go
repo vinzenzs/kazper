@@ -29,6 +29,30 @@ type PhaseLite struct {
 	Methodology *string `json:"methodology"`
 }
 
+// MacrocycleLite is the season slice of the training context: the macrocycle
+// covering the anchor date, its race anchor (null fields when unanchored), and
+// where the current period sits in the progression. Composition-only — it does
+// not affect adherence or the covering phase. Null on the bundle when no season
+// covers the date. See add-macrocycle-planning.
+type MacrocycleLite struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	StartDate time.Time `json:"start_date"`
+	EndDate   time.Time `json:"end_date"`
+	// Race anchor — all null when the season has no race_id.
+	RaceID   *uuid.UUID `json:"race_id"`
+	RaceName *string    `json:"race_name"`
+	RaceDate *time.Time `json:"race_date"`
+	// DaysToRace is race_date − anchor_date in whole days, present only when the
+	// season is race-anchored.
+	DaysToRace *int `json:"days_to_race"`
+	// CurrentPhaseOrdinal is the covering phase's macrocycle_ordinal when that
+	// phase belongs to this season, else null. TotalPeriods is the count of
+	// phases linked to the season.
+	CurrentPhaseOrdinal *int `json:"current_phase_ordinal"`
+	TotalPeriods        int  `json:"total_periods"`
+}
+
 // WorkoutLite is a compact workout for the recent/upcoming lists — enough to
 // reason about load and schedule without the full splits/sets detail (use
 // get_workout / list_workouts for that).
@@ -54,12 +78,15 @@ type LoadSummary struct {
 
 // TrainingContext is the GET /context/training bundle.
 type TrainingContext struct {
-	Date          string                   `json:"date"`
-	TZ            string                   `json:"tz"`
-	LookbackDays  int                      `json:"lookback_days"`
-	LookaheadDays int                      `json:"lookahead_days"`
-	Phase         *PhaseLite               `json:"phase"`
-	Fitness       *fitnessmetrics.Snapshot `json:"fitness"`
+	Date          string     `json:"date"`
+	TZ            string     `json:"tz"`
+	LookbackDays  int        `json:"lookback_days"`
+	LookaheadDays int        `json:"lookahead_days"`
+	Phase         *PhaseLite `json:"phase"`
+	// Macrocycle is the season covering the anchor date + the current period's
+	// position in the progression; null when no season covers the date.
+	Macrocycle *MacrocycleLite          `json:"macrocycle"`
+	Fitness    *fitnessmetrics.Snapshot `json:"fitness"`
 	// ACWR is the acute:chronic load ratio, derived (acute ÷ chronic) only when
 	// both loads are present; null otherwise. Never stored.
 	ACWR *float64 `json:"acwr"`

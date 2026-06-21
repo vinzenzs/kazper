@@ -11,35 +11,55 @@ import (
 
 // Phase-level validation errors.
 var (
-	ErrPhaseNameInvalid    = errors.New("phase_name_invalid")
-	ErrPhaseNameTooLong    = errors.New("phase_name_too_long")
-	ErrPhaseTypeInvalid    = errors.New("phase_type_invalid")
-	ErrDateRangeInvalid    = errors.New("date_range_invalid")
-	ErrPatchEmpty          = errors.New("patch_empty")
+	ErrPhaseNameInvalid   = errors.New("phase_name_invalid")
+	ErrPhaseNameTooLong   = errors.New("phase_name_too_long")
+	ErrPhaseTypeInvalid   = errors.New("phase_type_invalid")
+	ErrDateRangeInvalid   = errors.New("date_range_invalid")
+	ErrPatchEmpty         = errors.New("patch_empty")
+	ErrMacrocycleNotFound = errors.New("macrocycle_not_found")
+	ErrTargetInvalid      = errors.New("target_invalid")
 )
 
 // MaxPhaseNameLength matches the migration's CHECK constraint.
 const MaxPhaseNameLength = 128
 
+// macrocycleChecker is the narrow read the service needs to FK-validate a
+// phase's macrocycle_id. Satisfied by *macrocycle.Repo; cross-injected (nil-safe)
+// via SetMacrocycleChecker so trainingphases stays decoupled from macrocycle and
+// avoids an import cycle (macrocycle reads training_phases for its member list).
+type macrocycleChecker interface {
+	MacrocycleExists(ctx context.Context, id uuid.UUID) (bool, error)
+}
+
 // PhasesService validates and orchestrates writes to PhasesRepo.
 type PhasesService struct {
-	repo      *PhasesRepo
-	templates *TemplatesRepo // for FK pre-validation on Insert/Patch
+	repo        *PhasesRepo
+	templates   *TemplatesRepo    // for FK pre-validation on Insert/Patch
+	macrocycles macrocycleChecker // optional; nil ⇒ skip macrocycle_id FK pre-check
 }
 
 func NewPhasesService(repo *PhasesRepo, templates *TemplatesRepo) *PhasesService {
 	return &PhasesService{repo: repo, templates: templates}
 }
 
+// SetMacrocycleChecker cross-injects the macrocycle-existence reader used to
+// pre-validate a phase's macrocycle_id. Optional: when unset, the app-level
+// check is skipped and the DB FK is the only guard. Wired in httpserver.Run().
+func (s *PhasesService) SetMacrocycleChecker(m macrocycleChecker) { s.macrocycles = m }
+
 // CreateInput is what the POST /phases handler passes in after JSON decode.
 type CreateInput struct {
-	Name                string
-	Type                PhaseType
-	StartDate           time.Time
-	EndDate             time.Time
-	DefaultTemplateID   *uuid.UUID
-	Notes               *string
-	Methodology         *string
+	Name              string
+	Type              PhaseType
+	StartDate         time.Time
+	EndDate           time.Time
+	DefaultTemplateID *uuid.UUID
+	Notes             *string
+	Methodology       *string
+	MacrocycleID      *uuid.UUID
+	MacrocycleOrdinal *int
+	TargetWeeklyTSS   *float64
+	TargetWeeklyHours *float64
 }
 
 // Create validates input, verifies the template FK if present, inserts the
@@ -64,6 +84,17 @@ func (s *PhasesService) Create(ctx context.Context, in CreateInput) (*Phase, err
 			return nil, err
 		}
 	}
+	if err := validateTarget(in.TargetWeeklyTSS); err != nil {
+		return nil, err
+	}
+	if err := validateTarget(in.TargetWeeklyHours); err != nil {
+		return nil, err
+	}
+	if in.MacrocycleID != nil {
+		if err := s.assertMacrocycleExists(ctx, *in.MacrocycleID); err != nil {
+			return nil, err
+		}
+	}
 	p := &Phase{
 		Name:              cleanName,
 		Type:              in.Type,
@@ -72,6 +103,10 @@ func (s *PhasesService) Create(ctx context.Context, in CreateInput) (*Phase, err
 		DefaultTemplateID: in.DefaultTemplateID,
 		Notes:             in.Notes,
 		Methodology:       in.Methodology,
+		MacrocycleID:      in.MacrocycleID,
+		MacrocycleOrdinal: in.MacrocycleOrdinal,
+		TargetWeeklyTSS:   in.TargetWeeklyTSS,
+		TargetWeeklyHours: in.TargetWeeklyHours,
 	}
 	if err := s.repo.Insert(ctx, p); err != nil {
 		return nil, err
@@ -133,6 +168,21 @@ func (s *PhasesService) Patch(ctx context.Context, id uuid.UUID, p PatchParams) 
 			return nil, err
 		}
 	}
+	if !p.ClearTargetWeeklyTSS {
+		if err := validateTarget(p.TargetWeeklyTSS); err != nil {
+			return nil, err
+		}
+	}
+	if !p.ClearTargetWeeklyHours {
+		if err := validateTarget(p.TargetWeeklyHours); err != nil {
+			return nil, err
+		}
+	}
+	if !p.ClearMacrocycleID && p.MacrocycleID != nil {
+		if err := s.assertMacrocycleExists(ctx, *p.MacrocycleID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.repo.Patch(ctx, id, p); err != nil {
 		return nil, err
 	}
@@ -144,3 +194,27 @@ func (s *PhasesService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// validateTarget rejects a negative progression target. A nil target (unset) and
+// a non-negative value both pass.
+func validateTarget(v *float64) error {
+	if v != nil && *v < 0 {
+		return ErrTargetInvalid
+	}
+	return nil
+}
+
+// assertMacrocycleExists pre-validates a phase's macrocycle_id FK. When no
+// checker is wired the app-level check is skipped (the DB FK remains the guard).
+func (s *PhasesService) assertMacrocycleExists(ctx context.Context, id uuid.UUID) error {
+	if s.macrocycles == nil {
+		return nil
+	}
+	exists, err := s.macrocycles.MacrocycleExists(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrMacrocycleNotFound
+	}
+	return nil
+}

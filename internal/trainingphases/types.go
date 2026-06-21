@@ -136,6 +136,18 @@ type Phase struct {
 	// operational Notes. Stored verbatim; authored in the vault and pushed in.
 	Methodology *string `json:"methodology,omitempty"`
 
+	// MacrocycleID links this phase (the period) into a season; MacrocycleOrdinal
+	// is its position in the season's progression. TargetWeeklyTSS /
+	// TargetWeeklyHours are the per-period load targets (the deliberate yearly
+	// ramp). All four are optional planning metadata — they do NOT change which
+	// goals drive adherence (that stays DefaultTemplateID) and the targets are
+	// declared intent, never compared to actual load. See
+	// openspec/changes/add-macrocycle-planning.
+	MacrocycleID      *uuid.UUID `json:"macrocycle_id,omitempty"`
+	MacrocycleOrdinal *int       `json:"macrocycle_ordinal,omitempty"`
+	TargetWeeklyTSS   *float64   `json:"target_weekly_tss,omitempty"`
+	TargetWeeklyHours *float64   `json:"target_weekly_hours,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

@@ -4,8 +4,9 @@
 //
 // Builds the kazper binary, spawns `kazper mcp` as a
 // subprocess with a stub REST server for healthz, exchanges JSON-RPC
-// frames over stdio, and asserts that the eight expected tools are
-// announced via tools/list.
+// frames over stdio, and asserts that the announced tools/list matches
+// AnnouncedToolNames() (derived from the shared agenttools registry, so new
+// tools — e.g. the macrocycle family — are tracked automatically).
 
 package mcpserver
 
