@@ -2658,6 +2658,32 @@ definitions:
     x-enum-varnames:
     - StatusPlanned
     - StatusCompleted
+  workouts.TrainingFocus:
+    enum:
+    - recovery
+    - basic_endurance_1
+    - basic_endurance_2
+    - development
+    - competition_specific
+    - peak
+    - strength_endurance
+    type: string
+    x-enum-comments:
+      TrainingFocusBasicEndurance1: GA1 — aerobic base
+      TrainingFocusBasicEndurance2: GA2 — extensive tempo
+      TrainingFocusCompetitionSpecific: WSA — race-specific endurance
+      TrainingFocusDevelopment: EB — threshold / development
+      TrainingFocusPeak: SB — peak / sharpening (anaerobic)
+      TrainingFocusRecovery: REKOM — regeneration / compensation
+      TrainingFocusStrengthEndurance: KA — strength endurance
+    x-enum-varnames:
+    - TrainingFocusRecovery
+    - TrainingFocusBasicEndurance1
+    - TrainingFocusBasicEndurance2
+    - TrainingFocusDevelopment
+    - TrainingFocusCompetitionSpecific
+    - TrainingFocusPeak
+    - TrainingFocusStrengthEndurance
   workouts.Workout:
     properties:
       aerobic_te:
@@ -2790,6 +2816,13 @@ definitions:
           training-plan slot it materializes (the materialize upsert key). Imported
           activities carry neither.
         type: string
+      training_focus:
+        allOf:
+        - $ref: '#/definitions/workouts.TrainingFocus'
+        description: |-
+          TrainingFocus classifies the session's intensity band (7-zone German
+          Trainingsbereiche). Nullable — NULL/absent means "unclassified". Declared
+          intent, set by the user/coach; never derived from the secs_in_zone_* actuals.
       tss:
         type: number
       updated_at:
@@ -8385,8 +8418,8 @@ paths:
             $ref: '#/definitions/workouts.Workout'
         "400":
           description: source_invalid | sport_invalid | window_invalid | started_at_too_far_future
-            | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid
-            | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
+            | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid
+            | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
             | session_group_invalid | status_invalid | split_invalid | set_invalid
           schema:
             additionalProperties:
@@ -8452,10 +8485,11 @@ paths:
       consumes:
       - application/json
       description: 'Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`,
-        `gi_distress_score`, `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`,
-        `session_group`. `source`, `external_id`, `sport`, `started_at`, `ended_at`
-        are immutable — delete and re-create if those are wrong. Tri-state on the
-        nullable fields: omit to leave unchanged, value to set, JSON null to clear.'
+        `gi_distress_score`, `training_focus`, `distance_m`, `avg_power_w`, `temperature_c`,
+        `sweat_loss_ml`, `session_group`. `source`, `external_id`, `sport`, `started_at`,
+        `ended_at` are immutable — delete and re-create if those are wrong. Tri-state
+        on the nullable fields: omit to leave unchanged, value to set, JSON null to
+        clear.'
       parameters:
       - description: Workout UUID
         in: path
@@ -8478,8 +8512,9 @@ paths:
             $ref: '#/definitions/workouts.Workout'
         "400":
           description: field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid
-            | rpe_invalid | gi_distress_score_invalid | distance_m_invalid | avg_power_w_invalid
-            | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid
+            | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | distance_m_invalid
+            | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
+            | session_group_invalid
           schema:
             additionalProperties:
               type: string

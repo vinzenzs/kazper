@@ -59,6 +59,9 @@ type createRequest struct {
 	// and lose the field-specific diagnostic.
 	RPE             json.RawMessage `json:"rpe,omitempty"`
 	GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
+	// TrainingFocus is a closed-enum classification; a plain *string suffices —
+	// the enum membership check lives in the service layer (training_focus_invalid).
+	TrainingFocus *string `json:"training_focus,omitempty"`
 	// Ingestion metrics. avg_power_w uses RawMessage for the same reason as
 	// rpe/gi: a non-integer payload must surface `avg_power_w_invalid`, not
 	// `invalid_json`. The float fields tolerate integer JSON natively.
@@ -124,7 +127,7 @@ type setRequest struct {
 // @Param        body             body    createRequest  true   "Workout"
 // @Success      201  {object}  Workout  "INSERT"
 // @Success      200  {object}  Workout  "UPDATE (external_id collision)"
-// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid"
+// @Failure      400  {object}  map[string]string  "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid"
 // @Security     BearerAuth
 // @Router       /workouts [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -425,14 +428,14 @@ func (h *Handlers) get(c *gin.Context) {
 
 // patch godoc
 // @Summary      Partially update a workout (mutable fields only)
-// @Description  Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`, `gi_distress_score`, `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, `session_group`. `source`, `external_id`, `sport`, `started_at`, `ended_at` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.
+// @Description  Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`, `gi_distress_score`, `training_focus`, `distance_m`, `avg_power_w`, `temperature_c`, `sweat_loss_ml`, `session_group`. `source`, `external_id`, `sport`, `started_at`, `ended_at` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.
 // @Tags         workouts
 // @Accept       json
 // @Produce      json
 // @Param        id    path  string  true  "Workout UUID"
 // @Param        body  body  map[string]interface{}  true  "Mutable fields"
 // @Success      200  {object}  Workout
-// @Failure      400  {object}  map[string]string  "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid"
+// @Failure      400  {object}  map[string]string  "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid"
 // @Failure      404  {object}  map[string]string  "workout_not_found"
 // @Security     BearerAuth
 // @Router       /workouts/{id} [patch]
@@ -473,6 +476,7 @@ func (h *Handlers) patch(c *gin.Context) {
 			"tss":               true,
 			"rpe":               true,
 			"gi_distress_score": true,
+			"training_focus":    true,
 			"distance_m":        true,
 			"avg_power_w":       true,
 			"temperature_c":     true,
@@ -500,6 +504,7 @@ func (h *Handlers) patch(c *gin.Context) {
 		TSS             *float64        `json:"tss,omitempty"`
 		RPE             json.RawMessage `json:"rpe,omitempty"`
 		GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
+		TrainingFocus   json.RawMessage `json:"training_focus,omitempty"`
 		DistanceM       json.RawMessage `json:"distance_m,omitempty"`
 		AvgPowerW       json.RawMessage `json:"avg_power_w,omitempty"`
 		TemperatureC    json.RawMessage `json:"temperature_c,omitempty"`
@@ -545,6 +550,20 @@ func (h *Handlers) patch(c *gin.Context) {
 				return
 			}
 			in.GIDistressScore = &v
+		}
+	}
+	// training_focus tri-state: null clears, a string sets (enum membership is
+	// checked in the service layer), anything else is a malformed value.
+	if body.TrainingFocus != nil {
+		if string(body.TrainingFocus) == "null" {
+			in.ClearTrainingFocus = true
+		} else {
+			var v string
+			if err := json.Unmarshal(body.TrainingFocus, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "training_focus_invalid")
+				return
+			}
+			in.TrainingFocus = &v
 		}
 	}
 	// Ingestion-metric tri-state: same null-clears convention. A non-null
@@ -775,6 +794,7 @@ func buildCreateInput(req createRequest) (CreateInput, string) {
 		Name:             req.Name,
 		StartedAt:        startedAt,
 		EndedAt:          endedAt,
+		TrainingFocus:    req.TrainingFocus,
 		KcalBurned:       req.KcalBurned,
 		AvgHR:            req.AvgHR,
 		TSS:              req.TSS,
@@ -936,6 +956,8 @@ func errCodeFor(err error) string {
 		return "session_group_invalid"
 	case errors.Is(err, ErrStatusInvalid):
 		return "status_invalid"
+	case errors.Is(err, ErrTrainingFocusInvalid):
+		return "training_focus_invalid"
 	case errors.Is(err, ErrSplitInvalid):
 		return "split_invalid"
 	case errors.Is(err, ErrSetInvalid):

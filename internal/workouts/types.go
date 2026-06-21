@@ -83,6 +83,39 @@ func ValidStatus(s string) bool {
 	return false
 }
 
+// TrainingFocus classifies a session's intensity band against the 7-zone German
+// Trainingsbereiche model. Nullable on a workout: an unclassified session is a
+// valid state. It is declared intent (set by the user/coach), independent of the
+// measured secs_in_zone_* actuals — never derived from HR/power/TSS.
+type TrainingFocus string
+
+const (
+	TrainingFocusRecovery            TrainingFocus = "recovery"             // REKOM — regeneration / compensation
+	TrainingFocusBasicEndurance1     TrainingFocus = "basic_endurance_1"    // GA1 — aerobic base
+	TrainingFocusBasicEndurance2     TrainingFocus = "basic_endurance_2"    // GA2 — extensive tempo
+	TrainingFocusDevelopment         TrainingFocus = "development"          // EB — threshold / development
+	TrainingFocusCompetitionSpecific TrainingFocus = "competition_specific" // WSA — race-specific endurance
+	TrainingFocusPeak                TrainingFocus = "peak"                 // SB — peak / sharpening (anaerobic)
+	TrainingFocusStrengthEndurance   TrainingFocus = "strength_endurance"   // KA — strength endurance
+)
+
+func ValidTrainingFocus(s string) bool {
+	switch TrainingFocus(s) {
+	case TrainingFocusRecovery, TrainingFocusBasicEndurance1, TrainingFocusBasicEndurance2,
+		TrainingFocusDevelopment, TrainingFocusCompetitionSpecific, TrainingFocusPeak,
+		TrainingFocusStrengthEndurance:
+		return true
+	}
+	return false
+}
+
+func ParseTrainingFocus(s string) (TrainingFocus, error) {
+	if !ValidTrainingFocus(s) {
+		return "", fmt.Errorf("invalid training_focus %q", s)
+	}
+	return TrainingFocus(s), nil
+}
+
 // Workout mirrors a workouts row.
 type Workout struct {
 	ID         uuid.UUID `json:"id"`
@@ -104,6 +137,11 @@ type Workout struct {
 	// (1=no GI distress, 5=severe) at handler + DB CHECK layers.
 	RPE             *int `json:"rpe,omitempty"`
 	GIDistressScore *int `json:"gi_distress_score,omitempty"`
+
+	// TrainingFocus classifies the session's intensity band (7-zone German
+	// Trainingsbereiche). Nullable — NULL/absent means "unclassified". Declared
+	// intent, set by the user/coach; never derived from the secs_in_zone_* actuals.
+	TrainingFocus *TrainingFocus `json:"training_focus,omitempty"`
 
 	// Source-agnostic ingestion metrics — all nullable, populated by whatever
 	// writer measured them (Garmin today). distance in metres, average power in

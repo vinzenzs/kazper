@@ -8090,7 +8090,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid",
+                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -8290,7 +8290,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `, ` + "`" + `rpe` + "`" + `, ` + "`" + `gi_distress_score` + "`" + `, ` + "`" + `distance_m` + "`" + `, ` + "`" + `avg_power_w` + "`" + `, ` + "`" + `temperature_c` + "`" + `, ` + "`" + `sweat_loss_ml` + "`" + `, ` + "`" + `session_group` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.",
+                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `, ` + "`" + `rpe` + "`" + `, ` + "`" + `gi_distress_score` + "`" + `, ` + "`" + `training_focus` + "`" + `, ` + "`" + `distance_m` + "`" + `, ` + "`" + `avg_power_w` + "`" + `, ` + "`" + `temperature_c` + "`" + `, ` + "`" + `sweat_loss_ml` + "`" + `, ` + "`" + `session_group` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8328,7 +8328,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
+                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -12436,6 +12436,36 @@ const docTemplate = `{
                 "StatusCompleted"
             ]
         },
+        "workouts.TrainingFocus": {
+            "type": "string",
+            "enum": [
+                "recovery",
+                "basic_endurance_1",
+                "basic_endurance_2",
+                "development",
+                "competition_specific",
+                "peak",
+                "strength_endurance"
+            ],
+            "x-enum-comments": {
+                "TrainingFocusBasicEndurance1": "GA1 — aerobic base",
+                "TrainingFocusBasicEndurance2": "GA2 — extensive tempo",
+                "TrainingFocusCompetitionSpecific": "WSA — race-specific endurance",
+                "TrainingFocusDevelopment": "EB — threshold / development",
+                "TrainingFocusPeak": "SB — peak / sharpening (anaerobic)",
+                "TrainingFocusRecovery": "REKOM — regeneration / compensation",
+                "TrainingFocusStrengthEndurance": "KA — strength endurance"
+            },
+            "x-enum-varnames": [
+                "TrainingFocusRecovery",
+                "TrainingFocusBasicEndurance1",
+                "TrainingFocusBasicEndurance2",
+                "TrainingFocusDevelopment",
+                "TrainingFocusCompetitionSpecific",
+                "TrainingFocusPeak",
+                "TrainingFocusStrengthEndurance"
+            ]
+        },
         "workouts.Workout": {
             "type": "object",
             "properties": {
@@ -12579,6 +12609,14 @@ const docTemplate = `{
                 "template_id": {
                     "description": "Plan links (per add-training-plan), both nullable. TemplateID is the\nworkout-template a planned workout was compiled from; PlanSlotID is the\ntraining-plan slot it materializes (the materialize upsert key). Imported\nactivities carry neither.",
                     "type": "string"
+                },
+                "training_focus": {
+                    "description": "TrainingFocus classifies the session's intensity band (7-zone German\nTrainingsbereiche). Nullable — NULL/absent means \"unclassified\". Declared\nintent, set by the user/coach; never derived from the secs_in_zone_* actuals.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/workouts.TrainingFocus"
+                        }
+                    ]
                 },
                 "tss": {
                     "type": "number"

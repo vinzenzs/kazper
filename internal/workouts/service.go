@@ -33,6 +33,7 @@ var (
 	ErrSweatLossMLInvalid     = errors.New("sweat_loss_ml_invalid")
 	ErrSessionGroupInvalid    = errors.New("session_group_invalid")
 	ErrStatusInvalid          = errors.New("status_invalid")
+	ErrTrainingFocusInvalid   = errors.New("training_focus_invalid")
 	ErrSplitInvalid           = errors.New("split_invalid")
 	ErrSetInvalid             = errors.New("set_invalid")
 )
@@ -117,6 +118,7 @@ type CreateInput struct {
 	TSS             *float64
 	RPE             *int
 	GIDistressScore *int
+	TrainingFocus   *string
 	DistanceM       *float64
 	AvgPowerW       *int
 	TemperatureC    *float64
@@ -337,6 +339,12 @@ type PatchInput struct {
 	GIDistressScore      *int
 	ClearGIDistressScore bool
 
+	// TrainingFocus tri-state: non-nil pointer sets, nil + ClearTrainingFocus=true
+	// clears to NULL, nil + false leaves unchanged. The handler decodes JSON null
+	// into ClearTrainingFocus=true.
+	TrainingFocus      *string
+	ClearTrainingFocus bool
+
 	DistanceM         *float64
 	ClearDistanceM    bool
 	AvgPowerW         *int
@@ -377,6 +385,9 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
 		return nil, err
 	}
+	if in.TrainingFocus != nil && !ValidTrainingFocus(*in.TrainingFocus) {
+		return nil, ErrTrainingFocusInvalid
+	}
 	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
 		return nil, err
 	}
@@ -393,6 +404,8 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 		ClearRPE:             in.ClearRPE,
 		GIDistressScore:      in.GIDistressScore,
 		ClearGIDistressScore: in.ClearGIDistressScore,
+		TrainingFocus:        in.TrainingFocus,
+		ClearTrainingFocus:   in.ClearTrainingFocus,
 		DistanceM:            in.DistanceM,
 		ClearDistanceM:       in.ClearDistanceM,
 		AvgPowerW:            in.AvgPowerW,
@@ -503,6 +516,10 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 	if err := validateGIDistressScore(in.GIDistressScore); err != nil {
 		return nil, err
 	}
+	tf, err := buildTrainingFocus(in.TrainingFocus)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
 		return nil, err
 	}
@@ -525,6 +542,7 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 		TSS:              in.TSS,
 		RPE:              in.RPE,
 		GIDistressScore:  in.GIDistressScore,
+		TrainingFocus:    tf,
 		DistanceM:        in.DistanceM,
 		AvgPowerW:        in.AvgPowerW,
 		TemperatureC:     in.TemperatureC,
@@ -661,6 +679,20 @@ func validateGIDistressScore(v *int) error {
 		return ErrGIDistressScoreInvalid
 	}
 	return nil
+}
+
+// buildTrainingFocus validates an optional training_focus string and converts it
+// to the typed enum pointer stored on the workout. nil in → nil out (unclassified);
+// a non-nil value must be one of the closed set or ErrTrainingFocusInvalid is returned.
+func buildTrainingFocus(s *string) (*TrainingFocus, error) {
+	if s == nil {
+		return nil, nil
+	}
+	tf, err := ParseTrainingFocus(*s)
+	if err != nil {
+		return nil, ErrTrainingFocusInvalid
+	}
+	return &tf, nil
 }
 
 // validateIngestionMetrics validates the five ingestion fields. Each is nil
