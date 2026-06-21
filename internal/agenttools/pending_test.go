@@ -74,8 +74,8 @@ func TestAwaitingConfirmation(t *testing.T) {
 func TestPendingFromContent_OnlyConfirmCallsWithPreviews(t *testing.T) {
 	specs := testSpecs()
 	content := assistantTurn(
-		toolUse("t1", "get_daily_context", `{}`),               // read — excluded
-		toolUse("t2", "add_shopping_items", `{"items":[]}`),     // auto — excluded
+		toolUse("t1", "get_daily_context", `{}`),            // read — excluded
+		toolUse("t2", "add_shopping_items", `{"items":[]}`), // auto — excluded
 		toolUse("t3", "schedule_workout", `{"date":"2026-06-20"}`),
 		toolUse("t4", "delete_planned_meal", `{"plan_id":"p1"}`),
 	)

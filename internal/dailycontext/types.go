@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/goals"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
@@ -22,16 +23,20 @@ import (
 // Goals) so the agent's mental model — already trained on those shapes —
 // doesn't have to relearn anything.
 type DailyContext struct {
-	Date         string             `json:"date"`
-	TZ           string             `json:"tz"`
-	Adherence    AdherenceBlock     `json:"adherence"`
-	Nutrition    NutritionBlock     `json:"nutrition"`
-	Hydration    HydrationBlock     `json:"hydration"`
-	Workouts     []*WorkoutLite     `json:"workouts"`     // never nil; empty array on quiet days
-	WorkoutFuel  []*WorkoutFuelLite `json:"workout_fuel"` // never nil; empty array on quiet days
-	Weight       *WeightBlock       `json:"weight"`       // nil when no entry ever logged
-	Phase        *PhaseBlock        `json:"phase"`        // nil when no phase covers the date
-	GoalOverride GoalOverrideBlock  `json:"goal_override"`
+	Date        string             `json:"date"`
+	TZ          string             `json:"tz"`
+	Adherence   AdherenceBlock     `json:"adherence"`
+	Nutrition   NutritionBlock     `json:"nutrition"`
+	Hydration   HydrationBlock     `json:"hydration"`
+	Workouts    []*WorkoutLite     `json:"workouts"`     // never nil; empty array on quiet days
+	WorkoutFuel []*WorkoutFuelLite `json:"workout_fuel"` // never nil; empty array on quiet days
+	// Memory is the active coach-memory folded into grounding (standing items +
+	// recommendations for the date), needs_review flagged. Never nil; empty array
+	// when there's no active memory. See widen-coach-recs-to-memory.
+	Memory       []*coachmemory.Memory `json:"memory"`
+	Weight       *WeightBlock          `json:"weight"` // nil when no entry ever logged
+	Phase        *PhaseBlock           `json:"phase"`  // nil when no phase covers the date
+	GoalOverride GoalOverrideBlock     `json:"goal_override"`
 	// Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
 	// reading is misleading). nil when no snapshot exists for the date.
 	Recovery *recoverymetrics.Snapshot `json:"recovery"`

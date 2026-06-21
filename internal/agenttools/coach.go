@@ -81,6 +81,34 @@ func coachReadSpecs() []Spec {
 func coachWriteConfirmSpecs() []Spec {
 	return []Spec{
 		{
+			Name: "remember",
+			Description: "Record a durable coach-memory item the user asked you to remember — a fact, preference, " +
+				"constraint, observation, or recommendation (kind). text required; stored verbatim. A recommendation " +
+				"requires a date (YYYY-MM-DD); standing items may be dateless. Optional reason, scope " +
+				"(fueling|training|recovery|race|general), expires_at (hard cutoff), review_at (soft 'still true?'). " +
+				"This is a note, NOT an enforced target. Only when the user explicitly asks you to remember something.",
+			Schema: `{"type":"object","properties":{"kind":{"type":"string","enum":["fact","preference","constraint","observation","recommendation"]},"text":{"type":"string"},"reason":{"type":"string"},"scope":{"type":"string","enum":["fueling","training","recovery","race","general"]},"date":{"type":"string"},"expires_at":{"type":"string"},"review_at":{"type":"string"}},"required":["kind","text"]}`,
+			Tier:   TierWriteConfirm,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				return Passthrough("POST", "/coach/memory", in)
+			},
+			Format: func(in json.RawMessage) string {
+				var a struct {
+					Kind string `json:"kind"`
+					Text string `json:"text"`
+				}
+				_ = json.Unmarshal(in, &a)
+				kind := a.Kind
+				if kind == "" {
+					kind = "memory"
+				}
+				if t := strings.TrimSpace(a.Text); t != "" {
+					return fmt.Sprintf("Remember (%s): %s", kind, truncate(t, 60))
+				}
+				return "Remember a " + kind
+			},
+		},
+		{
 			Name:        "log_workout",
 			Description: "Record a workout (completed by default, or status=planned for a scheduled session). source is 'manual' for coach-entered sessions. started_at/ended_at are RFC3339. Optionally set sport, name, kcal_burned, tss, rpe (1-10), distance_m, notes.",
 			Schema:      `{"type":"object","properties":{"source":{"type":"string","enum":["manual","garmin","other"]},"sport":{"type":"string","enum":["run","bike","swim","strength","other"]},"status":{"type":"string","enum":["completed","planned"]},"name":{"type":"string"},"started_at":{"type":"string"},"ended_at":{"type":"string"},"kcal_burned":{"type":"number"},"tss":{"type":"number"},"rpe":{"type":"integer"},"distance_m":{"type":"number"},"notes":{"type":"string"}},"required":["source","sport","started_at","ended_at"]}`,

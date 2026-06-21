@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vinzenzs/kazper/internal/bodyweight"
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/dailycontext"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/goals"
@@ -40,6 +41,7 @@ type fix struct {
 	recovery         *recoverymetrics.Repo
 	fitness          *fitnessmetrics.Repo
 	hydrationBalance *hydrationbalance.Repo
+	coachMemory      *coachmemory.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -63,10 +65,12 @@ func setup(t *testing.T) *fix {
 	recoveryRepo := recoverymetrics.NewRepo(pool)
 	fitnessRepo := fitnessmetrics.NewRepo(pool)
 	hydrationBalRepo := hydrationbalance.NewRepo(pool)
+	coachMemoryRepo := coachmemory.NewRepo(pool)
 	svc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, overridesRepo, phRepo,
 		recoveryRepo, fitnessRepo, hydrationBalRepo,
+		coachMemoryRepo,
 	)
 	return &fix{
 		svc:              svc,
@@ -82,6 +86,7 @@ func setup(t *testing.T) *fix {
 		goalsOverrides:   overridesRepo,
 		templates:        tplRepo,
 		phases:           phRepo,
+		coachMemory:      coachMemoryRepo,
 	}
 }
 
@@ -252,6 +257,50 @@ func TestBuildFor_EmptyDay(t *testing.T) {
 	assert.Nil(t, out.Phase)
 	assert.False(t, out.GoalOverride.Present)
 	assert.Nil(t, out.GoalOverride.Goals)
+	// Memory is an empty (non-nil) array on a quiet day.
+	require.NotNil(t, out.Memory)
+	assert.Empty(t, out.Memory)
+}
+
+// TestBuildFor_FoldsInActiveMemory is the fold-in payoff: a dateless standing
+// item rides the daily context, a same-day recommendation rides it, an
+// out-of-window recommendation does not, an expired item is excluded, and an
+// item past its review date is flagged needs_review.
+func TestBuildFor_FoldsInActiveMemory(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	mk := func(in coachmemory.CreateInput) {
+		_, err := coachmemory.NewService(f.coachMemory).Create(ctx, in)
+		require.NoError(t, err)
+	}
+	// Standing constraint, past its review date → needs_review.
+	mk(coachmemory.CreateInput{Kind: "constraint", Text: "knee niggle", ReviewAt: ptr("2026-07-10")})
+	// Recommendation dated to the requested day → included.
+	mk(coachmemory.CreateInput{Kind: "recommendation", Text: "220g carbs", Date: ptr("2026-07-15")})
+	// Recommendation on another day → excluded.
+	mk(coachmemory.CreateInput{Kind: "recommendation", Text: "old advice", Date: ptr("2026-07-01")})
+	// Expired observation → excluded.
+	mk(coachmemory.CreateInput{Kind: "observation", Text: "stale", ExpiresAt: ptr("2026-07-01")})
+
+	out, err := f.svc.BuildFor(ctx, date, loc)
+	require.NoError(t, err)
+
+	texts := map[string]bool{}
+	var flaggedKnee bool
+	for _, m := range out.Memory {
+		texts[m.Text] = true
+		if m.Text == "knee niggle" {
+			flaggedKnee = m.NeedsReview
+		}
+	}
+	assert.True(t, texts["knee niggle"], "standing item should ride the daily context")
+	assert.True(t, texts["220g carbs"], "same-day recommendation should be included")
+	assert.False(t, texts["old advice"], "out-of-window recommendation should be excluded")
+	assert.False(t, texts["stale"], "expired item should be excluded")
+	assert.True(t, flaggedKnee, "item past review_at should be flagged needs_review")
 }
 
 // TestBuildFor_WeightCarryover_PriorEntry: no entry today, one 5 days back.

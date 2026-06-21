@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vinzenzs/kazper/internal/bodyweight"
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/goals"
 	"github.com/vinzenzs/kazper/internal/hydration"
@@ -34,6 +35,7 @@ type Service struct {
 	recoveryRepo      *recoverymetrics.Repo
 	fitnessRepo       *fitnessmetrics.Repo
 	hydrationBalRepo  *hydrationbalance.Repo
+	coachMemoryRepo   *coachmemory.Repo
 	summarySvc        *summary.Service
 }
 
@@ -50,6 +52,7 @@ func NewService(
 	recoveryRepo *recoverymetrics.Repo,
 	fitnessRepo *fitnessmetrics.Repo,
 	hydrationBalRepo *hydrationbalance.Repo,
+	coachMemoryRepo *coachmemory.Repo,
 ) *Service {
 	return &Service{
 		summarySvc:        summarySvc,
@@ -62,6 +65,7 @@ func NewService(
 		recoveryRepo:      recoveryRepo,
 		fitnessRepo:       fitnessRepo,
 		hydrationBalRepo:  hydrationBalRepo,
+		coachMemoryRepo:   coachMemoryRepo,
 	}
 }
 
@@ -76,8 +80,9 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 	out := &DailyContext{
 		Date:        date.Format("2006-01-02"),
 		TZ:          loc.String(),
-		Workouts:    []*WorkoutLite{},     // never nil — empty array on quiet days
-		WorkoutFuel: []*WorkoutFuelLite{}, // ditto
+		Workouts:    []*WorkoutLite{},        // never nil — empty array on quiet days
+		WorkoutFuel: []*WorkoutFuelLite{},    // ditto
+		Memory:      []*coachmemory.Memory{}, // ditto
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -247,6 +252,23 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		out.HydrationBalance = snap
 		return nil
 	})
+
+	// Active coach memory folded into grounding: standing items always, plus any
+	// recommendation dated to the requested day; needs_review flagged. nil repo
+	// (unit tests) leaves the empty slice.
+	if s.coachMemoryRepo != nil {
+		g.Go(func() error {
+			d := date.Format("2006-01-02")
+			mem, err := s.coachMemoryRepo.ListActiveForGrounding(gctx, d, d, d)
+			if err != nil {
+				return fmt.Errorf("coach memory: %w", err)
+			}
+			if mem != nil {
+				out.Memory = mem
+			}
+			return nil
+		})
+	}
 
 	// Goal override on the date.
 	g.Go(func() error {

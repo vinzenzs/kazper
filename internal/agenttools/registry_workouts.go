@@ -55,10 +55,10 @@ type GetWorkoutArgs struct {
 }
 
 type WorkoutAdherenceArgs struct {
-	From    string  `json:"from" jsonschema:"inclusive start date YYYY-MM-DD (local)"`
-	To      string  `json:"to" jsonschema:"inclusive end date YYYY-MM-DD (local); max 92-day span"`
-	TZ      *string `json:"tz,omitempty" jsonschema:"optional IANA timezone for the date window and the now-comparison (defaults to the configured user timezone)"`
-	PlanID  *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
+	From   string  `json:"from" jsonschema:"inclusive start date YYYY-MM-DD (local)"`
+	To     string  `json:"to" jsonschema:"inclusive end date YYYY-MM-DD (local); max 92-day span"`
+	TZ     *string `json:"tz,omitempty" jsonschema:"optional IANA timezone for the date window and the now-comparison (defaults to the configured user timezone)"`
+	PlanID *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
 }
 
 type PatchWorkoutArgs struct {

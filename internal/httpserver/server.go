@@ -18,7 +18,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/chat"
 	"github.com/vinzenzs/kazper/internal/chatsessions"
 	"github.com/vinzenzs/kazper/internal/coachcontext"
-	"github.com/vinzenzs/kazper/internal/coachrecs"
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/config"
 	"github.com/vinzenzs/kazper/internal/cookidoo"
 	"github.com/vinzenzs/kazper/internal/dailycontext"
@@ -216,7 +216,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	gearSvc := gear.NewService(gearRepo)
 	personalRecordsRepo := personalrecords.NewRepo(pool)
 	personalRecordsSvc := personalrecords.NewService(personalRecordsRepo)
-	coachRecsSvc := coachrecs.NewService(coachrecs.NewRepo(pool))
+	coachMemoryRepo := coachmemory.NewRepo(pool)
+	coachMemorySvc := coachmemory.NewService(coachMemoryRepo)
 	athleteConfigRepo := athleteconfig.NewRepo(pool)
 	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo)
 	// Cross-inject athlete-config so the workouts service can derive a bike
@@ -333,7 +334,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	dailysummary.NewHandlers(dailySummarySvc).Register(api)
 	gear.NewHandlers(gearSvc).Register(api)
 	personalrecords.NewHandlers(personalRecordsSvc).Register(api)
-	coachrecs.NewHandlers(coachRecsSvc, cfg.DefaultUserTZ, logger).Register(api)
+	coachmemory.NewHandlers(coachMemorySvc, cfg.DefaultUserTZ, logger).Register(api)
 	athleteconfig.NewHandlers(athleteConfigSvc).Register(api)
 	devices.NewHandlers(devicesSvc).Register(api)
 	healthvitals.NewHandlers(healthVitalsSvc).Register(api)
@@ -354,6 +355,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
+		coachMemoryRepo,
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)
@@ -363,6 +365,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Cross-inject the macrocycle repo so /context/training surfaces the season
 	// covering the anchor date + the current period's position (add-macrocycle-planning).
 	coachCtxSvc.SetMacrocycleRepo(macrocycleRepo)
+	// Cross-inject coach memory so /context/training folds in active standing
+	// items + window-scoped recommendations (widen-coach-recs-to-memory).
+	coachCtxSvc.SetMemoryRepo(coachMemoryRepo)
 	coachcontext.NewHandlers(coachCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
 	// engages when an Idempotency-Key header is present, and the chat client does

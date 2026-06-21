@@ -11,6 +11,7 @@ import (
 
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/bodyweight"
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/macrocycle"
 	"github.com/vinzenzs/kazper/internal/multisport"
@@ -32,6 +33,13 @@ type multisportRepo interface {
 // (nil-safe) so the macrocycle block stays optional.
 type macrocycleLookup interface {
 	CoveringFor(ctx context.Context, date time.Time) (*macrocycle.Covering, error)
+}
+
+// memoryLookup is the narrow read the training context needs to fold active
+// coach memory into grounding. Satisfied by *coachmemory.Repo; cross-injected
+// (nil-safe) so the memory block stays optional.
+type memoryLookup interface {
+	ListActiveForGrounding(ctx context.Context, asOf, recFrom, recTo string) ([]*coachmemory.Memory, error)
 }
 
 // Window defaults and clamps for the aggregate reads.
@@ -56,6 +64,7 @@ type Service struct {
 	bodyWeightRepo    *bodyweight.Repo
 	multisportRepo    multisportRepo
 	macrocycleRepo    macrocycleLookup
+	memoryRepo        memoryLookup
 }
 
 // SetMultisportRepo cross-injects the multisport-template repo the recent-load
@@ -69,6 +78,11 @@ func (s *Service) SetMultisportRepo(r multisportRepo) { s.multisportRepo = r }
 // to surface the season covering the anchor date. Optional: when unset, the
 // `macrocycle` block is always null. Wired in httpserver.Run().
 func (s *Service) SetMacrocycleRepo(r macrocycleLookup) { s.macrocycleRepo = r }
+
+// SetMemoryRepo cross-injects the coach-memory repo the training bundle folds
+// into grounding. Optional: when unset, the `memory` block is an empty array.
+// Wired in httpserver.Run().
+func (s *Service) SetMemoryRepo(r memoryLookup) { s.memoryRepo = r }
 
 func NewService(
 	workoutsRepo *workouts.Repo,
@@ -121,6 +135,7 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 		RecentWorkouts:   []*WorkoutLite{},
 		UpcomingWorkouts: []*WorkoutLite{},
 		RecentLoad:       LoadSummary{BySport: map[string]int{}},
+		Memory:           []*coachmemory.Memory{},
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -224,6 +239,23 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 		out.RecentLoad = summarize(ws, s.segmentSportResolver(gctx))
 		return nil
 	})
+
+	// Active coach memory folded into grounding: standing items always, plus
+	// recommendations dated within the lookback window; needs_review flagged.
+	// Optional — nil repo leaves the empty slice.
+	if s.memoryRepo != nil {
+		g.Go(func() error {
+			recFrom := dayStart.AddDate(0, 0, -lookbackDays).Format("2006-01-02")
+			mem, err := s.memoryRepo.ListActiveForGrounding(gctx, dateStr, recFrom, dateStr)
+			if err != nil {
+				return fmt.Errorf("coach memory: %w", err)
+			}
+			if mem != nil {
+				out.Memory = mem
+			}
+			return nil
+		})
+	}
 
 	// Upcoming planned workouts in [date, date+lookahead].
 	g.Go(func() error {

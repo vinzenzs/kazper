@@ -544,32 +544,32 @@ const docTemplate = `{
                 }
             }
         },
-        "/coach/recommendations": {
+        "/coach/memory": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns recommendations whose date falls in [from, to] (inclusive local dates), newest-first, optionally narrowed to one scope.",
+                "description": "Standing items (fact/preference/constraint/observation) are returned regardless of the window; recommendations are filtered to [from, to] (inclusive local dates). Newest-first. Archived and expired items are excluded unless include_archived=true. Optional kind/scope filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "coach-recommendations"
+                    "coach-memory"
                 ],
-                "summary": "List coach recommendations in a date window",
+                "summary": "List coach memory in a window",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Inclusive start date YYYY-MM-DD",
+                        "description": "Inclusive start date YYYY-MM-DD (recommendation window)",
                         "name": "from",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Inclusive end date YYYY-MM-DD",
+                        "description": "Inclusive end date YYYY-MM-DD (recommendation window)",
                         "name": "to",
                         "in": "query",
                         "required": true
@@ -582,21 +582,33 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by scope: fueling | training | recovery | race | general",
+                        "description": "Filter: fact | preference | constraint | observation | recommendation",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter: fueling | training | recovery | race | general",
                         "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include archived rows (default false)",
+                        "name": "include_archived",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "{ recommendations: [...] }",
+                        "description": "{ memory: [...] }",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "window_required | date_invalid | window_invalid | tz_invalid | scope_invalid",
+                        "description": "window_required | date_invalid | window_invalid | tz_invalid | kind_invalid | scope_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -612,7 +624,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Appends one coach-authored recommendation to the dated log. A storage primitive only — the server stores the supplied text verbatim and never generates or interprets a recommendation, and recording one does NOT change any enforced goal/override target. Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
+                "description": "Appends one coach-authored memory item — a ` + "`" + `kind` + "`" + ` of fact, preference, constraint, observation, or recommendation, with required ` + "`" + `text` + "`" + `. A recommendation requires a ` + "`" + `date` + "`" + `; standing kinds may be dateless. A storage primitive only — text is stored verbatim and recording one does NOT change any enforced goal/override target. Standard ` + "`" + `Idempotency-Key` + "`" + ` header supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -620,9 +632,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "coach-recommendations"
+                    "coach-memory"
                 ],
-                "summary": "Record a coach recommendation",
+                "summary": "Record a coach-memory item",
                 "parameters": [
                     {
                         "type": "string",
@@ -631,12 +643,12 @@ const docTemplate = `{
                         "in": "header"
                     },
                     {
-                        "description": "Recommendation",
+                        "description": "Memory item",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/coachrecs.createRequest"
+                            "$ref": "#/definitions/coachmemory.createRequest"
                         }
                     }
                 ],
@@ -644,11 +656,11 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/coachrecs.Recommendation"
+                            "$ref": "#/definitions/coachmemory.Memory"
                         }
                     },
                     "400": {
-                        "description": "invalid_json | date_invalid | scope_invalid | recommendation_required",
+                        "description": "invalid_json | kind_invalid | text_required | scope_invalid | date_invalid | date_required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -659,7 +671,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/coach/recommendations/{id}": {
+        "/coach/memory/{id}": {
             "get": {
                 "security": [
                     {
@@ -670,13 +682,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "coach-recommendations"
+                    "coach-memory"
                 ],
-                "summary": "Get a coach recommendation by id",
+                "summary": "Get a coach-memory item by id",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Recommendation UUID",
+                        "description": "Memory UUID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -686,11 +698,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/coachrecs.Recommendation"
+                            "$ref": "#/definitions/coachmemory.Memory"
                         }
                     },
                     "404": {
-                        "description": "recommendation_not_found",
+                        "description": "memory_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -706,15 +718,15 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Removes a superseded/incorrect recommendation. Corrections are a delete followed by a re-log (there is no PATCH).",
+                "description": "Removes a memory item. A content correction is a delete followed by a re-log.",
                 "tags": [
-                    "coach-recommendations"
+                    "coach-memory"
                 ],
-                "summary": "Delete a coach recommendation",
+                "summary": "Delete a coach-memory item",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Recommendation UUID",
+                        "description": "Memory UUID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -725,7 +737,70 @@ const docTemplate = `{
                         "description": "No Content"
                     },
                     "404": {
-                        "description": "recommendation_not_found",
+                        "description": "memory_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lifecycle-only: ` + "`" + `review_at` + "`" + `, ` + "`" + `expires_at` + "`" + `, and ` + "`" + `status` + "`" + ` (active|archived). Content (text/kind/scope/date) is immutable here — correct it with a delete + re-log. Tri-state on the two date fields: omit to leave unchanged, value to set, JSON null to clear. ` + "`" + `created_at` + "`" + ` is preserved.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "coach-memory"
+                ],
+                "summary": "Update a coach-memory item's lifecycle (review/expire/status)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Memory UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Lifecycle fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/coachmemory.Memory"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | field_immutable | date_invalid | status_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "memory_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3904,6 +3979,234 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "hydration_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/macrocycles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every macrocycle ordered by start_date descending. The nested member phases are omitted; fetch a macrocycle by id for its progression.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "macrocycles"
+                ],
+                "summary": "List all macrocycles (seasons)",
+                "responses": {
+                    "200": {
+                        "description": "{\\\"macrocycles\\\": [Macrocycle]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A macrocycle is a named, dated season container that orders training-phases into a yearly progression. Optionally anchored to a goal race via race_id (the A-race the season peaks for). Planning/visualization only — it does not affect adherence or plan materialization.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "macrocycles"
+                ],
+                "summary": "Create a macrocycle (training season)",
+                "parameters": [
+                    {
+                        "description": "Macrocycle fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/macrocycle.createRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "{\\\"macrocycle\\\": Macrocycle}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "macrocycle_name_invalid | macrocycle_name_too_long | date_range_invalid | date_invalid | race_id_invalid | race_not_found | invalid_json",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/macrocycles/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "macrocycles"
+                ],
+                "summary": "Get a macrocycle with its ordered member phases",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Macrocycle id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"macrocycle\\\": Macrocycle}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "macrocycle_id_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "macrocycle_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Member phases survive — their macrocycle_id is set NULL (ON DELETE SET NULL) and they continue to drive adherence unchanged.",
+                "tags": [
+                    "macrocycles"
+                ],
+                "summary": "Delete a macrocycle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Macrocycle id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "400": {
+                        "description": "macrocycle_id_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "macrocycle_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Tri-state on race_id: empty string clears the anchor, UUID sets, missing leaves unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "macrocycles"
+                ],
+                "summary": "Partially update a macrocycle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Macrocycle id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/macrocycle.patchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"macrocycle\\\": Macrocycle}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "macrocycle_id_invalid | invalid_json | patch_empty | macrocycle_name_invalid | macrocycle_name_too_long | date_invalid | date_range_invalid | race_id_invalid | race_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "macrocycle_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -8996,6 +9299,44 @@ const docTemplate = `{
                 }
             }
         },
+        "coachcontext.MacrocycleLite": {
+            "type": "object",
+            "properties": {
+                "current_phase_ordinal": {
+                    "description": "CurrentPhaseOrdinal is the covering phase's macrocycle_ordinal when that\nphase belongs to this season, else null. TotalPeriods is the count of\nphases linked to the season.",
+                    "type": "integer"
+                },
+                "days_to_race": {
+                    "description": "DaysToRace is race_date − anchor_date in whole days, present only when the\nseason is race-anchored.",
+                    "type": "integer"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "description": "Race anchor — all null when the season has no race_id.",
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "total_periods": {
+                    "type": "integer"
+                }
+            }
+        },
         "coachcontext.PhaseLite": {
             "type": "object",
             "properties": {
@@ -9067,6 +9408,21 @@ const docTemplate = `{
                 "lookback_days": {
                     "type": "integer"
                 },
+                "macrocycle": {
+                    "description": "Macrocycle is the season covering the anchor date + the current period's\nposition in the progression; null when no season covers the date.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/coachcontext.MacrocycleLite"
+                        }
+                    ]
+                },
+                "memory": {
+                    "description": "Memory is the active coach-memory folded into grounding: standing items\nalways, plus recommendations dated within the lookback window; needs_review\nflagged. Never nil; empty array when there's no active memory. This is what\nlets the MCP agent ground on what the in-app coach was told (and vice-versa)\nwithout sharing conversation transcripts. See widen-coach-recs-to-memory.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/coachmemory.Memory"
+                    }
+                },
                 "phase": {
                     "$ref": "#/definitions/coachcontext.PhaseLite"
                 },
@@ -9126,34 +9482,69 @@ const docTemplate = `{
                 }
             }
         },
-        "coachrecs.Recommendation": {
+        "coachmemory.Kind": {
+            "type": "string",
+            "enum": [
+                "fact",
+                "preference",
+                "constraint",
+                "observation",
+                "recommendation"
+            ],
+            "x-enum-varnames": [
+                "KindFact",
+                "KindPreference",
+                "KindConstraint",
+                "KindObservation",
+                "KindRecommendation"
+            ]
+        },
+        "coachmemory.Memory": {
             "type": "object",
             "properties": {
                 "created_at": {
                     "type": "string"
                 },
                 "date": {
-                    "description": "YYYY-MM-DD",
+                    "description": "YYYY-MM-DD; required when kind=recommendation",
+                    "type": "string"
+                },
+                "expires_at": {
+                    "description": "YYYY-MM-DD; hard cutoff",
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
+                "kind": {
+                    "$ref": "#/definitions/coachmemory.Kind"
+                },
+                "needs_review": {
+                    "description": "NeedsReview is derived at grounding time (review_at \u003c= as-of date), never\nstored. Omitted from the plain CRUD responses; set on the context blocks.",
+                    "type": "boolean"
+                },
                 "reason": {
                     "type": "string"
                 },
-                "recommendation": {
+                "review_at": {
+                    "description": "YYYY-MM-DD; soft \"still true?\"",
                     "type": "string"
                 },
                 "scope": {
-                    "$ref": "#/definitions/coachrecs.Scope"
+                    "$ref": "#/definitions/coachmemory.Scope"
+                },
+                "status": {
+                    "$ref": "#/definitions/coachmemory.Status"
+                },
+                "text": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "coachrecs.Scope": {
+        "coachmemory.Scope": {
             "type": "string",
             "enum": [
                 "fueling",
@@ -9170,19 +9561,39 @@ const docTemplate = `{
                 "ScopeGeneral"
             ]
         },
-        "coachrecs.createRequest": {
+        "coachmemory.Status": {
+            "type": "string",
+            "enum": [
+                "active",
+                "archived"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusArchived"
+            ]
+        },
+        "coachmemory.createRequest": {
             "type": "object",
             "properties": {
                 "date": {
                     "type": "string"
                 },
+                "expires_at": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
                 "reason": {
                     "type": "string"
                 },
-                "recommendation": {
+                "review_at": {
                     "type": "string"
                 },
                 "scope": {
+                    "type": "string"
+                },
+                "text": {
                     "type": "string"
                 }
             }
@@ -9226,6 +9637,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/hydrationbalance.Snapshot"
                         }
                     ]
+                },
+                "memory": {
+                    "description": "Memory is the active coach-memory folded into grounding (standing items +\nrecommendations for the date), needs_review flagged. Never nil; empty array\nwhen there's no active memory. See widen-coach-recs-to-memory.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/coachmemory.Memory"
+                    }
                 },
                 "nutrition": {
                     "$ref": "#/definitions/dailycontext.NutritionBlock"
@@ -9995,6 +10413,52 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "macrocycle.createRequest": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "methodology": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "macrocycle.patchRequest": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "methodology": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "string"
+                },
+                "start_date": {
                     "type": "string"
                 }
             }
@@ -11745,6 +12209,12 @@ const docTemplate = `{
                 "end_date": {
                     "type": "string"
                 },
+                "macrocycle_id": {
+                    "type": "string"
+                },
+                "macrocycle_ordinal": {
+                    "type": "integer"
+                },
                 "methodology": {
                     "type": "string"
                 },
@@ -11756,6 +12226,12 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                },
+                "target_weekly_hours": {
+                    "type": "number"
+                },
+                "target_weekly_tss": {
+                    "type": "number"
                 },
                 "type": {
                     "type": "string"
@@ -11771,6 +12247,12 @@ const docTemplate = `{
                 "end_date": {
                     "type": "string"
                 },
+                "macrocycle_id": {
+                    "type": "string"
+                },
+                "macrocycle_ordinal": {
+                    "type": "integer"
+                },
                 "methodology": {
                     "type": "string"
                 },
@@ -11782,6 +12264,12 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                },
+                "target_weekly_hours": {
+                    "type": "number"
+                },
+                "target_weekly_tss": {
+                    "type": "number"
                 },
                 "type": {
                     "type": "string"

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
+	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
@@ -101,6 +102,12 @@ type TrainingContext struct {
 	RecentLoad       LoadSummary    `json:"recent_load"`
 	RecentWorkouts   []*WorkoutLite `json:"recent_workouts"`
 	UpcomingWorkouts []*WorkoutLite `json:"upcoming_workouts"`
+	// Memory is the active coach-memory folded into grounding: standing items
+	// always, plus recommendations dated within the lookback window; needs_review
+	// flagged. Never nil; empty array when there's no active memory. This is what
+	// lets the MCP agent ground on what the in-app coach was told (and vice-versa)
+	// without sharing conversation transcripts. See widen-coach-recs-to-memory.
+	Memory []*coachmemory.Memory `json:"memory"`
 }
 
 // RecoveryContext is the GET /context/recovery bundle.

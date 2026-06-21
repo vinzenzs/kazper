@@ -12,8 +12,8 @@ import (
 
 // Template-name and -value validation errors. Handler-facing.
 var (
-	ErrTemplateNameInvalid  = errors.New("template_name_invalid")
-	ErrTemplateNameTooLong  = errors.New("template_name_too_long")
+	ErrTemplateNameInvalid = errors.New("template_name_invalid")
+	ErrTemplateNameTooLong = errors.New("template_name_too_long")
 )
 
 // MaxTemplateNameLength matches the migration's CHECK constraint.

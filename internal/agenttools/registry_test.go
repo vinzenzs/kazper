@@ -26,6 +26,7 @@ func TestRegistry_ExactSurface(t *testing.T) {
 		// coach aggregate reads
 		"get_training_context", "get_recovery_context",
 		// coach write-confirm actions
+		"remember",
 		"log_workout", "patch_workout", "delete_workout",
 		"log_weight", "log_hydration", "log_meal_freeform",
 		"set_daily_goal_override", "delete_daily_goal_override",
@@ -56,6 +57,7 @@ func TestRegistry_SchemasValidAndTiers(t *testing.T) {
 		"update_shopping_item":         TierWriteAuto,
 		"clear_checked_shopping_items": TierWriteAuto,
 
+		"remember":                   TierWriteConfirm,
 		"log_workout":                TierWriteConfirm,
 		"patch_workout":              TierWriteConfirm,
 		"delete_workout":             TierWriteConfirm,

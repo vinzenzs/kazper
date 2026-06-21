@@ -282,6 +282,37 @@ definitions:
       total_kcal:
         type: number
     type: object
+  coachcontext.MacrocycleLite:
+    properties:
+      current_phase_ordinal:
+        description: |-
+          CurrentPhaseOrdinal is the covering phase's macrocycle_ordinal when that
+          phase belongs to this season, else null. TotalPeriods is the count of
+          phases linked to the season.
+        type: integer
+      days_to_race:
+        description: |-
+          DaysToRace is race_date − anchor_date in whole days, present only when the
+          season is race-anchored.
+        type: integer
+      end_date:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      race_date:
+        type: string
+      race_id:
+        description: Race anchor — all null when the season has no race_id.
+        type: string
+      race_name:
+        type: string
+      start_date:
+        type: string
+      total_periods:
+        type: integer
+    type: object
   coachcontext.PhaseLite:
     properties:
       end_date:
@@ -336,6 +367,22 @@ definitions:
         type: integer
       lookback_days:
         type: integer
+      macrocycle:
+        allOf:
+        - $ref: '#/definitions/coachcontext.MacrocycleLite'
+        description: |-
+          Macrocycle is the season covering the anchor date + the current period's
+          position in the progression; null when no season covers the date.
+      memory:
+        description: |-
+          Memory is the active coach-memory folded into grounding: standing items
+          always, plus recommendations dated within the lookback window; needs_review
+          flagged. Never nil; empty array when there's no active memory. This is what
+          lets the MCP agent ground on what the in-app coach was told (and vice-versa)
+          without sharing conversation transcripts. See widen-coach-recs-to-memory.
+        items:
+          $ref: '#/definitions/coachmemory.Memory'
+        type: array
       phase:
         $ref: '#/definitions/coachcontext.PhaseLite'
       recent_load:
@@ -378,25 +425,54 @@ definitions:
       tss:
         type: number
     type: object
-  coachrecs.Recommendation:
+  coachmemory.Kind:
+    enum:
+    - fact
+    - preference
+    - constraint
+    - observation
+    - recommendation
+    type: string
+    x-enum-varnames:
+    - KindFact
+    - KindPreference
+    - KindConstraint
+    - KindObservation
+    - KindRecommendation
+  coachmemory.Memory:
     properties:
       created_at:
         type: string
       date:
-        description: YYYY-MM-DD
+        description: YYYY-MM-DD; required when kind=recommendation
+        type: string
+      expires_at:
+        description: YYYY-MM-DD; hard cutoff
         type: string
       id:
         type: string
+      kind:
+        $ref: '#/definitions/coachmemory.Kind'
+      needs_review:
+        description: |-
+          NeedsReview is derived at grounding time (review_at <= as-of date), never
+          stored. Omitted from the plain CRUD responses; set on the context blocks.
+        type: boolean
       reason:
         type: string
-      recommendation:
+      review_at:
+        description: YYYY-MM-DD; soft "still true?"
         type: string
       scope:
-        $ref: '#/definitions/coachrecs.Scope'
+        $ref: '#/definitions/coachmemory.Scope'
+      status:
+        $ref: '#/definitions/coachmemory.Status'
+      text:
+        type: string
       updated_at:
         type: string
     type: object
-  coachrecs.Scope:
+  coachmemory.Scope:
     enum:
     - fueling
     - training
@@ -410,15 +486,29 @@ definitions:
     - ScopeRecovery
     - ScopeRace
     - ScopeGeneral
-  coachrecs.createRequest:
+  coachmemory.Status:
+    enum:
+    - active
+    - archived
+    type: string
+    x-enum-varnames:
+    - StatusActive
+    - StatusArchived
+  coachmemory.createRequest:
     properties:
       date:
         type: string
+      expires_at:
+        type: string
+      kind:
+        type: string
       reason:
         type: string
-      recommendation:
+      review_at:
         type: string
       scope:
+        type: string
+      text:
         type: string
     type: object
   dailycontext.AdherenceBlock:
@@ -448,6 +538,14 @@ definitions:
         description: |-
           Garmin's daily water-balance estimate (sweat out, activity intake in, goal).
           Same-day-or-null. Distinct from the Hydration block (logged intake).
+      memory:
+        description: |-
+          Memory is the active coach-memory folded into grounding (standing items +
+          recommendations for the date), needs_review flagged. Never nil; empty array
+          when there's no active memory. See widen-coach-recs-to-memory.
+        items:
+          $ref: '#/definitions/coachmemory.Memory'
+        type: array
       nutrition:
         $ref: '#/definitions/dailycontext.NutritionBlock'
       phase:
@@ -955,6 +1053,36 @@ definitions:
       sweat_loss_ml:
         type: number
       updated_at:
+        type: string
+    type: object
+  macrocycle.createRequest:
+    properties:
+      end_date:
+        type: string
+      methodology:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      race_id:
+        type: string
+      start_date:
+        type: string
+    type: object
+  macrocycle.patchRequest:
+    properties:
+      end_date:
+        type: string
+      methodology:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      race_id:
+        type: string
+      start_date:
         type: string
     type: object
   mealplan.PlannedMeal:
@@ -2171,6 +2299,10 @@ definitions:
         type: string
       end_date:
         type: string
+      macrocycle_id:
+        type: string
+      macrocycle_ordinal:
+        type: integer
       methodology:
         type: string
       name:
@@ -2179,6 +2311,10 @@ definitions:
         type: string
       start_date:
         type: string
+      target_weekly_hours:
+        type: number
+      target_weekly_tss:
+        type: number
       type:
         type: string
     type: object
@@ -2188,6 +2324,10 @@ definitions:
         type: string
       end_date:
         type: string
+      macrocycle_id:
+        type: string
+      macrocycle_ordinal:
+        type: integer
       methodology:
         type: string
       name:
@@ -2196,6 +2336,10 @@ definitions:
         type: string
       start_date:
         type: string
+      target_weekly_hours:
+        type: number
+      target_weekly_tss:
+        type: number
       type:
         type: string
     type: object
@@ -3311,17 +3455,19 @@ paths:
       summary: Resume a chat session paused awaiting a write confirmation
       tags:
       - chat
-  /coach/recommendations:
+  /coach/memory:
     get:
-      description: Returns recommendations whose date falls in [from, to] (inclusive
-        local dates), newest-first, optionally narrowed to one scope.
+      description: Standing items (fact/preference/constraint/observation) are returned
+        regardless of the window; recommendations are filtered to [from, to] (inclusive
+        local dates). Newest-first. Archived and expired items are excluded unless
+        include_archived=true. Optional kind/scope filters.
       parameters:
-      - description: Inclusive start date YYYY-MM-DD
+      - description: Inclusive start date YYYY-MM-DD (recommendation window)
         in: query
         name: from
         required: true
         type: string
-      - description: Inclusive end date YYYY-MM-DD
+      - description: Inclusive end date YYYY-MM-DD (recommendation window)
         in: query
         name: to
         required: true
@@ -3330,72 +3476,82 @@ paths:
         in: query
         name: tz
         type: string
-      - description: 'Filter by scope: fueling | training | recovery | race | general'
+      - description: 'Filter: fact | preference | constraint | observation | recommendation'
+        in: query
+        name: kind
+        type: string
+      - description: 'Filter: fueling | training | recovery | race | general'
         in: query
         name: scope
         type: string
+      - description: Include archived rows (default false)
+        in: query
+        name: include_archived
+        type: boolean
       produces:
       - application/json
       responses:
         "200":
-          description: '{ recommendations: [...] }'
+          description: '{ memory: [...] }'
           schema:
             additionalProperties: true
             type: object
         "400":
           description: window_required | date_invalid | window_invalid | tz_invalid
-            | scope_invalid
+            | kind_invalid | scope_invalid
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: List coach recommendations in a date window
+      summary: List coach memory in a window
       tags:
-      - coach-recommendations
+      - coach-memory
     post:
       consumes:
       - application/json
-      description: Appends one coach-authored recommendation to the dated log. A storage
-        primitive only — the server stores the supplied text verbatim and never generates
-        or interprets a recommendation, and recording one does NOT change any enforced
-        goal/override target. Standard `Idempotency-Key` header supported.
+      description: Appends one coach-authored memory item — a `kind` of fact, preference,
+        constraint, observation, or recommendation, with required `text`. A recommendation
+        requires a `date`; standing kinds may be dateless. A storage primitive only
+        — text is stored verbatim and recording one does NOT change any enforced goal/override
+        target. Standard `Idempotency-Key` header supported.
       parameters:
       - description: Optional client-supplied idempotency key
         in: header
         name: Idempotency-Key
         type: string
-      - description: Recommendation
+      - description: Memory item
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/coachrecs.createRequest'
+          $ref: '#/definitions/coachmemory.createRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/coachrecs.Recommendation'
+            $ref: '#/definitions/coachmemory.Memory'
         "400":
-          description: invalid_json | date_invalid | scope_invalid | recommendation_required
+          description: invalid_json | kind_invalid | text_required | scope_invalid
+            | date_invalid | date_required
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: Record a coach recommendation
+      summary: Record a coach-memory item
       tags:
-      - coach-recommendations
-  /coach/recommendations/{id}:
+      - coach-memory
+  /coach/memory/{id}:
     delete:
-      description: Removes a superseded/incorrect recommendation. Corrections are
-        a delete followed by a re-log (there is no PATCH).
+      description: Removes a memory item. A content correction is a delete followed
+        by a re-log.
       parameters:
-      - description: Recommendation UUID
+      - description: Memory UUID
         in: path
         name: id
         required: true
@@ -3404,19 +3560,19 @@ paths:
         "204":
           description: No Content
         "404":
-          description: recommendation_not_found
+          description: memory_not_found
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: Delete a coach recommendation
+      summary: Delete a coach-memory item
       tags:
-      - coach-recommendations
+      - coach-memory
     get:
       parameters:
-      - description: Recommendation UUID
+      - description: Memory UUID
         in: path
         name: id
         required: true
@@ -3427,18 +3583,62 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/coachrecs.Recommendation'
+            $ref: '#/definitions/coachmemory.Memory'
         "404":
-          description: recommendation_not_found
+          description: memory_not_found
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: Get a coach recommendation by id
+      summary: Get a coach-memory item by id
       tags:
-      - coach-recommendations
+      - coach-memory
+    patch:
+      consumes:
+      - application/json
+      description: 'Lifecycle-only: `review_at`, `expires_at`, and `status` (active|archived).
+        Content (text/kind/scope/date) is immutable here — correct it with a delete
+        + re-log. Tri-state on the two date fields: omit to leave unchanged, value
+        to set, JSON null to clear. `created_at` is preserved.'
+      parameters:
+      - description: Memory UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Lifecycle fields
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/coachmemory.Memory'
+        "400":
+          description: invalid_json | field_immutable | date_invalid | status_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: memory_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a coach-memory item's lifecycle (review/expire/status)
+      tags:
+      - coach-memory
   /context/daily:
     get:
       description: One read that returns the day's adherence + nutrition totals +
@@ -5572,6 +5772,161 @@ paths:
       summary: Partially update a hydration entry
       tags:
       - hydration
+  /macrocycles:
+    get:
+      description: Returns every macrocycle ordered by start_date descending. The
+        nested member phases are omitted; fetch a macrocycle by id for its progression.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"macrocycles\": [Macrocycle]}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all macrocycles (seasons)
+      tags:
+      - macrocycles
+    post:
+      consumes:
+      - application/json
+      description: A macrocycle is a named, dated season container that orders training-phases
+        into a yearly progression. Optionally anchored to a goal race via race_id
+        (the A-race the season peaks for). Planning/visualization only — it does not
+        affect adherence or plan materialization.
+      parameters:
+      - description: Macrocycle fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/macrocycle.createRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: '{\"macrocycle\": Macrocycle}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: macrocycle_name_invalid | macrocycle_name_too_long | date_range_invalid
+            | date_invalid | race_id_invalid | race_not_found | invalid_json
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a macrocycle (training season)
+      tags:
+      - macrocycles
+  /macrocycles/{id}:
+    delete:
+      description: Member phases survive — their macrocycle_id is set NULL (ON DELETE
+        SET NULL) and they continue to drive adherence unchanged.
+      parameters:
+      - description: Macrocycle id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "400":
+          description: macrocycle_id_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: macrocycle_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a macrocycle
+      tags:
+      - macrocycles
+    get:
+      parameters:
+      - description: Macrocycle id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"macrocycle\": Macrocycle}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: macrocycle_id_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: macrocycle_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a macrocycle with its ordered member phases
+      tags:
+      - macrocycles
+    patch:
+      consumes:
+      - application/json
+      description: 'Tri-state on race_id: empty string clears the anchor, UUID sets,
+        missing leaves unchanged.'
+      parameters:
+      - description: Macrocycle id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/macrocycle.patchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"macrocycle\": Macrocycle}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: macrocycle_id_invalid | invalid_json | patch_empty | macrocycle_name_invalid
+            | macrocycle_name_too_long | date_invalid | date_range_invalid | race_id_invalid
+            | race_not_found
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: macrocycle_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Partially update a macrocycle
+      tags:
+      - macrocycles
   /meals:
     get:
       parameters:

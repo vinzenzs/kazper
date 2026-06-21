@@ -31,7 +31,7 @@ func TestSummarize_MultisportDecomposesBySport(t *testing.T) {
 		return nil, false
 	}
 	ws := []*workouts.Workout{
-		wkt(workouts.SportRun, 60, nil),       // plain run
+		wkt(workouts.SportRun, 60, nil),          // plain run
 		wkt(workouts.SportMultisport, 120, &tid), // brick → swim+bike+run
 	}
 	s := summarize(ws, resolve)
