@@ -42,6 +42,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/off"
 	"github.com/vinzenzs/kazper/internal/personalrecords"
 	"github.com/vinzenzs/kazper/internal/products"
+	"github.com/vinzenzs/kazper/internal/push"
 	"github.com/vinzenzs/kazper/internal/raceprep"
 	"github.com/vinzenzs/kazper/internal/races"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
@@ -273,6 +274,27 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
+	// Android push (opt-in, per add-garmin-relogin-push). The FCM sender is built
+	// only when both FCM keys are configured; otherwise the service runs with a
+	// nil sender (delivery is a no-op, token registration still persists). The
+	// service is cross-injected below as the relogin notifier (sync-status) and
+	// latch clearer (garmin-auth).
+	var pushSender push.Sender
+	if cfg.PushEnabled() {
+		saJSON, saErr := cfg.FCMServiceAccount()
+		if saErr != nil {
+			return saErr
+		}
+		fcm, fcmErr := push.NewFCMClient(cfg.FCMProjectID, saJSON, 10*time.Second)
+		if fcmErr != nil {
+			return fcmErr
+		}
+		pushSender = fcm
+	}
+	pushSvc := push.NewService(push.NewRepo(pool), pushSender, logger)
+	garminAuthSvc.SetReloginLatchClearer(pushSvc)
+	garminAuthSvc.SetLogger(logger)
+
 	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
 	defer cleanupCancel()
 	go idempotency.RunCleanup(cleanupCtx, idempRepo, cfg.IdempotencyTTL, 15*time.Minute, logger)
@@ -351,10 +373,20 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	garminControl.SetSchedulingDeps(workoutsRepo, workoutTemplatesRepo, trainingPlanSvc)
 	garminControl.SetMultisportRepo(multisportRepo)
 	garminControl.Register(api)
+	// Device push-token registration (per add-garmin-relogin-push): mobile-only;
+	// works whether or not FCM is configured so a device can register ahead of
+	// push being enabled.
+	push.NewHandlers(pushSvc).Register(api)
 	// Garmin sync-run log (per add-garmin-connect-and-sync-status): the bridge
 	// records each /sync run (garmin identity only); the app + coach read
 	// /garmin/sync-status. Gated 503 garmin_disabled when GARMIN_API_TOKEN is unset.
-	garminsyncstatus.NewHandlers(garminsyncstatus.NewService(garminsyncstatus.NewRepo(pool)), garminEnabled).Register(api)
+	// Cross-inject the push notifier + Garmin-token presence so an error-close
+	// with an absent token fires a relogin push and a success-close clears it.
+	syncStatusSvc := garminsyncstatus.NewService(garminsyncstatus.NewRepo(pool))
+	syncStatusSvc.SetReloginNotifier(pushSvc)
+	syncStatusSvc.SetGarminTokenPresence(garminAuthSvc)
+	syncStatusSvc.SetLogger(logger)
+	garminsyncstatus.NewHandlers(syncStatusSvc, garminEnabled).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,

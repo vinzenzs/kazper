@@ -8,9 +8,11 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -42,6 +44,13 @@ type Config struct {
 	// to it; when empty those endpoints return 503 garmin_disabled. Optional and
 	// independent of GarminToken (the bridge owns its own token identity).
 	GarminBridgeURL     string        `mapstructure:"GARMIN_BRIDGE_URL"`
+	// FCM push (opt-in, per add-garmin-relogin-push). Push is enabled only when
+	// BOTH FCMProjectID and FCMServiceAccountJSON are set; otherwise the push
+	// surface is inert (503 push_disabled, relogin notification is a no-op).
+	// FCMServiceAccountJSON is either inline service-account JSON or a path to a
+	// JSON file; it is a secret and is redacted in any config dump.
+	FCMProjectID          string      `mapstructure:"FCM_PROJECT_ID"`
+	FCMServiceAccountJSON string      `mapstructure:"FCM_SERVICE_ACCOUNT_JSON"`
 	DefaultUserTZ       string        `mapstructure:"DEFAULT_USER_TZ"`
 	OFFTimeout          time.Duration `mapstructure:"-"`
 	OFFTimeoutSeconds   int           `mapstructure:"OFF_TIMEOUT_SECONDS"`
@@ -92,6 +101,8 @@ var envKeys = []string{
 	"GARMIN_API_TOKEN",
 	"GARMIN_TOKEN_ENC_KEY",
 	"GARMIN_BRIDGE_URL",
+	"FCM_PROJECT_ID",
+	"FCM_SERVICE_ACCOUNT_JSON",
 	"DEFAULT_USER_TZ",
 	"OFF_TIMEOUT_SECONDS",
 	"OFF_USER_AGENT_CONTACT",
@@ -199,7 +210,54 @@ func (c *Config) ValidateForServe() error {
 			return err
 		}
 	}
+	// FCM push is opt-in: validate the service-account credential whenever it is
+	// supplied, so a malformed credential fails fast at startup rather than at
+	// first send. PushEnabled() additionally requires FCM_PROJECT_ID.
+	if c.FCMServiceAccountJSON != "" {
+		if _, err := c.FCMServiceAccount(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// PushEnabled reports whether Android push is configured. Push requires BOTH the
+// FCM project id and a service-account credential; with either unset the push
+// surface is inert (503 push_disabled, relogin notification is a no-op).
+func (c *Config) PushEnabled() bool {
+	return c.FCMProjectID != "" && c.FCMServiceAccountJSON != ""
+}
+
+// FCMServiceAccount resolves FCM_SERVICE_ACCOUNT_JSON to raw service-account
+// JSON — treating a value beginning with '{' as inline JSON and anything else as
+// a path to a JSON file — and verifies it parses as a Google service account
+// (type "service_account" with a client_email and private_key). Returns an error
+// naming the variable when unset or malformed.
+func (c *Config) FCMServiceAccount() ([]byte, error) {
+	raw := strings.TrimSpace(c.FCMServiceAccountJSON)
+	if raw == "" {
+		return nil, errors.New("FCM_SERVICE_ACCOUNT_JSON is required when FCM_PROJECT_ID is set")
+	}
+	data := []byte(raw)
+	if !strings.HasPrefix(raw, "{") {
+		b, err := os.ReadFile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("FCM_SERVICE_ACCOUNT_JSON path is unreadable: %w", err)
+		}
+		data = b
+	}
+	var sa struct {
+		Type        string `json:"type"`
+		ClientEmail string `json:"client_email"`
+		PrivateKey  string `json:"private_key"`
+	}
+	if err := json.Unmarshal(data, &sa); err != nil {
+		return nil, fmt.Errorf("FCM_SERVICE_ACCOUNT_JSON is not valid JSON: %w", err)
+	}
+	if sa.Type != "service_account" || sa.ClientEmail == "" || sa.PrivateKey == "" {
+		return nil, errors.New("FCM_SERVICE_ACCOUNT_JSON is not a Google service-account credential")
+	}
+	return data, nil
 }
 
 // GarminEncKey decodes GARMIN_TOKEN_ENC_KEY from base64 and verifies it is a
@@ -255,6 +313,7 @@ func (c *Config) Redacted() Config {
 	cp.AgentToken = redact(cp.AgentToken)
 	cp.GarminToken = redact(cp.GarminToken)
 	cp.GarminTokenEncKey = redact(cp.GarminTokenEncKey)
+	cp.FCMServiceAccountJSON = redact(cp.FCMServiceAccountJSON)
 	return cp
 }
 

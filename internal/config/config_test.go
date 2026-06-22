@@ -163,3 +163,67 @@ func validServeConfig() *Config {
 	c, _ := Load(v)
 	return c
 }
+
+const fakeServiceAccountJSON = `{"type":"service_account","project_id":"kazper","client_email":"push@kazper.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\nMIIBfake\n-----END PRIVATE KEY-----\n","token_uri":"https://oauth2.googleapis.com/token"}`
+
+func TestPushEnabled(t *testing.T) {
+	c := validServeConfig()
+	if c.PushEnabled() {
+		t.Errorf("PushEnabled with no FCM config = true, want false")
+	}
+
+	c.FCMProjectID = "kazper"
+	if c.PushEnabled() {
+		t.Errorf("PushEnabled with only project id = true, want false")
+	}
+
+	c.FCMServiceAccountJSON = fakeServiceAccountJSON
+	if !c.PushEnabled() {
+		t.Errorf("PushEnabled with both keys = false, want true")
+	}
+}
+
+func TestValidateForServe_PushCredential(t *testing.T) {
+	t.Run("valid inline credential passes", func(t *testing.T) {
+		c := validServeConfig()
+		c.FCMProjectID = "kazper"
+		c.FCMServiceAccountJSON = fakeServiceAccountJSON
+		if err := c.ValidateForServe(); err != nil {
+			t.Fatalf("ValidateForServe with valid credential: %v", err)
+		}
+		data, err := c.FCMServiceAccount()
+		if err != nil {
+			t.Fatalf("FCMServiceAccount: %v", err)
+		}
+		if len(data) == 0 {
+			t.Errorf("resolved credential is empty")
+		}
+	})
+
+	t.Run("malformed JSON is rejected naming the var", func(t *testing.T) {
+		c := validServeConfig()
+		c.FCMServiceAccountJSON = "{not json"
+		err := c.ValidateForServe()
+		if err == nil || !strings.Contains(err.Error(), "FCM_SERVICE_ACCOUNT_JSON") {
+			t.Fatalf("expected error naming FCM_SERVICE_ACCOUNT_JSON, got %v", err)
+		}
+	})
+
+	t.Run("non-service-account JSON is rejected", func(t *testing.T) {
+		c := validServeConfig()
+		c.FCMServiceAccountJSON = `{"type":"authorized_user"}`
+		err := c.ValidateForServe()
+		if err == nil || !strings.Contains(err.Error(), "FCM_SERVICE_ACCOUNT_JSON") {
+			t.Fatalf("expected service-account error, got %v", err)
+		}
+	})
+}
+
+func TestRedacted_HidesServiceAccount(t *testing.T) {
+	c := validServeConfig()
+	c.FCMServiceAccountJSON = fakeServiceAccountJSON
+	r := c.Redacted()
+	if strings.Contains(r.FCMServiceAccountJSON, "private_key") || r.FCMServiceAccountJSON == fakeServiceAccountJSON {
+		t.Errorf("Redacted leaked service-account JSON: %q", r.FCMServiceAccountJSON)
+	}
+}

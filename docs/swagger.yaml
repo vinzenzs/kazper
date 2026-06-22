@@ -1777,6 +1777,26 @@ definitions:
       quantity_g:
         type: number
     type: object
+  push.PushToken:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      platform:
+        type: string
+      token:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  push.tokenRequest:
+    properties:
+      platform:
+        type: string
+      token:
+        type: string
+    type: object
   raceprep.AppliedEntry:
     properties:
       carbs_g_min:
@@ -7361,6 +7381,79 @@ paths:
       summary: Search products
       tags:
       - products
+  /push/tokens:
+    delete:
+      consumes:
+      - application/json
+      description: Drops the supplied device token (e.g. on sign-out). Restricted
+        to the `mobile` identity. Removing an unknown token is a no-op.
+      parameters:
+      - description: FCM registration token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/push.tokenRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: no content
+        "400":
+          description: invalid_json | token_required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a device push token (mobile identity only)
+      tags:
+      - push
+    post:
+      consumes:
+      - application/json
+      description: 'Upserts the device''s FCM registration token so the backend can
+        deliver notifications (today: Garmin relogin). Idempotent by token. Restricted
+        to the `mobile` identity. Accepts and stores the token even when push is unconfigured,
+        so enabling FCM later delivers without re-pairing.'
+      parameters:
+      - description: FCM registration token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/push.tokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/push.PushToken'
+        "400":
+          description: invalid_json | token_required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register a device push token (mobile identity only)
+      tags:
+      - push
   /race-prep/carb-load:
     get:
       description: 'Stateless, deterministic carb-load math: given a race date and
