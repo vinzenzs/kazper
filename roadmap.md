@@ -1,11 +1,12 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-22 by the `roadmap` skill (86 implemented, 0 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-06-22 by the `roadmap` skill (87 implemented, 0 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-06-22 | add-garmin-relogin-push | When the garmin-bridge's auth token expires it clears the token and the next sync fails — but nothing told the user; data silently went stale. Adds a `push-notifications` capability wired as a post-commit side-effect of closing a sync run: an error-close with the Garmin token absent fires an Android relogin push (latched, gated on push config), a success-close clears the latch — so the user gets pushed the moment relogin is needed instead of a passive is_stale flag. | Vinzenz Stadtmueller | [`282a7e5`](https://github.com/vinzenzs/kazper/commit/282a7e5) |
 | 2026-06-22 | add-garmin-connect-and-sync-status | Two Garmin gaps: re-login needed SSH, and the app couldn't tell if Garmin data was current. Adds explicit sync-run tracking (`sync_runs` log; the bridge opens/closes a run around each `/sync`) + `GET /garmin/sync-status` (latest run, last_successful_at, is_stale) + a `garmin_sync_status` MCP tool, and a companion "Garmin" section that drives the existing login/MFA proxy (credentials stay bridge-side) and shows sync freshness. | Vinzenz Stadtmueller | [`434dfcb`](https://github.com/vinzenzs/kazper/commit/434dfcb) |
 | 2026-06-21 | widen-coach-recs-to-memory | The two coach surfaces (in-app chat + MCP agent) share structured state but nothing the coach learns *by talking to you*. Widens `coach_recommendations` into a general `coach_memory` — a recommendation becomes one `kind` alongside dateless facts/preferences/constraints/observations, with a review/expire lifecycle and a confirm-in-place PATCH. Folded into `/context/daily` + `/context/training` so each surface grounds on what the other was told — DB as shared brain, transcripts stay private. | Vinzenz Stadtmueller | [`5268f85`](https://github.com/vinzenzs/kazper/commit/5268f85) |
 | 2026-06-21 | add-macrocycle-planning | A `training-phase` is a typed date range, but there's no concept of the *season* those blocks add up to — no way to say "this base→build→peak→race-week sequence is one annual progression toward my September A-race." Adds a macrocycle (season) layer over phases: phase↔macrocycle linkage, a `/context/training` season block (race anchor, days-to-race, current period position), and MCP tools. | Vinzenz Stadtmueller | [`d25a968`](https://github.com/vinzenzs/kazper/commit/d25a968) |
