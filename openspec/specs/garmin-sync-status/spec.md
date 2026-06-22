@@ -2,7 +2,6 @@
 
 ## Purpose
 The backend's authoritative record of when Kazper last pulled from Garmin — distinct from `devices.last_sync_at` (the watch's own field). The garmin-bridge opens a `sync_runs` row before each `/sync` and closes it `success`/`error` after; the companion app and coach read `GET /garmin/sync-status` to answer "is my Garmin data current?", including in-progress and failed syncs. A storage + read primitive: no synthesis. The whole surface is gated `503 garmin_disabled` when the integration is unconfigured, and the record endpoints are restricted to the `garmin` identity.
-
 ## Requirements
 ### Requirement: Sync runs are recorded in a dedicated log
 
@@ -31,6 +30,14 @@ SHALL return `503 garmin_disabled` when the integration is unconfigured. `PATCH`
 return `404 sync_run_not_found` for an unknown id and reject a `status` outside
 `success|error` with `400 status_invalid`.
 
+On closing a run, the system SHALL drive the Garmin relogin push side-effect: when a run is
+closed `status=error` AND the stored Garmin token is absent, the system SHALL invoke the
+relogin-needed notification (which is itself latched and gated on push configuration —
+see the `push-notifications` capability); when a run is closed `status=success`, the system
+SHALL clear the relogin latch. These side-effects SHALL NOT change the endpoint's response
+contract: a push-send failure or unconfigured push surface SHALL NOT fail the close, which
+still returns the updated run.
+
 #### Scenario: Bridge opens a run
 
 - **WHEN** the bridge `POST`s `/garmin/sync-runs` with `{"window_from":"2026-06-20","window_to":"2026-06-22"}` under the `garmin` identity
@@ -40,11 +47,27 @@ return `404 sync_run_not_found` for an unknown id and reject a `status` outside
 
 - **WHEN** the bridge `PATCH`es `/garmin/sync-runs/{id}` with `{"status":"success"}`
 - **THEN** the run's `status` becomes `success` and `finished_at` is stamped
+- **AND** the Garmin relogin latch is cleared
 
 #### Scenario: Bridge closes a run as error with a message
 
 - **WHEN** the bridge `PATCH`es `{"status":"error","error":"garmin 429 rate limited"}`
 - **THEN** the run's `status` becomes `error`, `finished_at` is stamped, and the `error` text is stored
+
+#### Scenario: Error close with an absent token triggers a relogin push
+
+- **WHEN** the bridge `PATCH`es a run to `status=error` and the Garmin token is absent
+- **THEN** the run is closed as error AND a relogin-needed notification is invoked (subject to its own latch and push configuration)
+
+#### Scenario: Error close with the token still present triggers no push
+
+- **WHEN** the bridge `PATCH`es a run to `status=error` and the Garmin token is still stored
+- **THEN** the run is closed as error AND no relogin notification is invoked
+
+#### Scenario: A push or latch failure does not fail the close
+
+- **WHEN** closing a run would trigger a push but the push send errors (or push is unconfigured)
+- **THEN** the close still returns the updated run with its new status
 
 #### Scenario: A non-garmin identity cannot record runs
 
