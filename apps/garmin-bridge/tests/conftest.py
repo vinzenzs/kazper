@@ -48,6 +48,10 @@ class FakeBackend:
         self.puts: list[tuple[str, dict]] = []
         self.responses: dict[str, FakeResponse] = {}
         self.closed = False
+        # sync-run reporting (best-effort surface the app calls around /sync)
+        self.sync_runs_opened: list[tuple[str | None, str | None]] = []
+        self.sync_runs_closed: list[tuple[str | None, str, str | None]] = []
+        self.open_run_returns: str | None = "run-id-1"
 
     # context manager
     def __enter__(self) -> "FakeBackend":
@@ -78,3 +82,11 @@ class FakeBackend:
     def put_json(self, path: str, body: dict) -> FakeResponse:
         self.puts.append((path, body))
         return self.responses.get(path, FakeResponse(200, {"results": []}))
+
+    # sync-run reporting
+    def open_sync_run(self, window_from, window_to) -> str | None:
+        self.sync_runs_opened.append((window_from, window_to))
+        return self.open_run_returns
+
+    def close_sync_run(self, run_id, status, error=None) -> None:
+        self.sync_runs_closed.append((run_id, status, error))

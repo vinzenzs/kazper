@@ -28,6 +28,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/garminauth"
 	"github.com/vinzenzs/kazper/internal/garmincontrol"
+	"github.com/vinzenzs/kazper/internal/garminsyncstatus"
 	"github.com/vinzenzs/kazper/internal/gear"
 	"github.com/vinzenzs/kazper/internal/goals"
 	"github.com/vinzenzs/kazper/internal/healthvitals"
@@ -350,6 +351,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	garminControl.SetSchedulingDeps(workoutsRepo, workoutTemplatesRepo, trainingPlanSvc)
 	garminControl.SetMultisportRepo(multisportRepo)
 	garminControl.Register(api)
+	// Garmin sync-run log (per add-garmin-connect-and-sync-status): the bridge
+	// records each /sync run (garmin identity only); the app + coach read
+	// /garmin/sync-status. Gated 503 garmin_disabled when GARMIN_API_TOKEN is unset.
+	garminsyncstatus.NewHandlers(garminsyncstatus.NewService(garminsyncstatus.NewRepo(pool)), garminEnabled).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,

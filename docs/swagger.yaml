@@ -858,6 +858,60 @@ definitions:
       workout_id:
         type: string
     type: object
+  garminsyncstatus.Status:
+    enum:
+    - running
+    - success
+    - error
+    type: string
+    x-enum-varnames:
+    - StatusRunning
+    - StatusSuccess
+    - StatusError
+  garminsyncstatus.SyncRun:
+    properties:
+      created_at:
+        type: string
+      error:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/garminsyncstatus.Status'
+      updated_at:
+        type: string
+      window_from:
+        type: string
+      window_to:
+        type: string
+    type: object
+  garminsyncstatus.SyncStatus:
+    properties:
+      is_stale:
+        type: boolean
+      last_successful_at:
+        type: string
+      latest:
+        $ref: '#/definitions/garminsyncstatus.SyncRun'
+    type: object
+  garminsyncstatus.closeRequest:
+    properties:
+      error:
+        type: string
+      status:
+        type: string
+    type: object
+  garminsyncstatus.openRequest:
+    properties:
+      window_from:
+        type: string
+      window_to:
+        type: string
+    type: object
   gear.Gear:
     properties:
       created_at:
@@ -4787,6 +4841,123 @@ paths:
       security:
       - BearerAuth: []
       summary: Remove a workout from the Garmin calendar
+      tags:
+      - garmin
+  /garmin/sync-runs:
+    post:
+      consumes:
+      - application/json
+      description: Records a new sync run with status `running` and the rolling window
+        the bridge is about to sync, returning the row with its generated id. Restricted
+        to the `garmin` identity; 503 when the Garmin integration is unconfigured.
+      parameters:
+      - description: Rolling window
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/garminsyncstatus.openRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/garminsyncstatus.SyncRun'
+        "403":
+          description: forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Open a Garmin sync run (garmin identity only)
+      tags:
+      - garmin
+  /garmin/sync-runs/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Terminates a run by setting `status` to `success` or `error`, stamping
+        `finished_at`, and recording an optional `error` message. Restricted to the
+        `garmin` identity; 404 for an unknown id; 400 when status is not success|error;
+        503 when unconfigured.
+      parameters:
+      - description: Sync run UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Terminal status
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/garminsyncstatus.closeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/garminsyncstatus.SyncRun'
+        "400":
+          description: invalid_json | status_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: sync_run_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close a Garmin sync run (garmin identity only)
+      tags:
+      - garmin
+  /garmin/sync-status:
+    get:
+      description: Returns the latest sync run, the timestamp of the newest successful
+        run (independent of `latest`, so a failed latest still shows when data was
+        last good), and a derived `is_stale` flag. Available to any authenticated
+        identity. 503 when the Garmin integration is unconfigured.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/garminsyncstatus.SyncStatus'
+        "503":
+          description: garmin_disabled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read Garmin sync status
       tags:
       - garmin
   /garmin/token:

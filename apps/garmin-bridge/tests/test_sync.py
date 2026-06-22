@@ -171,3 +171,55 @@ def test_sync_lookback_zero_collapses_to_today(config, raw_day):
     assert body["days_total"] == 1
     assert [d["date"] for d in body["days"]] == ["2026-06-13"]
     assert gc.fetched == ["2026-06-13"]
+
+
+# --- sync-run reporting (add-garmin-connect-and-sync-status) ----------------
+
+
+def test_sync_window_opens_and_closes_run_success(config, raw_day):
+    """A dateless window opens a run with [oldest, newest] and closes it success."""
+    backend = FakeBackend(token=b"stored-blob")
+    app = create_app(
+        config, gc=_gc_stub(raw_day), backend_factory=lambda: backend, now=lambda tz: "2026-06-13"
+    )
+    resp = TestClient(app).post("/sync")
+    assert resp.status_code == 200
+    assert backend.sync_runs_opened == [("2026-06-11", "2026-06-13")]
+    assert backend.sync_runs_closed == [("run-id-1", "success", None)]
+
+
+def test_sync_explicit_date_opens_run_for_that_day(config, raw_day):
+    """An explicit date opens a single-day-window run and closes it success."""
+    backend = FakeBackend(token=b"stored-blob")
+    app = create_app(config, gc=_gc_stub(raw_day), backend_factory=lambda: backend)
+    resp = TestClient(app).post("/sync", json={"date": "2026-06-12"})
+    assert resp.status_code == 200
+    assert backend.sync_runs_opened == [("2026-06-12", "2026-06-12")]
+    assert backend.sync_runs_closed == [("run-id-1", "success", None)]
+
+
+def test_sync_hard_failure_closes_run_error(config, raw_day):
+    """A hard failure (fetch raises) closes the run as error with the message."""
+    backend = FakeBackend(token=b"stored-blob")
+    gc = _gc_stub(raw_day, fail_dates={"2026-06-12"})
+    app = create_app(config, gc=gc, backend_factory=lambda: backend)
+    resp = TestClient(app).post("/sync", json={"date": "2026-06-12"})
+    assert resp.status_code == 500
+    assert backend.sync_runs_opened == [("2026-06-12", "2026-06-12")]
+    assert len(backend.sync_runs_closed) == 1
+    run_id, status, error = backend.sync_runs_closed[0]
+    assert (run_id, status) == ("run-id-1", "error")
+    assert "boom" in error
+
+
+def test_sync_run_reporting_is_best_effort(config, raw_day):
+    """When opening a run fails (id None), the sync still completes — reporting
+    never aborts the data write."""
+    backend = FakeBackend(token=b"stored-blob")
+    backend.open_run_returns = None
+    app = create_app(
+        config, gc=_gc_stub(raw_day), backend_factory=lambda: backend, now=lambda tz: "2026-06-13"
+    )
+    resp = TestClient(app).post("/sync")
+    assert resp.status_code == 200
+    assert backend.sync_runs_closed == [(None, "success", None)]

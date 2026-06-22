@@ -2504,6 +2504,178 @@ const docTemplate = `{
                 }
             }
         },
+        "/garmin/sync-runs": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records a new sync run with status ` + "`" + `running` + "`" + ` and the rolling window the bridge is about to sync, returning the row with its generated id. Restricted to the ` + "`" + `garmin` + "`" + ` identity; 503 when the Garmin integration is unconfigured.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Open a Garmin sync run (garmin identity only)",
+                "parameters": [
+                    {
+                        "description": "Rolling window",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/garminsyncstatus.openRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/garminsyncstatus.SyncRun"
+                        }
+                    },
+                    "403": {
+                        "description": "forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/sync-runs/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Terminates a run by setting ` + "`" + `status` + "`" + ` to ` + "`" + `success` + "`" + ` or ` + "`" + `error` + "`" + `, stamping ` + "`" + `finished_at` + "`" + `, and recording an optional ` + "`" + `error` + "`" + ` message. Restricted to the ` + "`" + `garmin` + "`" + ` identity; 404 for an unknown id; 400 when status is not success|error; 503 when unconfigured.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Close a Garmin sync run (garmin identity only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Sync run UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Terminal status",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/garminsyncstatus.closeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/garminsyncstatus.SyncRun"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json | status_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "sync_run_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/garmin/sync-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the latest sync run, the timestamp of the newest successful run (independent of ` + "`" + `latest` + "`" + `, so a failed latest still shows when data was last good), and a derived ` + "`" + `is_stale` + "`" + ` flag. Available to any authenticated identity. 503 when the Garmin integration is unconfigured.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "garmin"
+                ],
+                "summary": "Read Garmin sync status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/garminsyncstatus.SyncStatus"
+                        }
+                    },
+                    "503": {
+                        "description": "garmin_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/garmin/token": {
             "get": {
                 "security": [
@@ -10121,6 +10293,87 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "garminsyncstatus.Status": {
+            "type": "string",
+            "enum": [
+                "running",
+                "success",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "StatusRunning",
+                "StatusSuccess",
+                "StatusError"
+            ]
+        },
+        "garminsyncstatus.SyncRun": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/garminsyncstatus.Status"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "window_from": {
+                    "type": "string"
+                },
+                "window_to": {
+                    "type": "string"
+                }
+            }
+        },
+        "garminsyncstatus.SyncStatus": {
+            "type": "object",
+            "properties": {
+                "is_stale": {
+                    "type": "boolean"
+                },
+                "last_successful_at": {
+                    "type": "string"
+                },
+                "latest": {
+                    "$ref": "#/definitions/garminsyncstatus.SyncRun"
+                }
+            }
+        },
+        "garminsyncstatus.closeRequest": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "garminsyncstatus.openRequest": {
+            "type": "object",
+            "properties": {
+                "window_from": {
+                    "type": "string"
+                },
+                "window_to": {
                     "type": "string"
                 }
             }

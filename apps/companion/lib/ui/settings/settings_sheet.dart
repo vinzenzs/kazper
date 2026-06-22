@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../domain/garmin.dart';
 import '../../state/app_providers.dart';
+import '../../state/garmin_provider.dart';
 import '../../state/pairing_provider.dart';
+import '../garmin/garmin_connect_sheet.dart';
 
 Future<void> showSettingsSheet(BuildContext context) {
   return showModalBottomSheet<void>(
@@ -99,6 +102,14 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.watch_outlined),
+            title: const Text('Garmin'),
+            subtitle: Text(_garminSubtitle(ref.watch(garminSyncProvider))),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showGarminSheet(context),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.info_outline),
             title: const Text('Version'),
             subtitle: Text(_version.isEmpty ? '—' : _version),
@@ -119,4 +130,22 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
       ),
     );
   }
+}
+
+/// Compact Garmin status for the settings row.
+String _garminSubtitle(AsyncValue<GarminSyncStatus?> status) {
+  return status.when(
+    loading: () => 'Checking…',
+    error: (_, _) => 'Connection & sync status',
+    data: (s) {
+      if (s == null) return 'Not configured';
+      final latest = s.latest;
+      if (latest != null && latest.isRunning) return 'Syncing…';
+      if (latest != null && latest.isError) return 'Last sync failed';
+      if (s.lastSuccessfulAt != null) {
+        return s.isStale ? 'Sync may be stale' : 'Synced';
+      }
+      return 'Never synced';
+    },
+  );
 }

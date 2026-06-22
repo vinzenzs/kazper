@@ -24,6 +24,9 @@ func init() { registerMCPDomain(garminSpecs()) }
 
 type GarminLoginArgs struct{}
 
+// GarminSyncStatusArgs is the (empty) input to garmin_sync_status.
+type GarminSyncStatusArgs struct{}
+
 type GarminSubmitMFAArgs struct {
 	Code string `json:"code" jsonschema:"the 6-digit MFA code from the user's authenticator app or email"`
 }
@@ -225,6 +228,19 @@ func garminSpecs() []Spec {
 				}
 				body, _ := json.Marshal(map[string]any{"plan_id": a.PlanID, "scope": a.Scope, "week": a.Week, "from": a.From, "to": a.To})
 				return HTTPCall{Method: "POST", Path: "/garmin/schedule/plan", Body: body}, nil
+			},
+		},
+		{
+			Name: "garmin_sync_status",
+			Description: "Read how fresh the user's Garmin data is: the latest sync run (status running/success/error " +
+				"with its window), the timestamp of the last successful sync (`last_successful_at`), and `is_stale` " +
+				"(true when no sync has succeeded recently). Use it to ground statements like 'your last Garmin sync " +
+				"was 3h ago' or to warn that today's metrics may not have landed yet. `503 garmin_disabled` means the " +
+				"Garmin integration is not configured.",
+			SchemaType: GarminSyncStatusArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				return HTTPCall{Method: "GET", Path: "/garmin/sync-status"}, nil
 			},
 		},
 		{

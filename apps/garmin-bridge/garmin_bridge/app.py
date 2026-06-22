@@ -164,12 +164,28 @@ def create_app(
                         content={"error": "login_required", "message": "no stored Garmin token; run POST /login first"},
                     )
                 api = gc.load_api(token.decode("utf-8"))
+                # Track this run in the backend's sync-run log: open it with the
+                # window we're about to sync, close it success/error around the
+                # work. Reporting is best-effort (open returns None on failure)
+                # and never aborts the sync itself.
                 if explicit is not None:
-                    summary = sync.sync_day(backend, gc.fetch_day(api, explicit), explicit)
-                    status = 200 if summary.get("ok") else 207
-                    return JSONResponse(status_code=status, content=summary)
-                dates = _window_dates(now(config.sync_tz), config.sync_lookback_days)
-                result = sync.run_window(backend, gc, api, dates)
+                    window_from = window_to = explicit
+                    dates = None
+                else:
+                    dates = _window_dates(now(config.sync_tz), config.sync_lookback_days)
+                    window_from, window_to = dates[0], dates[-1]
+                run_id = backend.open_sync_run(window_from, window_to)
+                try:
+                    if explicit is not None:
+                        summary = sync.sync_day(backend, gc.fetch_day(api, explicit), explicit)
+                        status = 200 if summary.get("ok") else 207
+                        backend.close_sync_run(run_id, "success")
+                        return JSONResponse(status_code=status, content=summary)
+                    result = sync.run_window(backend, gc, api, dates)
+                except Exception as exc:  # close the run before the outer handler maps it
+                    backend.close_sync_run(run_id, "error", str(exc))
+                    raise
+                backend.close_sync_run(run_id, "success")
         except BackendError as exc:
             logger.error("sync backend error: %s", exc)
             return JSONResponse(status_code=502, content={"error": "backend_error", "message": str(exc)})

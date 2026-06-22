@@ -75,3 +75,38 @@ class Backend:
     def put_json(self, path: str, body: dict) -> httpx.Response:
         """PUT a JSON body (full-replace; no Idempotency-Key on PUT endpoints)."""
         return self._client.put(path, json=body)
+
+    # --- sync-run reporting (best-effort) --------------------------------
+
+    def open_sync_run(self, window_from: str | None, window_to: str | None) -> str | None:
+        """Open a sync-run row on the backend and return its id.
+
+        Best-effort: a reporting failure is logged and yields ``None`` (the sync
+        itself must never abort because the run log is unreachable). A ``None``
+        id makes the matching ``close_sync_run`` a no-op.
+        """
+        try:
+            resp = self._client.post(
+                "/garmin/sync-runs",
+                json={"window_from": window_from, "window_to": window_to},
+            )
+            if resp.status_code == 201:
+                return resp.json().get("id")
+            logger.warning("open sync run -> %s", resp.status_code)
+        except Exception as exc:  # noqa: BLE001 — reporting is best-effort
+            logger.warning("open sync run failed: %s", exc)
+        return None
+
+    def close_sync_run(self, run_id: str | None, status: str, error: str | None = None) -> None:
+        """Close a sync-run row as ``success``/``error`` (best-effort, no-op when id is None)."""
+        if not run_id:
+            return
+        body: dict = {"status": status}
+        if error is not None:
+            body["error"] = error[:500]  # keep the stored message bounded
+        try:
+            resp = self._client.patch(f"/garmin/sync-runs/{run_id}", json=body)
+            if resp.status_code != 200:
+                logger.warning("close sync run -> %s", resp.status_code)
+        except Exception as exc:  # noqa: BLE001 — reporting is best-effort
+            logger.warning("close sync run failed: %s", exc)
