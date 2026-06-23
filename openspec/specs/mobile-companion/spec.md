@@ -615,31 +615,60 @@ latest run is `running`, and a failure indicator when it is `error` — and SHAL
 
 ### Requirement: The companion registers for push and handles the Garmin relogin notification
 
-The mobile companion SHALL request notification permission and register its FCM
-registration token with the backend (`POST /push/tokens`) on pairing and on every
-token refresh, and SHALL drop the token (`DELETE /push/tokens`) on unpair/sign-out.
-On receiving a push whose data payload carries the relogin action
-(`action:"garmin_relogin"`), the app SHALL route the user into the existing Garmin
-re-authentication flow (`POST /garmin/login` → `POST /garmin/login/mfa`) rather than a
-generic screen, both from a cold tap on the system notification and from an in-app
-foreground message. Push is a supplement: the app SHALL still surface staleness from
-`GET /garmin/sync-status` so a missed or undelivered push is not the only signal.
+The companion app SHALL integrate Firebase Cloud Messaging (Android) so the backend's
+Garmin relogin push reaches the device and routes the user to re-authentication. While
+the app is paired, it SHALL obtain its FCM registration token and register it via
+`POST /push/tokens` (`{token, platform:"android"}`, the `mobile` identity), SHALL
+re-register when the token refreshes, and SHALL deregister via `DELETE /push/tokens`
+on unpair/sign-out. Token registration SHALL proceed even when the OS notification
+permission is denied (so enabling notifications later needs no re-pair). On receiving a
+push whose data `action` is `garmin_relogin`, the app SHALL route the user into the
+existing Garmin connect flow (the Garmin connect sheet, which drives
+`POST /garmin/login` → `POST /garmin/login/mfa`) and refresh sync status; a tap on the
+tray notification (from background or cold start) SHALL open that flow, and a push
+received in the foreground SHALL surface a lightweight in-app prompt rather than a
+silent drop. Pushes with any other or absent `action` SHALL be ignored without error.
+Push is a supplement: the app SHALL still surface staleness from `GET /garmin/sync-status`
+so a missed or undelivered push is not the only signal. The Firebase project credential
+(`google-services.json`) is an operator-supplied, uncommitted prerequisite; this is
+documented, not bundled.
 
-#### Scenario: Token is registered on pairing
+#### Scenario: A paired device registers its token
 
-- **WHEN** the app is paired and notification permission is granted
-- **THEN** it obtains its FCM token and `POST`s it to `/push/tokens`
-- **AND** re-registers whenever FCM rotates the token
+- **WHEN** the app is paired and Firebase yields an FCM token
+- **THEN** the app `POST`s `/push/tokens` with `{token, platform:"android"}` under the mobile identity
 
-#### Scenario: Token is dropped on sign-out
+#### Scenario: Token refresh re-registers
+
+- **WHEN** Firebase rotates the registration token
+- **THEN** the app `POST`s the new token to `/push/tokens`
+
+#### Scenario: Unpair deregisters
 
 - **WHEN** the user unpairs or signs out
 - **THEN** the app `DELETE`s its token at `/push/tokens`
 
-#### Scenario: Relogin notification deep-links to re-authentication
+#### Scenario: Registration survives a denied permission
 
-- **WHEN** the app receives a push with `action:"garmin_relogin"` (tapped from the tray or received in foreground)
-- **THEN** the app opens the Garmin re-authentication flow driving `POST /garmin/login` and `POST /garmin/login/mfa`
+- **WHEN** the OS notification permission is denied but the app is paired
+- **THEN** the token is still registered with the backend
+- **AND** the Garmin settings section shows a "notifications off" hint
+
+#### Scenario: A relogin push opens the Garmin connect flow
+
+- **WHEN** a push with data `action = "garmin_relogin"` is tapped (from background or cold start)
+- **THEN** the app opens the Garmin connect sheet
+- **AND** refreshes the Garmin sync status
+
+#### Scenario: A foreground relogin push prompts in-app
+
+- **WHEN** the same push arrives while the app is foregrounded
+- **THEN** the app shows an in-app prompt with a reconnect action (not a silent drop)
+
+#### Scenario: An unknown action is ignored safely
+
+- **WHEN** a push arrives with no `action` or an unrecognized one
+- **THEN** the app ignores it without error or navigation
 
 #### Scenario: Sync staleness remains visible without a push
 
