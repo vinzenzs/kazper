@@ -87,12 +87,19 @@ config:
   #    it; empty → those endpoints return 503 garmin_disabled. Typically the
   #    in-cluster Service of the bridge (e.g. http://<release>-garmin-bridge).
   garminBridgeUrl: ""
+  # -- FCM push (opt-in). Firebase project id for Android push (HTTP v1). Pairs
+  #    with secrets.fcmServiceAccountJson — when this is set the credential is
+  #    REQUIRED (install fails otherwise). Leave both empty to keep push disabled
+  #    (the push surface returns 503 push_disabled and the relogin notification
+  #    is a no-op).
+  fcmProjectId: ""
 
 # -- Reference an externally-managed Secret. When set, the chart will NOT
 #    render its own Secret; the Deployment's envFrom uses this name.
 #    The Secret must contain keys: DATABASE_URL, MOBILE_API_TOKEN,
 #    AGENT_API_TOKEN (and optionally ANTHROPIC_API_KEY, plus GARMIN_API_TOKEN +
-#    GARMIN_TOKEN_ENC_KEY when the backend Garmin integration is enabled).
+#    GARMIN_TOKEN_ENC_KEY when the backend Garmin integration is enabled, and
+#    FCM_SERVICE_ACCOUNT_JSON when Android push is enabled).
 existingSecret: ""
 
 # -- Secret values populated into a chart-managed Secret.
@@ -108,6 +115,13 @@ existingSecret: ""
 #       to encrypt the stored Garmin token at rest. Generate one with:
 #           openssl rand -base64 32
 #       Leave both empty to keep the backend's Garmin integration disabled.
+#    Push (opt-in): fcmServiceAccountJson is REQUIRED when config.fcmProjectId is
+#       set. It is either inline Google service-account JSON or a path to a mounted
+#       credential file (the binary resolves which). Because the JSON is multi-line,
+#       prefer --set-file:
+#           helm install ... --set config.fcmProjectId=my-proj \
+#                            --set-file secrets.fcmServiceAccountJson=service-account.json
+#       Leave it (and config.fcmProjectId) empty to keep push disabled.
 secrets:
   databaseUrl: ""
   mobileApiToken: ""
@@ -115,6 +129,7 @@ secrets:
   anthropicApiKey: ""
   garminApiToken: ""
   garminTokenEncKey: ""
+  fcmServiceAccountJson: ""
 
 # -- Liveness probe — see openspec/specs/deployment-pipeline for tuning rationale.
 livenessProbe:

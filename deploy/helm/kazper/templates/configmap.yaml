@@ -24,3 +24,8 @@ data:
   {{- if .Values.config.garminBridgeUrl }}
   GARMIN_BRIDGE_URL: {{ .Values.config.garminBridgeUrl | quote }}
   {{- end }}
+  {{- if .Values.config.fcmProjectId }}
+  # FCM push (opt-in). Emitted only when set; pairs with the secret
+  # FCM_SERVICE_ACCOUNT_JSON. With either unset, push is inert (503 push_disabled).
+  FCM_PROJECT_ID: {{ .Values.config.fcmProjectId | quote }}
+  {{- end }}

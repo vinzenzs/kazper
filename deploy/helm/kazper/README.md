@@ -32,7 +32,36 @@ To manage the Secret outside the chart instead (e.g., applied via
 `kubectl apply` from a SOPS-encrypted file), pass `--set
 existingSecret=my-secret-name`. The Secret must contain these keys:
 `DATABASE_URL`, `MOBILE_API_TOKEN`, `AGENT_API_TOKEN` (and optionally
-`ANTHROPIC_API_KEY`).
+`ANTHROPIC_API_KEY`, plus `FCM_SERVICE_ACCOUNT_JSON` when push is enabled).
+
+## Push notifications (opt-in)
+
+Android push (FCM HTTP v1 — used for the Garmin relogin notification) is
+off by default. Enabling it requires **both** values together:
+
+| Value | What it is |
+|---|---|
+| `config.fcmProjectId` | Firebase project id (non-secret, lands in the ConfigMap) |
+| `secrets.fcmServiceAccountJson` | Google service-account credential — inline JSON or a path to a mounted credential file |
+
+When `config.fcmProjectId` is set, `secrets.fcmServiceAccountJson` is
+**required** — `helm install` fails with a clear error otherwise (the
+backend validates the credential at startup). With both empty, the push
+surface is inert: it returns `503 push_disabled` and the relogin
+notification is a no-op.
+
+Because the credential is multi-line JSON, prefer `--set-file`:
+
+```bash
+helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
+    --version v0.1.0 --namespace kazper \
+    --set config.fcmProjectId=my-firebase-project \
+    --set-file secrets.fcmServiceAccountJson=service-account.json \
+    # ...required token values...
+```
+
+When using `existingSecret`, put `FCM_SERVICE_ACCOUNT_JSON` in that Secret
+and still set `config.fcmProjectId` in values.
 
 ## Install a tagged release (OCI from GHCR)
 
