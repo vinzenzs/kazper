@@ -11,3 +11,6 @@ mcp
 apps/companion/devtools_options.yaml
 
 .mcp.json
+
+corelyr-kazper-*.json
+google-services.json

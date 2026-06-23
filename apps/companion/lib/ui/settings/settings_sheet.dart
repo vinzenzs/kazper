@@ -7,6 +7,7 @@ import '../../domain/garmin.dart';
 import '../../state/app_providers.dart';
 import '../../state/garmin_provider.dart';
 import '../../state/pairing_provider.dart';
+import '../../state/push_provider.dart';
 import '../garmin/garmin_connect_sheet.dart';
 
 Future<void> showSettingsSheet(BuildContext context) {
@@ -108,6 +109,26 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showGarminSheet(context),
           ),
+          if (!ref.watch(pushProvider).notificationsEnabled)
+            Padding(
+              padding: const EdgeInsets.only(left: 56, bottom: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.notifications_off_outlined,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.outline),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Notifications off — you won’t be alerted to reconnect. '
+                      'Enable them in system settings.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.info_outline),
@@ -122,6 +143,9 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () async {
+              // Drop the device's push token before clearing the bearer (the
+              // DELETE needs the token to authenticate).
+              await ref.read(pushProvider.notifier).deregister();
               await ref.read(pairingProvider.notifier).unpair();
               if (context.mounted) Navigator.of(context).pop();
             },

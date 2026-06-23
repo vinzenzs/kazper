@@ -113,6 +113,8 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `CLAUDE_VISION_MODEL`    | `claude-sonnet-4-6`                           | Model used by `/meals/from_photo`                                    |
 | `VISION_TIMEOUT_SECONDS` | `15`                                          | Per-request timeout for the Anthropic call                           |
 | `MEAL_FROM_PHOTO_MAX_BYTES` | `10485760`                                 | Max multipart body for `/meals/from_photo` (10 MB default)           |
+| `FCM_PROJECT_ID`         | _unset_                                       | Firebase project id for Android push (FCM HTTP v1). Push is enabled only when set together with `FCM_SERVICE_ACCOUNT_JSON`; unset means device tokens still register but delivery is a no-op |
+| `FCM_SERVICE_ACCOUNT_JSON` | _unset_                                     | Google service-account credential (inline JSON or a path to the key file) for FCM; required when `FCM_PROJECT_ID` is set |
 
 ## API at a glance
 

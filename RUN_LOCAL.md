@@ -672,6 +672,48 @@ again.
 
 ---
 
+## Enabling push (Garmin relogin notifications)
+
+Push is **opt-in and two-sided**: the app registers its device token regardless,
+but a notification is only delivered when the *server* FCM keys are set. Turning
+the server on later "just works" with no app change.
+
+**1. Create a Firebase project + Android app.** In the
+[Firebase console](https://console.firebase.google.com/): create a project, add
+an **Android** app with package name `com.corelyr.kazper`, and download the
+generated **`google-services.json`**.
+
+**2. Drop the credential into the app.** Place it at:
+
+```
+apps/companion/android/app/google-services.json
+```
+
+It is **operator-supplied and gitignored** — never committed. The Gradle
+`com.google.gms.google-services` plugin reads it at build time, so **the Android
+build fails loudly if it's missing** rather than silently shipping a no-FCM APK.
+(For local dev without push, you can use a placeholder Firebase project.)
+
+**3. Set the server FCM env vars.** Generate a service-account key in the
+Firebase console (Project settings → Service accounts → *Generate new private
+key*) and point the server at it. In `.env` / `.env.local`:
+
+```bash
+FCM_PROJECT_ID=your-firebase-project-id
+FCM_SERVICE_ACCOUNT_JSON=/path/to/fcm-service-account.json   # inline JSON or a path
+```
+
+Push is enabled only when **both** are set. With them unset, device tokens still
+register but delivery is a silent no-op. (The backend half — `POST`/`DELETE
+/push/tokens` and the FCM HTTP v1 sender — already ships; see the
+`add-garmin-relogin-push` change.)
+
+Once both halves are live, a Garmin token expiry that fails a sync pushes a
+"reconnect" notification to the paired device; tapping it opens the Garmin
+connect sheet.
+
+---
+
 ## Wire up the MCP server (Claude Code / Claude Desktop)
 
 The MCP server is a subcommand of the same binary (`kazper mcp`). It

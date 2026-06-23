@@ -7,6 +7,7 @@ import '../data/db/app_database.dart';
 import '../data/net/api_client.dart';
 import '../data/net/chat_client.dart';
 import '../data/prefs.dart';
+import '../data/push/push_messaging.dart';
 import '../data/repository.dart';
 import '../data/sync/outbox_worker.dart';
 import '../data/widget_bridge.dart';
@@ -26,6 +27,11 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 final tokenStoreProvider = Provider<TokenStore>((ref) => SecureTokenStore());
 
 final widgetBridgeProvider = Provider<WidgetBridge>((ref) => WidgetBridge());
+
+/// FCM port. The real adapter touches Firebase lazily; overridden in tests with
+/// a fake so the push provider can be exercised without a Firebase runtime.
+final pushMessagingProvider =
+    Provider<PushMessaging>((ref) => FirebaseMessagingAdapter());
 
 final apiClientProvider = Provider<ApiClient>(
   (ref) => ApiClient(tokenStore: ref.watch(tokenStoreProvider)),

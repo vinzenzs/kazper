@@ -22,6 +22,9 @@ plugins {
     id("com.android.application") version "8.11.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
     id("com.google.devtools.ksp") version "2.2.20-2.0.2" apply false
+    // FCM: reads android/app/google-services.json at build time. The build
+    // fails loudly if that operator-supplied file is missing (see RUN_LOCAL.md).
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")

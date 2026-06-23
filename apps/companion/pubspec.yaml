@@ -59,6 +59,12 @@ dependencies:
   mobile_scanner: ^5.2.3
   image_picker: ^1.1.2
 
+  # Push notifications (FCM, Android). firebase_core initializes the SDK from
+  # the operator-supplied google-services.json; firebase_messaging delivers the
+  # Garmin relogin push and the registration token. See openspec add-companion-push.
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+
   # Secure token storage (Android Keystore-backed)
   flutter_secure_storage: ^9.2.2
 

@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
@@ -34,8 +36,18 @@ void callbackDispatcher() {
   });
 }
 
+/// FCM background/terminated entry point. Runs in its own isolate, so — like
+/// [callbackDispatcher] — it never reaches into the app's provider graph. It is
+/// deliberately a no-op: the push carries a `notification` payload, so Android
+/// renders the tray entry itself; this handler exists only so forward-compatible
+/// data-only messages don't crash, and so the plugin has a registered handler.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   final prefs = await Prefs.open();
   await Workmanager().initialize(callbackDispatcher);
 
