@@ -289,6 +289,38 @@ tasks:
     cmds:
       - task: dev:pair
 
+  # ---- Web dashboard (apps/web) ----
+  #
+  # The coach dashboard is a Vite + React SPA embedded in the binary via
+  # go:embed (per add-coach-dashboard). dist/ is committed (mirroring docs/), so
+  # `task build` / plain `go build` need NO Node toolchain — only `web:build`
+  # regenerates dist after a source change. Run `web:build` and commit the dist/
+  # diff whenever you touch apps/web/src.
+
+  web:install:
+    desc: Install the web dashboard's Node dependencies
+    dir: apps/web
+    cmds:
+      - npm install
+
+  web:dev:
+    desc: Run the web dashboard dev server (Vite, proxies /api → :8080)
+    dir: apps/web
+    cmds:
+      - npm run dev
+
+  web:build:
+    desc: Build the web dashboard into apps/web/dist (committed + embedded)
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  web:test:
+    desc: Run the web dashboard's component render tests (Vitest)
+    dir: apps/web
+    cmds:
+      - npm run test
+
   prod:pair:
     desc: Print a pairing QR for the companion app against production (PROD_BASE_URL + MOBILE_API_TOKEN from .env.prod)
     cmds:

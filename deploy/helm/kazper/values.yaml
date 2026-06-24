@@ -122,6 +122,10 @@ existingSecret: ""
 #           helm install ... --set config.fcmProjectId=my-proj \
 #                            --set-file secrets.fcmServiceAccountJson=service-account.json
 #       Leave it (and config.fcmProjectId) empty to keep push disabled.
+#    Web dashboard (opt-in): set webUser AND webPassword to enable the browser
+#       coach dashboard (client_id="web"), served same-origin at /. Both are
+#       required together. Basic auth is base64, NOT encryption — only expose the
+#       dashboard over TLS (ingress.tls) or a Tailscale tailnet, never bare HTTP.
 secrets:
   databaseUrl: ""
   mobileApiToken: ""
@@ -130,6 +134,8 @@ secrets:
   garminApiToken: ""
   garminTokenEncKey: ""
   fcmServiceAccountJson: ""
+  webUser: ""
+  webPassword: ""
 
 # -- Liveness probe — see openspec/specs/deployment-pipeline for tuning rationale.
 livenessProbe:

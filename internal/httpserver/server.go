@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	webapp "github.com/vinzenzs/kazper/apps/web"
 	"github.com/vinzenzs/kazper/internal/achievements"
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/auth"
@@ -90,6 +91,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		MobileToken: cfg.MobileToken,
 		AgentToken:  cfg.AgentToken,
 		GarminToken: cfg.GarminToken,
+		WebUser:     cfg.WebUser,
+		WebPassword: cfg.WebPassword,
 	}
 	if err := authCfg.Validate(); err != nil {
 		return err
@@ -427,6 +430,18 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if chatSvc != nil {
 		chatSvc.SetLoopbackHandler(r)
 		chatSvc.SetSessionStore(chatSessionStore{repo: chatSessionsRepo})
+	}
+
+	// Serve the embedded coach-dashboard SPA at / (per add-coach-dashboard).
+	// Registered last so it only catches paths that fall through to NoRoute —
+	// the /api/v1 group and infra endpoints above always win, and unknown
+	// /api/v1 paths keep the JSON 404 contract.
+	dist, distErr := webapp.DistFS()
+	if distErr != nil {
+		return distErr
+	}
+	if err := RegisterSPA(r, dist, authCfg); err != nil {
+		return err
 	}
 
 	srv := &http.Server{

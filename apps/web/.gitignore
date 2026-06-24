@@ -1,0 +1,9 @@
+# Node toolchain — not needed to build the binary (dist is committed).
+node_modules/
+
+# Vite / Vitest caches
+.vite/
+coverage/
+
+# dist/ is intentionally NOT ignored — it is committed and embedded via go:embed
+# (mirroring the docs/ precedent) so `go build` needs no Node toolchain.
