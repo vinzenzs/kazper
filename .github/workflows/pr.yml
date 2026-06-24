@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
-      - 'apps/**'
+      # apps/web is NOT ignored: its build is embedded into the API image, so a
+      # dashboard change must be validated here. The other clients keep their own.
+      - 'apps/companion/**'
+      - 'apps/garmin-bridge/**'
       - 'extensions/**'
       - 'openspec/**'
       - '**/*.md'
@@ -32,6 +35,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Build + test the web dashboard
+        # apps/web/dist is not committed; build it from source so the embed +
+        # the tagged Go check below run against a fresh bundle.
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: go vet
         run: go vet ./...
 
@@ -39,6 +58,11 @@ jobs:
         # testcontainers boots its own Postgres per package; runner has Docker.
         # Ryuk reaper is already disabled in the storetest harness.
         run: go test ./...
+
+      - name: go test (real embedded SPA)
+        # Exercises the actual go:embed of the freshly-built dist (the default
+        # run above embeds the placeholder stub).
+        run: go test -tags webembed ./internal/httpserver/...
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

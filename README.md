@@ -132,14 +132,17 @@ a recovery snapshot, and recent + upcoming workouts.
 > over a Tailscale tailnet — never on a bare HTTP LAN endpoint.
 
 The SPA source lives in `apps/web/`. Its build output (`apps/web/dist`) is
-committed and embedded via `go:embed` (mirroring the `docs/` precedent), so
-`go build` / `task build` need **no** Node toolchain. After changing anything
-under `apps/web/src`, regenerate and commit the build:
+**not committed** — it's gitignored and built from source: the container image
+builds it in a Node stage, and `task build` builds it locally, embedding it into
+the binary via `go:embed` under `-tags webembed`. A plain `go build` (no tag)
+compiles with **no** Node toolchain but embeds a placeholder shell rather than
+the real dashboard.
 
 ```bash
 task web:install   # first time only
-task web:build     # → apps/web/dist (commit the diff)
-task web:dev       # Vite dev server, proxies /api → :8080
+task web:dev       # Vite dev server, proxies /api → :8080 (iterate on the SPA)
+task web:test      # Vitest component tests
+task build         # build the SPA + embed the real dashboard (-tags webembed)
 ```
 
 ## API at a glance
