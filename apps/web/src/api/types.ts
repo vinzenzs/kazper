@@ -73,9 +73,25 @@ export interface LoadSummary {
   by_sport: Record<string, number>;
 }
 
+// Mirrors internal/athleteconfig/types.go. Every field is nullable and already
+// serialized into /context/training; the dashboard renders whatever is present.
 export interface AthleteConfig {
   ftp_watts?: number | null;
-  [key: string]: unknown;
+  threshold_hr?: number | null;
+  lactate_threshold_hr?: number | null;
+  max_hr?: number | null;
+  threshold_pace_sec_per_km?: number | null;
+  threshold_swim_pace_sec_per_100m?: number | null;
+  hr_zone_1_max?: number | null;
+  hr_zone_2_max?: number | null;
+  hr_zone_3_max?: number | null;
+  hr_zone_4_max?: number | null;
+  hr_zone_5_max?: number | null;
+  power_zone_1_max?: number | null;
+  power_zone_2_max?: number | null;
+  power_zone_3_max?: number | null;
+  power_zone_4_max?: number | null;
+  power_zone_5_max?: number | null;
 }
 
 export interface TrainingContext {

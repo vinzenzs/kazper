@@ -1,6 +1,10 @@
 import { Header } from "./components/Header";
 import { FormGauge } from "./components/FormGauge";
 import { LoadTrend } from "./components/LoadTrend";
+import { FitnessPanel } from "./components/FitnessPanel";
+import { RacePredictions } from "./components/RacePredictions";
+import { PowerThresholds } from "./components/PowerThresholds";
+import { Zones } from "./components/Zones";
 import { RecoverySnapshot } from "./components/RecoverySnapshot";
 import { WorkoutList } from "./components/WorkoutList";
 import {
@@ -9,9 +13,10 @@ import {
   useTrainingContext,
 } from "./api/hooks";
 
-// The v1 dashboard is training-only (per the proposal): header, ACWR/form gauge,
-// acute/chronic load trend, recovery snapshot, and recent + upcoming workouts.
-// No fueling / energy-availability / nutrition panels.
+// The dashboard is training-only: header, ACWR/form gauge, acute/chronic load
+// trend, fitness / race-prediction / power-threshold / zone panels, recovery
+// snapshot, and recent + upcoming workouts. All data comes from the existing
+// context payloads. No fueling / energy-availability / nutrition panels.
 export function App() {
   const training = useTrainingContext();
   const recovery = useRecoveryContext();
@@ -40,6 +45,36 @@ export function App() {
         </div>
       </div>
 
+      <FitnessPanel
+        fitness={t?.fitness ?? null}
+        isLoading={training.isLoading}
+        isError={training.isError}
+        error={training.error}
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <RacePredictions
+          fitness={t?.fitness ?? null}
+          isLoading={training.isLoading}
+          isError={training.isError}
+          error={training.error}
+        />
+        <PowerThresholds
+          config={t?.athlete_config ?? null}
+          wattsPerKg={t?.watts_per_kg ?? null}
+          isLoading={training.isLoading}
+          isError={training.isError}
+          error={training.error}
+        />
+      </div>
+
+      <Zones
+        config={t?.athlete_config ?? null}
+        isLoading={training.isLoading}
+        isError={training.isError}
+        error={training.error}
+      />
+
       <RecoverySnapshot
         latest={recovery.data?.latest ?? null}
         isLoading={recovery.isLoading}
@@ -51,6 +86,7 @@ export function App() {
         <WorkoutList
           title="Recent workouts"
           workouts={t?.recent_workouts}
+          bySport={t?.recent_load?.by_sport ?? null}
           isLoading={training.isLoading}
           isError={training.isError}
           error={training.error}

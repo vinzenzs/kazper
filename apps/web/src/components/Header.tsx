@@ -1,17 +1,20 @@
 import type { TrainingContext } from "../api/types";
 import { num, titleCase } from "../lib/format";
+import { trainingStatusBadge } from "../lib/status";
 
 interface HeaderProps {
   training: TrainingContext | null | undefined;
   isLoading?: boolean;
 }
 
-// The top banner: current phase, season name, and days-to-race when the season
-// is race-anchored. Each field degrades to a placeholder independently.
+// The top banner: current phase, season name, days-to-race when the season is
+// race-anchored, and a training-status badge. Each field degrades to a
+// placeholder independently.
 export function Header({ training, isLoading }: HeaderProps) {
   const phase = training?.phase ?? null;
   const macro = training?.macrocycle ?? null;
   const daysToRace = macro?.days_to_race ?? null;
+  const statusBadge = trainingStatusBadge(training?.fitness?.training_status);
 
   return (
     <header className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-ink-600/60 bg-gradient-to-r from-ink-800 to-ink-700 px-6 py-5 shadow-lg shadow-black/30">
@@ -26,6 +29,13 @@ export function Header({ training, isLoading }: HeaderProps) {
           {phase && (
             <span className="rounded-full bg-ink-600/70 px-3 py-0.5 text-xs uppercase tracking-wide text-slate-300">
               {titleCase(phase.type)}
+            </span>
+          )}
+          {statusBadge && (
+            <span
+              className={`rounded-full px-3 py-0.5 text-xs font-medium uppercase tracking-wide ${statusBadge.className}`}
+            >
+              {statusBadge.label}
             </span>
           )}
         </div>

@@ -5,6 +5,8 @@ import { duration, num, shortDate, titleCase, weekday } from "../lib/format";
 interface WorkoutListProps {
   title: string;
   workouts: WorkoutLite[] | null | undefined;
+  // Optional recent-load breakdown (sport → count) shown as chips above the list.
+  bySport?: Record<string, number> | null;
   isLoading?: boolean;
   isError?: boolean;
   error?: unknown;
@@ -14,12 +16,14 @@ interface WorkoutListProps {
 export function WorkoutList({
   title,
   workouts,
+  bySport,
   isLoading,
   isError,
   error,
   emptyHint,
 }: WorkoutListProps) {
   const items = workouts ?? [];
+  const sports = Object.entries(bySport ?? {}).filter(([, n]) => n > 0);
   return (
     <Panel
       title={title}
@@ -29,6 +33,18 @@ export function WorkoutList({
       isEmpty={items.length === 0}
       emptyHint={emptyHint ?? "No workouts"}
     >
+      {sports.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {sports.map(([sport, n]) => (
+            <span
+              key={sport}
+              className="rounded-full bg-ink-700/70 px-2 py-0.5 text-[11px] text-slate-300"
+            >
+              {titleCase(sport)} ×{n}
+            </span>
+          ))}
+        </div>
+      )}
       <ul className="divide-y divide-ink-600/50">
         {items.map((w) => (
           <Row key={w.id} workout={w} />
