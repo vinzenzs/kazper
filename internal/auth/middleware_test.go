@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,13 @@ const (
 	testMobileToken = "mobile-token-aaaaaaaaaaaaaa"
 	testAgentToken  = "agent-token-bbbbbbbbbbbbbbbb"
 	testGarminToken = "garmin-token-cccccccccccccc"
+	testWebUser     = "coach"
+	testWebPassword = "dashboard-pass-dddddddddddd"
 )
+
+func basicHeader(user, password string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
+}
 
 func newTestRouter(t *testing.T) (*gin.Engine, *clientCapture) {
 	t.Helper()
@@ -70,13 +77,91 @@ func TestMiddleware_MissingHeader(t *testing.T) {
 }
 
 func TestMiddleware_WrongScheme(t *testing.T) {
+	// An unrecognized scheme (neither Bearer nor Basic) is auth_required.
 	r, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.Header.Set("Authorization", "Basic "+testMobileToken)
+	req.Header.Set("Authorization", "Token "+testMobileToken)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.JSONEq(t, `{"error":"auth_required"}`, rec.Body.String())
+}
+
+func newTestRouterWithWeb(t *testing.T) (*gin.Engine, *clientCapture) {
+	t.Helper()
+	return newTestRouterFor(t, Config{
+		MobileToken: testMobileToken,
+		AgentToken:  testAgentToken,
+		WebUser:     testWebUser,
+		WebPassword: testWebPassword,
+	})
+}
+
+func TestMiddleware_WebBasicSetsContext(t *testing.T) {
+	r, cap := newTestRouterWithWeb(t)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", basicHeader(testWebUser, testWebPassword))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, ClientWeb, cap.id)
+}
+
+func TestMiddleware_WebBasicWrongPassword(t *testing.T) {
+	r, _ := newTestRouterWithWeb(t)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", basicHeader(testWebUser, "nope"))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.JSONEq(t, `{"error":"auth_invalid"}`, rec.Body.String())
+}
+
+func TestMiddleware_WebBasicMalformedPayload(t *testing.T) {
+	r, _ := newTestRouterWithWeb(t)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Basic not-base64!!")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.JSONEq(t, `{"error":"auth_invalid"}`, rec.Body.String())
+}
+
+func TestMiddleware_WebIdentityNotRecognizedWhenUnset(t *testing.T) {
+	// WEB_USER/WEB_PASSWORD omitted → any Basic credential is auth_invalid.
+	r, _ := newTestRouter(t)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", basicHeader(testWebUser, testWebPassword))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.JSONEq(t, `{"error":"auth_invalid"}`, rec.Body.String())
+}
+
+func TestMiddleware_BearerUnaffectedByWeb(t *testing.T) {
+	// With web configured, the Bearer path still resolves mobile/agent normally.
+	r, cap := newTestRouterWithWeb(t)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+testMobileToken)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, ClientMobile, cap.id)
+}
+
+func TestConfig_Validate_WebIncomplete(t *testing.T) {
+	err := Config{MobileToken: testMobileToken, AgentToken: testAgentToken, WebUser: testWebUser}.Validate()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrWebIncomplete))
+
+	err = Config{MobileToken: testMobileToken, AgentToken: testAgentToken, WebPassword: testWebPassword}.Validate()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrWebIncomplete))
+}
+
+func TestConfig_Validate_WebSetOk(t *testing.T) {
+	err := Config{MobileToken: testMobileToken, AgentToken: testAgentToken, WebUser: testWebUser, WebPassword: testWebPassword}.Validate()
+	assert.NoError(t, err)
 }
 
 func TestMiddleware_UnknownToken(t *testing.T) {

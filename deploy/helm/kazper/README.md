@@ -63,6 +63,36 @@ helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
 When using `existingSecret`, put `FCM_SERVICE_ACCOUNT_JSON` in that Secret
 and still set `config.fcmProjectId` in values.
 
+## Coach dashboard (opt-in)
+
+The training dashboard is a browser SPA embedded in the binary and served
+same-origin at `/` (the API stays under `/api/v1`). It is off by default.
+Enabling it requires **both** values together:
+
+| Value | What it is |
+|---|---|
+| `secrets.webUser` | HTTP Basic username for the dashboard (`client_id=web`, full access) |
+| `secrets.webPassword` | HTTP Basic password |
+
+Set one without the other and `helm install` fails with a clear error (the
+backend recognizes the `web` identity only when both are present). With both
+empty the dashboard shell still loads but its API calls are unauthenticated.
+
+```bash
+helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
+    --version v0.1.0 --namespace kazper \
+    --set secrets.webUser=coach \
+    --set secrets.webPassword="$(openssl rand -hex 24)" \
+    # ...required token values...
+```
+
+> **Transport expectation.** HTTP Basic auth transmits the credential as
+> base64 (not encryption) on every request. Serve the dashboard only over an
+> encrypted transport — terminate TLS at the Ingress (see `ingress.tls` below)
+> or reach it over a Tailscale tailnet. Never expose it on a bare HTTP
+> endpoint. When using `existingSecret`, put `WEB_USER` / `WEB_PASSWORD` in
+> that Secret.
+
 ## Install a tagged release (OCI from GHCR)
 
 ```bash

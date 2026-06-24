@@ -37,37 +37,43 @@ const APIBasePath = "/api/v1"
 // names that prior versions of the api and mcp binaries already accepted.
 type Config struct {
 	// HTTP API
-	DatabaseURL         string        `mapstructure:"DATABASE_URL"`
-	HTTPAddr            string        `mapstructure:"HTTP_ADDR"`
-	MobileToken         string        `mapstructure:"MOBILE_API_TOKEN"`
-	AgentToken          string        `mapstructure:"AGENT_API_TOKEN"`
+	DatabaseURL string `mapstructure:"DATABASE_URL"`
+	HTTPAddr    string `mapstructure:"HTTP_ADDR"`
+	MobileToken string `mapstructure:"MOBILE_API_TOKEN"`
+	AgentToken  string `mapstructure:"AGENT_API_TOKEN"`
 	// Garmin integration (opt-in, per add-garmin-auth-token). GarminToken is the
 	// dedicated bearer identity (client_id="garmin") the garmin-bridge calls
 	// under; when empty the /garmin/token endpoints return 503 garmin_disabled.
 	// GarminTokenEncKey is the base64-encoded AES-256 key used to encrypt the
 	// stored token blob at rest; required only when GarminToken is set.
-	GarminToken         string        `mapstructure:"GARMIN_API_TOKEN"`
-	GarminTokenEncKey   string        `mapstructure:"GARMIN_TOKEN_ENC_KEY"`
+	GarminToken       string `mapstructure:"GARMIN_API_TOKEN"`
+	GarminTokenEncKey string `mapstructure:"GARMIN_TOKEN_ENC_KEY"`
+	// Web dashboard Basic-auth credential (opt-in, per add-coach-dashboard). When
+	// BOTH WebUser and WebPassword are set, the browser dashboard authenticates as
+	// client_id="web" with full access; either empty leaves the web identity off.
+	// Basic auth is base64, not encryption — reach the dashboard over TLS/Tailscale.
+	WebUser     string `mapstructure:"WEB_USER"`
+	WebPassword string `mapstructure:"WEB_PASSWORD"`
 	// GarminBridgeURL is the in-cluster base URL of the garmin-bridge (per
 	// add-garmin-mcp-login). When set, /garmin/login + /garmin/login/mfa proxy
 	// to it; when empty those endpoints return 503 garmin_disabled. Optional and
 	// independent of GarminToken (the bridge owns its own token identity).
-	GarminBridgeURL     string        `mapstructure:"GARMIN_BRIDGE_URL"`
+	GarminBridgeURL string `mapstructure:"GARMIN_BRIDGE_URL"`
 	// FCM push (opt-in, per add-garmin-relogin-push). Push is enabled only when
 	// BOTH FCMProjectID and FCMServiceAccountJSON are set; otherwise the push
 	// surface is inert (503 push_disabled, relogin notification is a no-op).
 	// FCMServiceAccountJSON is either inline service-account JSON or a path to a
 	// JSON file; it is a secret and is redacted in any config dump.
-	FCMProjectID          string      `mapstructure:"FCM_PROJECT_ID"`
-	FCMServiceAccountJSON string      `mapstructure:"FCM_SERVICE_ACCOUNT_JSON"`
-	DefaultUserTZ       string        `mapstructure:"DEFAULT_USER_TZ"`
-	OFFTimeout          time.Duration `mapstructure:"-"`
-	OFFTimeoutSeconds   int           `mapstructure:"OFF_TIMEOUT_SECONDS"`
-	OFFUserAgentContact string        `mapstructure:"OFF_USER_AGENT_CONTACT"`
-	IdempotencyTTL      time.Duration `mapstructure:"-"`
-	IdempotencyTTLHours int           `mapstructure:"IDEMPOTENCY_TTL_HOURS"`
-	MigrateOnStart      bool          `mapstructure:"MIGRATE_ON_START"`
-	SwaggerEnabled      bool          `mapstructure:"SWAGGER_ENABLED"`
+	FCMProjectID          string        `mapstructure:"FCM_PROJECT_ID"`
+	FCMServiceAccountJSON string        `mapstructure:"FCM_SERVICE_ACCOUNT_JSON"`
+	DefaultUserTZ         string        `mapstructure:"DEFAULT_USER_TZ"`
+	OFFTimeout            time.Duration `mapstructure:"-"`
+	OFFTimeoutSeconds     int           `mapstructure:"OFF_TIMEOUT_SECONDS"`
+	OFFUserAgentContact   string        `mapstructure:"OFF_USER_AGENT_CONTACT"`
+	IdempotencyTTL        time.Duration `mapstructure:"-"`
+	IdempotencyTTLHours   int           `mapstructure:"IDEMPOTENCY_TTL_HOURS"`
+	MigrateOnStart        bool          `mapstructure:"MIGRATE_ON_START"`
+	SwaggerEnabled        bool          `mapstructure:"SWAGGER_ENABLED"`
 
 	// MCP server
 	NutritionAPIURL          string        `mapstructure:"NUTRITION_API_URL"`
@@ -77,11 +83,11 @@ type Config struct {
 	// Vision (Claude). When AnthropicAPIKey is unset the meals/from_photo
 	// endpoint returns 503; the rest of the API runs unchanged. Per
 	// add-meal-from-photo.
-	AnthropicAPIKey         string        `mapstructure:"ANTHROPIC_API_KEY"`
-	ClaudeVisionModel       string        `mapstructure:"CLAUDE_VISION_MODEL"`
-	VisionTimeout           time.Duration `mapstructure:"-"`
-	VisionTimeoutSeconds    int           `mapstructure:"VISION_TIMEOUT_SECONDS"`
-	MealFromPhotoMaxBytes   int64         `mapstructure:"MEAL_FROM_PHOTO_MAX_BYTES"`
+	AnthropicAPIKey       string        `mapstructure:"ANTHROPIC_API_KEY"`
+	ClaudeVisionModel     string        `mapstructure:"CLAUDE_VISION_MODEL"`
+	VisionTimeout         time.Duration `mapstructure:"-"`
+	VisionTimeoutSeconds  int           `mapstructure:"VISION_TIMEOUT_SECONDS"`
+	MealFromPhotoMaxBytes int64         `mapstructure:"MEAL_FROM_PHOTO_MAX_BYTES"`
 
 	// Cookidoo recipe import (server-side fetch + JSON-LD parse). Always on;
 	// only the per-request timeout is configurable.
@@ -110,6 +116,8 @@ var envKeys = []string{
 	"GARMIN_API_TOKEN",
 	"GARMIN_TOKEN_ENC_KEY",
 	"GARMIN_BRIDGE_URL",
+	"WEB_USER",
+	"WEB_PASSWORD",
 	"FCM_PROJECT_ID",
 	"FCM_SERVICE_ACCOUNT_JSON",
 	"DEFAULT_USER_TZ",
@@ -323,6 +331,7 @@ func (c *Config) Redacted() Config {
 	cp.GarminToken = redact(cp.GarminToken)
 	cp.GarminTokenEncKey = redact(cp.GarminTokenEncKey)
 	cp.FCMServiceAccountJSON = redact(cp.FCMServiceAccountJSON)
+	cp.WebPassword = redact(cp.WebPassword)
 	return cp
 }
 

@@ -115,6 +115,32 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `MEAL_FROM_PHOTO_MAX_BYTES` | `10485760`                                 | Max multipart body for `/meals/from_photo` (10 MB default)           |
 | `FCM_PROJECT_ID`         | _unset_                                       | Firebase project id for Android push (FCM HTTP v1). Push is enabled only when set together with `FCM_SERVICE_ACCOUNT_JSON`; unset means device tokens still register but delivery is a no-op |
 | `FCM_SERVICE_ACCOUNT_JSON` | _unset_                                     | Google service-account credential (inline JSON or a path to the key file) for FCM; required when `FCM_PROJECT_ID` is set |
+| `WEB_USER`               | _unset_                                       | HTTP Basic username for the browser coach dashboard (`client_id=web`, full access). The web identity is recognized only when set together with `WEB_PASSWORD` |
+| `WEB_PASSWORD`           | _unset_                                       | HTTP Basic password for the dashboard. Basic auth is base64, not encryption — only expose the dashboard over TLS or Tailscale |
+
+## Coach dashboard (web)
+
+A single-user, training-focused web dashboard is embedded in the binary and
+served same-origin at `/` (the REST API lives under `/api/v1`). Set `WEB_USER`
+and `WEB_PASSWORD` to enable it; the browser prompts once for the Basic
+credential and reuses it for the SPA's API calls. v1 is training-only — phase /
+season / days-to-race header, an ACWR form gauge, an acute/chronic load trend,
+a recovery snapshot, and recent + upcoming workouts.
+
+> **Reach it over an encrypted transport only.** Basic auth transmits the
+> credential as base64 on every request, so serve the dashboard behind TLS or
+> over a Tailscale tailnet — never on a bare HTTP LAN endpoint.
+
+The SPA source lives in `apps/web/`. Its build output (`apps/web/dist`) is
+committed and embedded via `go:embed` (mirroring the `docs/` precedent), so
+`go build` / `task build` need **no** Node toolchain. After changing anything
+under `apps/web/src`, regenerate and commit the build:
+
+```bash
+task web:install   # first time only
+task web:build     # → apps/web/dist (commit the diff)
+task web:dev       # Vite dev server, proxies /api → :8080
+```
 
 ## API at a glance
 
