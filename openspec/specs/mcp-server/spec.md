@@ -163,7 +163,7 @@ The system SHALL surface REST 4xx and 5xx responses as MCP tool results carrying
 
 ### Requirement: Configuration is read from environment variables
 
-The system SHALL read its configuration from environment variables at process start and refuse to start when required variables are missing.
+The system SHALL read its configuration from environment variables at process start and refuse to start when required variables are missing. The REST base URL SHALL include the `/api/v1` version prefix; tool calls join their relative paths against that base.
 
 #### Scenario: Missing AGENT_API_TOKEN halts startup
 
@@ -171,10 +171,15 @@ The system SHALL read its configuration from environment variables at process st
 - **THEN** the binary writes an error to stderr identifying the variable
 - **AND** exits with a non-zero status code
 
-#### Scenario: NUTRITION_API_URL defaults to localhost
+#### Scenario: NUTRITION_API_URL defaults to the versioned localhost base
 
 - **WHEN** the process starts without `NUTRITION_API_URL` set
-- **THEN** tool calls target `http://localhost:8080`
+- **THEN** tool calls target `http://localhost:8080/api/v1`
+
+#### Scenario: Tool calls resolve under the version prefix
+
+- **WHEN** a tool issues its single REST call (e.g. the daily summary tool)
+- **THEN** the request resolves to `<NUTRITION_API_URL>/summary/daily` under the `/api/v1` base (e.g. `http://localhost:8080/api/v1/summary/daily`)
 
 #### Scenario: Per-request timeout is configurable
 

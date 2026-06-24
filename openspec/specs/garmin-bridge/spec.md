@@ -575,19 +575,21 @@ The bridge SHALL expose `POST /sync/backfill` accepting an inclusive `from` and 
 ### Requirement: The bridge reports each sync run to the backend
 
 When the bridge runs `POST /sync` it SHALL record the run in the backend's sync-run log so
-the backend has an authoritative history of when Kazper last pulled from Garmin. Before
-fetching, the bridge SHALL open a run via `POST /garmin/sync-runs` (under the `GARMIN_API_TOKEN`
-`garmin` identity) carrying the rolling window it is about to sync (`window_from`/`window_to`),
-capturing the returned run `id`. After the sync completes it SHALL close the run via `PATCH
-/garmin/sync-runs/{id}` with `status=success`; if the sync raises, it SHALL close the run with
-`status=error` and a short, log-safe `error` message. Reporting failures (the backend
-unreachable) SHALL NOT abort the sync itself — the data write is the primary job and run
-reporting is best-effort.
+the backend has an authoritative history of when Kazper last pulled from Garmin. The bridge's
+backend base URL (`NUTRITION_API_URL`) SHALL include the `/api/v1` version prefix; all REST
+calls join their relative paths against that base. Before fetching, the bridge SHALL open a
+run via `POST /garmin/sync-runs` (under the `GARMIN_API_TOKEN` `garmin` identity) carrying the
+rolling window it is about to sync (`window_from`/`window_to`), capturing the returned run
+`id`. After the sync completes it SHALL close the run via `PATCH /garmin/sync-runs/{id}` with
+`status=success`; if the sync raises, it SHALL close the run with `status=error` and a short,
+log-safe `error` message. Reporting failures (the backend unreachable) SHALL NOT abort the
+sync itself — the data write is the primary job and run reporting is best-effort.
 
 #### Scenario: A successful sync opens and closes a run
 
 - **WHEN** `POST /sync` runs and completes without error
 - **THEN** the bridge has opened a `sync_runs` row (`status=running`) with the synced window and then closed it with `status=success`
+- **AND** both calls resolved under the `/api/v1` base (e.g. `…/api/v1/garmin/sync-runs`)
 
 #### Scenario: A failed sync closes the run as error
 
