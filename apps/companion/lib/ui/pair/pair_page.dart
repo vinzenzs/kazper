@@ -75,7 +75,7 @@ class _PairPageState extends ConsumerState<PairPage> {
           minLines: 3,
           maxLines: 6,
           decoration: const InputDecoration(
-            hintText: '{"base_url":"http://10.0.2.2:8080","token":"..."}',
+            hintText: '{"base_url":"http://10.0.2.2:8080/api/v1","token":"..."}',
             border: OutlineInputBorder(),
           ),
         ),

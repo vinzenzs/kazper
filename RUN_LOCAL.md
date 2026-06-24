@@ -173,7 +173,7 @@ set -a; . ./.env.local; set +a
 # Lookup a barcode (Nutella). First call hits Open Food Facts and caches.
 curl -s -X POST \
     -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    http://localhost:8080/products/lookup/3017624010701 | jq .
+    http://localhost:8080/api/v1/products/lookup/3017624010701 | jq .
 
 # Log a meal. Copy the id from the response above.
 PRODUCT_ID="<paste id here>"
@@ -182,23 +182,23 @@ curl -s -X POST \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"product_id\":\"$PRODUCT_ID\",\"quantity_g\":15,\"logged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"meal_type\":\"breakfast\"}" \
-    http://localhost:8080/meals | jq .
+    http://localhost:8080/api/v1/meals | jq .
 
 # Daily summary for today
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
+    "http://localhost:8080/api/v1/summary/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
 
 # Trailing 7-day rolling average. Averages divide by days_with_data (logged days),
 # not total_days — both are in the response so sparse weeks are loud.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/rolling?anchor_date=$(date +%Y-%m-%d)&window_days=7&tz=Europe/Berlin" \
+    "http://localhost:8080/api/v1/summary/rolling?anchor_date=$(date +%Y-%m-%d)&window_days=7&tz=Europe/Berlin" \
     | jq '{anchor_date, window_days, days_with_data, total_days, averages_kcal: .averages.kcal, goal_source}'
 
 # Per-meal protein distribution with MPS-threshold flags (0.3 g/kg per meal).
 # Body weight is resolved from stored entries (rolling 7d avg) — pass
 # body_weight_kg=… to override.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/protein-distribution?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" \
+    "http://localhost:8080/api/v1/summary/protein-distribution?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" \
     | jq '{mps_threshold_g, total_protein_g,
            score: "\(.mps_effective_meal_count)/\(.meal_count) meals over threshold",
            body_weight_source}'
@@ -206,7 +206,7 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 # Per-session fueling recommendation for a planned 90-min Z3 bike. Body
 # weight passed explicitly so no stored weight is needed first.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/race-prep/recommend-workout-fuel?sport=bike&duration_min=90&intensity_zone=3&body_weight_kg=72" \
+    "http://localhost:8080/api/v1/race-prep/recommend-workout-fuel?sport=bike&duration_min=90&intensity_zone=3&body_weight_kg=72" \
     | jq '{pre: .pre_workout.carbs_g, intra_g_per_hour: .intra_workout.carbs_g_per_hour,
            post_carbs: .post_workout.carbs_g, post_protein: .post_workout.protein_g}'
 
@@ -215,10 +215,10 @@ curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"quantity_ml\":500,\"logged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"note\":\"water\"}" \
-    http://localhost:8080/hydration | jq .
+    http://localhost:8080/api/v1/hydration | jq .
 
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/hydration/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
+    "http://localhost:8080/api/v1/summary/hydration/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
 
 # Log a body weight and inspect the 7-day rolling trend. Each trend point carries
 # sample_count — a value from sample_count: 1 is just that one sample, not a trend.
@@ -226,11 +226,11 @@ curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"weight_kg\":72.5,\"body_fat_pct\":14.2,\"logged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"note\":\"morning, fasted\"}" \
-    http://localhost:8080/weight | jq .
+    http://localhost:8080/api/v1/weight | jq .
 
 FROM=$(date -u -v-30d +%Y-%m-%d 2>/dev/null || date -u -d '-30 days' +%Y-%m-%d)
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/weight/trend?from=$FROM&to=$(date +%Y-%m-%d)&window_days=7&tz=Europe/Berlin" \
+    "http://localhost:8080/api/v1/weight/trend?from=$FROM&to=$(date +%Y-%m-%d)&window_days=7&tz=Europe/Berlin" \
     | jq '.points[-7:]'   # last week of the trend
 
 # Workout fueling round-trip (per add-meal-workout-link, extended by add-workout-fuel):
@@ -243,37 +243,37 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 WID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"source\":\"manual\",\"sport\":\"bike\",\"started_at\":\"$(date -u -v-3H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ)\",\"ended_at\":\"$(date -u -v-90M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-90 minutes' +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    http://localhost:8080/workouts | jq -r .id)
+    http://localhost:8080/api/v1/workouts | jq -r .id)
 
 # Use the banana product from earlier as the intra-workout snack.
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"product_id\":\"$PRODUCT_ID\",\"quantity_g\":100,\"logged_at\":\"$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)\",\"workout_id\":\"$WID\"}" \
-    http://localhost:8080/meals | jq .
+    http://localhost:8080/api/v1/meals | jq .
 
 # An UNTAGGED sip in the time-window — should still appear in intra_window.hydration.
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"quantity_ml\":250,\"logged_at\":\"$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    http://localhost:8080/hydration | jq .
+    http://localhost:8080/api/v1/hydration | jq .
 
 # Workout-fuel entry: a Maurten gel with sodium + carbs + caffeine, tagged.
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: $(uuidgen)" \
     -d "{\"name\":\"Maurten Gel 100\",\"logged_at\":\"$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)\",\"quantity_ml\":40,\"carbs_g\":25,\"sodium_mg\":120,\"caffeine_mg\":100,\"workout_id\":\"$WID\"}" \
-    http://localhost:8080/workout-fuel | jq .
+    http://localhost:8080/api/v1/workout-fuel | jq .
 
 # Fetch fueling. All three sub-objects populate; intra_window.workout_fuel.entry_count = 1.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/workouts/$WID/fueling" | jq .
+    "http://localhost:8080/api/v1/workouts/$WID/fueling" | jq .
 
 # Daily hydration: only the 250ml plain-water sip — the gel's 40ml does NOT count here
 # (the unit-isolation rule: workout_fuel owns its own totals, hydration owns its own).
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/hydration/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
+    "http://localhost:8080/api/v1/summary/hydration/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
 
 # Energy Availability over a week — closes T1 #4. Pure composition over
 # meals + workouts + body weight; no new schema.
@@ -286,11 +286,11 @@ EA_TO=$(date -u +%Y-%m-%dT00:00:00Z)
 # Stored-composition path (composition.source should be "stored_body_fat" or "estimated_85pct"
 # depending on whether body-fat % is in the weight entries).
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/energy/availability?from=$EA_FROM&to=$EA_TO&tz=Europe/Berlin" | jq .
+    "http://localhost:8080/api/v1/energy/availability?from=$EA_FROM&to=$EA_TO&tz=Europe/Berlin" | jq .
 
 # Explicit-lean-mass override (composition.source = "explicit_lean_mass"; body weight echoed for context).
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/energy/availability?from=$EA_FROM&to=$EA_TO&tz=Europe/Berlin&lean_mass_kg=62" | jq .
+    "http://localhost:8080/api/v1/energy/availability?from=$EA_FROM&to=$EA_TO&tz=Europe/Berlin&lean_mass_kg=62" | jq .
 ```
 
 ### Recipe + goals walkthrough
@@ -300,12 +300,12 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 SKYR=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"Skyr","nutriments_per_100g":{"kcal":60,"protein_g":11,"calcium_mg":120}}' \
-    http://localhost:8080/products | jq -r .id)
+    http://localhost:8080/api/v1/products | jq -r .id)
 
 OATS=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"Oats","nutriments_per_100g":{"kcal":380,"protein_g":13,"fiber_g":10,"iron_mg":4.7}}' \
-    http://localhost:8080/products | jq -r .id)
+    http://localhost:8080/api/v1/products | jq -r .id)
 
 # 2. Compose them into a recipe.
 RECIPE=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
@@ -314,7 +314,7 @@ RECIPE=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          {\"product_id\":\"$SKYR\",\"quantity_g\":200},
          {\"product_id\":\"$OATS\",\"quantity_g\":40}
        ]}" \
-    http://localhost:8080/products/recipes | jq -r .id)
+    http://localhost:8080/api/v1/products/recipes | jq -r .id)
 
 # 3. Set daily goals.
 curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
@@ -325,43 +325,43 @@ curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          "fiber_g": {"min": 30},
          "iron_mg": {"min": 14}
        }' \
-    http://localhost:8080/goals | jq .
+    http://localhost:8080/api/v1/goals | jq .
 
 # 4. Log the recipe as a single meal (one log call covers the whole bowl).
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"product_id\":\"$RECIPE\",\"quantity_g\":240,\"logged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"meal_type\":\"breakfast\"}" \
-    http://localhost:8080/meals | jq .
+    http://localhost:8080/api/v1/meals | jq .
 
 # 5. Check today's summary — totals include the recipe's contribution, and
 #    the response now includes an `adherence` block with on/under/over per goal.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
+    "http://localhost:8080/api/v1/summary/daily?date=$(date +%Y-%m-%d)&tz=Europe/Berlin" | jq .
 
 # 6. Inspect the meal entry with the component breakdown:
 MEAL_ID=$(curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/meals?from=$(date -u +%Y-%m-%dT00:00:00Z)&to=$(date -u -v+1d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d 'tomorrow' +%Y-%m-%dT00:00:00Z)" \
+    "http://localhost:8080/api/v1/meals?from=$(date -u +%Y-%m-%dT00:00:00Z)&to=$(date -u -v+1d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d 'tomorrow' +%Y-%m-%dT00:00:00Z)" \
     | jq -r '.meals[-1].id')
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/meals/$MEAL_ID?expand=components" | jq .
+    "http://localhost:8080/api/v1/meals/$MEAL_ID?expand=components" | jq .
 
 # 7. Training-day override: today's targets are higher than the default.
 TODAY=$(date +%Y-%m-%d)
 curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"kcal":{"min":2280,"max":2520},"protein_g":{"min":160,"max":200}}' \
-    "http://localhost:8080/goals/overrides/$TODAY" | jq .
+    "http://localhost:8080/api/v1/goals/overrides/$TODAY" | jq .
 
 # 8. Same daily summary call — note `goal_source: "override"` and the new
 #    adherence bounds (override values, not defaults).
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/daily?date=$TODAY&tz=Europe/Berlin" | jq '{goal_source, kcal_target: .adherence.kcal.target}'
+    "http://localhost:8080/api/v1/summary/daily?date=$TODAY&tz=Europe/Berlin" | jq '{goal_source, kcal_target: .adherence.kcal.target}'
 
 # 9. Delete the override; the next summary call swings back to "default".
 curl -s -X DELETE -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/goals/overrides/$TODAY"
+    "http://localhost:8080/api/v1/goals/overrides/$TODAY"
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/daily?date=$TODAY&tz=Europe/Berlin" | jq '{goal_source, kcal_target: .adherence.kcal.target}'
+    "http://localhost:8080/api/v1/summary/daily?date=$TODAY&tz=Europe/Berlin" | jq '{goal_source, kcal_target: .adherence.kcal.target}'
 ```
 
 ### Plan a race week
@@ -377,7 +377,7 @@ overrides (e.g. training-day kcal/protein templates), touching only `carbs_g`.
 #    no persistence. Useful for "what-if" exploration.
 RACE_DATE=$(date -u -v+3d +%Y-%m-%d 2>/dev/null || date -u -d '+3 days' +%Y-%m-%d)
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/race-prep/carb-load?race_date=$RACE_DATE&body_weight_kg=70" | jq .
+    "http://localhost:8080/api/v1/race-prep/carb-load?race_date=$RACE_DATE&body_weight_kg=70" | jq .
 
 # 2. Compute AND apply: writes the carb_g goal min-bound for each schedule day
 #    into the per-date goal overrides. The response includes an `applied` array
@@ -385,13 +385,13 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"race_date\":\"$RACE_DATE\",\"body_weight_kg\":70}" \
-    "http://localhost:8080/race-prep/carb-load/apply" | jq .
+    "http://localhost:8080/api/v1/race-prep/carb-load/apply" | jq .
 
 # 3. Verify the override is now driving adherence on the first load day
 #    (today + 1 day in this example).
 LOAD_DAY=$(date -u -v+1d +%Y-%m-%d 2>/dev/null || date -u -d '+1 day' +%Y-%m-%d)
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/daily?date=$LOAD_DAY" | \
+    "http://localhost:8080/api/v1/summary/daily?date=$LOAD_DAY" | \
     jq '{goal_source, carbs_target: .adherence.carbs_g.target}'
 # Expected: { "goal_source": "override", "carbs_target": { "min": 700 } }
 ```
@@ -415,13 +415,13 @@ RACE=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
             {"ordinal": 3, "discipline": "run",   "expected_duration_min": 50}
           ]
         }' \
-    http://localhost:8080/races)
+    http://localhost:8080/api/v1/races)
 RACE_ID=$(echo "$RACE" | jq -r .id)
 
 # 2. Compute the per-leg fueling plan. Supply a measured sweat rate to
 #    personalise fluid + sodium (omit it and you get a flagged 600 ml/hr default).
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/races/$RACE_ID/fueling-plan?body_weight_kg=70&sweat_rate_ml_per_hr=900" | \
+    "http://localhost:8080/api/v1/races/$RACE_ID/fueling-plan?body_weight_kg=70&sweat_rate_ml_per_hr=900" | \
     jq '.legs[] | {discipline, carbs_g_per_hr, sodium_mg_per_hr, fluid_ml_per_hr}'
 # Total 155 min → 90 g/hr carb baseline: swim 0, bike 90, run 63 (0.7×).
 # sweat 900 ml/hr → ~720 mg/hr sodium, 900 ml/hr fluid on bike+run; swim is dry.
@@ -447,11 +447,11 @@ curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          "carbs_g":  {"min": 350, "max": 450},
          "notes":    "build block default targets"
        }' \
-    http://localhost:8080/goal-templates/build-default | jq '.template | {name, id}'
+    http://localhost:8080/api/v1/goal-templates/build-default | jq '.template | {name, id}'
 
 # 2. Create a build phase pointing at it. (For demo, start today and run 14 days.)
 TPL_ID=$(curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    http://localhost:8080/goal-templates/build-default | jq -r .template.id)
+    http://localhost:8080/api/v1/goal-templates/build-default | jq -r .template.id)
 START=$(date -u +%Y-%m-%d)
 END=$(date -u -v+14d +%Y-%m-%d 2>/dev/null || date -u -d '+14 days' +%Y-%m-%d)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
@@ -463,19 +463,19 @@ curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          \"end_date\":\"$END\",
          \"default_template_id\":\"$TPL_ID\"
        }" \
-    http://localhost:8080/phases | jq '.phase | {name, type, start_date, end_date, default_template_name}'
+    http://localhost:8080/api/v1/phases | jq '.phase | {name, type, start_date, end_date, default_template_name}'
 
 # 3. Override one specific workout day inside the phase (per-date override wins).
 MID=$(date -u -v+3d +%Y-%m-%d 2>/dev/null || date -u -d '+3 days' +%Y-%m-%d)
 curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"carbs_g":{"min":700}}' \
-    http://localhost:8080/goals/overrides/$MID > /dev/null
+    http://localhost:8080/api/v1/goals/overrides/$MID > /dev/null
 
 # 4. /summary/range shows the per-day mix: phase_template on most days,
 #    override on the workout day.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/summary/range?from=$START&to=$END" | \
+    "http://localhost:8080/api/v1/summary/range?from=$START&to=$END" | \
     jq '.days[] | {date, goal_source, phase_name}'
 # Expected mostly { "goal_source": "phase_template", "phase_name": "build-block-demo" }
 # with one { "goal_source": "override" } row on the workout day.
@@ -492,7 +492,7 @@ the same data that would otherwise require 5-7 separate tool calls.
 ```bash
 TODAY=$(date -u +%Y-%m-%d)
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/context/daily?date=$TODAY" | jq '
+    "http://localhost:8080/api/v1/context/daily?date=$TODAY" | jq '
       {
         adherence:    .adherence.goal_source,
         phase:        .phase.name,
@@ -530,26 +530,26 @@ DAY=$(date -u +%Y-%m-%d)
 # Recovery snapshot (sleep / HRV / RHR / stress / body battery / readiness)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
     -d "{\"date\":\"$DAY\",\"sleep_seconds\":27000,\"sleep_score\":82,\"hrv_ms\":61,\"resting_hr\":48,\"stress_avg\":28,\"training_readiness\":74}" \
-    http://localhost:8080/recovery-metrics > /dev/null
+    http://localhost:8080/api/v1/recovery-metrics > /dev/null
 
 # Fitness snapshot (VO2max / race predictions in seconds / acute+chronic load)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
     -d "{\"date\":\"$DAY\",\"vo2max_running\":54,\"race_predictor_5k_seconds\":1230,\"acute_load\":420.5,\"chronic_load\":380}" \
-    http://localhost:8080/fitness-metrics > /dev/null
+    http://localhost:8080/api/v1/fitness-metrics > /dev/null
 
 # Hydration balance (Garmin's daily sweat-out / activity-intake / goal — distinct from /hydration)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
     -d "{\"date\":\"$DAY\",\"sweat_loss_ml\":2400,\"activity_intake_ml\":1800,\"goal_ml\":3000}" \
-    http://localhost:8080/hydration-balance > /dev/null
+    http://localhost:8080/api/v1/hydration-balance > /dev/null
 
 # Tomorrow's planned ride from the training calendar (status=planned allows the future date)
 curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" -H "Content-Type: application/json" \
     -d "{\"source\":\"garmin\",\"sport\":\"bike\",\"status\":\"planned\",\"name\":\"Z2 endurance\",\"started_at\":\"$(date -u -v+1d +%Y-%m-%dT07:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT07:00:00Z)\",\"ended_at\":\"$(date -u -v+1d +%Y-%m-%dT09:00:00Z 2>/dev/null || date -u -d '+1 day' +%Y-%m-%dT09:00:00Z)\"}" \
-    http://localhost:8080/workouts > /dev/null
+    http://localhost:8080/api/v1/workouts > /dev/null
 
 # daily_context now carries recovery + fitness + hydration_balance for today
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/context/daily?date=$DAY" | jq '{recovery: .recovery.resting_hr, fitness: .fitness.vo2max_running, sweat_loss: .hydration_balance.sweat_loss_ml}'
+    "http://localhost:8080/api/v1/context/daily?date=$DAY" | jq '{recovery: .recovery.resting_hr, fitness: .fitness.vo2max_running, sweat_loss: .hydration_balance.sweat_loss_ml}'
 # → { "recovery": 48, "fitness": 54, "sweat_loss": 2400 }
 ```
 
@@ -560,11 +560,11 @@ Test sessions leave products in the cache. List and delete them:
 ```bash
 # Enumerate manual products (most recently used first)
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/products?source=manual&limit=50" | jq .
+    "http://localhost:8080/api/v1/products?source=manual&limit=50" | jq .
 
 # Permanently delete one. Historical meals keep their snapshots.
 curl -s -X DELETE -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    http://localhost:8080/products/<uuid>
+    http://localhost:8080/api/v1/products/<uuid>
 # → 204 No Content on success
 # → 409 product_in_use_as_component if a recipe references it (with the
 #   using-recipes list and a hint to delete the recipes first)
@@ -590,11 +590,11 @@ WORKOUT_ID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          \"started_at\":\"$(date -u +%Y-%m-%dT18:00:00Z)\",
          \"ended_at\":\"$(date -u +%Y-%m-%dT19:00:00Z)\"
        }" \
-    http://localhost:8080/workouts | jq -r .id)
+    http://localhost:8080/api/v1/workouts | jq -r .id)
 
 # Round-trip: list today's workouts
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/workouts?from=$(date -u +%Y-%m-%dT00:00:00Z)&to=$(date -u -v+1d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d 'tomorrow' +%Y-%m-%dT00:00:00Z)" \
+    "http://localhost:8080/api/v1/workouts?from=$(date -u +%Y-%m-%dT00:00:00Z)&to=$(date -u -v+1d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d 'tomorrow' +%Y-%m-%dT00:00:00Z)" \
     | jq .
 ```
 
@@ -623,7 +623,7 @@ RIDE_ID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
          \"distance_m\":85000,\"avg_power_w\":175,
          \"temperature_c\":28,\"sweat_loss_ml\":2600
        }" \
-    http://localhost:8080/workouts | jq -r .id)
+    http://localhost:8080/api/v1/workouts | jq -r .id)
 # distance/power/temperature/sweat_loss are optional ingestion metrics (a watch
 # measures them; omit what you don't have). sweat_loss_ml + temperature_c get
 # echoed back on /fueling so you can weigh estimated loss against fluid taken.
@@ -635,12 +635,12 @@ RIDE_ID=$(curl -s -X POST -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 curl -s -X PATCH -H "Authorization: Bearer $MOBILE_API_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"rpe":7,"gi_distress_score":2,"notes":"third gel sat heavy at km 60"}' \
-    http://localhost:8080/workouts/$RIDE_ID | jq '{rpe, gi_distress_score, notes}'
+    http://localhost:8080/api/v1/workouts/$RIDE_ID | jq '{rpe, gi_distress_score, notes}'
 
 # 4. /workouts/{id}/fueling now surfaces both fields at the top level alongside
 #    the pre/intra/post window totals — one call for the rehearsal evaluation.
 curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
-    "http://localhost:8080/workouts/$RIDE_ID/fueling" | \
+    "http://localhost:8080/api/v1/workouts/$RIDE_ID/fueling" | \
     jq '{rpe, gi_distress_score, sweat_loss_ml, temperature_c, intra_carbs: .intra_window.workout_fuel.totals.carbs_g}'
 # Expected: { "rpe": 7, "gi_distress_score": 2, "sweat_loss_ml": 2600, "temperature_c": 28, "intra_carbs": 75 }
 ```

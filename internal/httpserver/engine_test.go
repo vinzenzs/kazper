@@ -8,6 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/vinzenzs/kazper/internal/config"
 )
 
 func init() {
@@ -31,6 +33,32 @@ func TestEngine_NoRouteReturnsJSON404(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"error":"not_found"}`, rec.Body.String())
+}
+
+// Domain routes are mounted under /api/v1 (per add-api-versioning): a route is
+// reachable under the prefix and the old root path now 404s. Infra endpoints
+// (/healthz) stay at root.
+func TestEngine_DomainRoutesAreVersioned(t *testing.T) {
+	r := engineWithHealthz()
+	r.Group(config.APIBasePath).GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"pong": true})
+	})
+
+	// Reachable under /api/v1.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, config.APIBasePath+"/ping", nil))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// The old root path is gone — JSON 404.
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ping", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.JSONEq(t, `{"error":"not_found"}`, rec.Body.String())
+
+	// Infra stays unversioned.
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestEngine_NoMethodReturnsJSON405(t *testing.T) {

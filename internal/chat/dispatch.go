@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/vinzenzs/kazper/internal/agenttools"
+	"github.com/vinzenzs/kazper/internal/config"
 )
 
 // dispatcher executes a tool's REST call in-process against the server's own
@@ -50,7 +51,10 @@ func (d *dispatcher) execute(ctx context.Context, toolName string, input json.Ra
 		return toolResult{err: err}
 	}
 
-	target := call.Path
+	// Registry paths are version-agnostic (e.g. "/context/training"); the loopback
+	// targets the same engine as a network client, so it carries the same /api/v1
+	// prefix the route group is mounted under (per add-api-versioning).
+	target := config.APIBasePath + call.Path
 	if len(call.Query) > 0 {
 		target += "?" + call.Query.Encode()
 	}

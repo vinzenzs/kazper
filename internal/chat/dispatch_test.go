@@ -50,7 +50,8 @@ func TestDispatcher_WriteToolForwardsBearerAndIdempotencyKey(t *testing.T) {
 	require.Len(t, rec.reqs, 1)
 	got := rec.reqs[0]
 	assert.Equal(t, "POST", got.method)
-	assert.Equal(t, "/shopping/items", got.path)
+	// The loopback targets the same versioned mount point as a network client.
+	assert.Equal(t, "/api/v1/shopping/items", got.path)
 	assert.Equal(t, "Bearer test-token", got.auth)
 	assert.NotEmpty(t, got.idemKey, "write tool must carry an Idempotency-Key")
 	assert.Contains(t, got.body, "onion")
@@ -71,7 +72,7 @@ func TestDispatcher_ReadToolHasNoIdempotencyKey(t *testing.T) {
 	require.Len(t, rec.reqs, 1)
 	assert.Empty(t, rec.reqs[0].idemKey)
 	assert.Equal(t, "GET", rec.reqs[0].method)
-	assert.Equal(t, "/context/daily", rec.reqs[0].path)
+	assert.Equal(t, "/api/v1/context/daily", rec.reqs[0].path)
 }
 
 func TestDispatcher_Non2xxIsNotOK(t *testing.T) {

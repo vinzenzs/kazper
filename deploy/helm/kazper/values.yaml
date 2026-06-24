@@ -190,7 +190,8 @@ garminBridge:
   #    upserts + external_id workout dedup make the re-pull safe. 0 = today only.
   syncLookbackDays: 2
 
-  # -- Backend base URL the bridge POSTs to. Empty → the in-cluster backend
+  # -- Backend origin the bridge POSTs to (origin only; the /api/v1 version
+  #    prefix is appended automatically). Empty → the in-cluster backend
   #    Service DNS (http://<fullname>:<service.port>).
   nutritionApiUrl: ""
 
