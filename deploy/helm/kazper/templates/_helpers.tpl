@@ -129,13 +129,17 @@ Bridge image reference. tag falls back to the chart appVersion when empty.
 {{- end }}
 
 {{/*
-The in-cluster base URL the bridge posts to. Defaults to the backend Service
-DNS when garminBridge.nutritionApiUrl is left empty.
+The base URL the bridge posts to, including the /api/v1 version prefix (per
+add-api-versioning). garminBridge.nutritionApiUrl is the origin only (no version
+path); /api/v1 is appended here. Defaults to the backend Service DNS when left
+empty.
 */}}
 {{- define "garmin-bridge.nutritionApiUrl" -}}
-{{- if .Values.garminBridge.nutritionApiUrl }}
-{{- .Values.garminBridge.nutritionApiUrl }}
-{{- else }}
-{{- printf "http://%s:%v" (include "kazper.fullname" .) .Values.service.port }}
-{{- end }}
+{{- $base := "" -}}
+{{- if .Values.garminBridge.nutritionApiUrl -}}
+{{- $base = .Values.garminBridge.nutritionApiUrl -}}
+{{- else -}}
+{{- $base = printf "http://%s:%v" (include "kazper.fullname" .) .Values.service.port -}}
+{{- end -}}
+{{- printf "%s/api/v1" (trimSuffix "/" $base) -}}
 {{- end }}

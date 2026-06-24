@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -34,6 +35,15 @@ func newAPIClient(baseURL *url.URL, token string, requestTimeout time.Duration) 
 	}
 }
 
+// joinPath prefixes a version-agnostic API path (e.g. "/meals") with the base
+// URL's path component, which carries the /api/v1 version prefix (per
+// add-api-versioning). Setting url.URL.Path directly would otherwise REPLACE the
+// base path and drop the prefix. Probes (/healthz) deliberately bypass this and
+// hit root.
+func (c *apiClient) joinPath(p string) string {
+	return strings.TrimRight(c.baseURL.Path, "/") + p
+}
+
 // Get executes GET path with the given query params.
 func (c *apiClient) Get(ctx context.Context, path string, query url.Values) (int, []byte, error) {
 	return c.do(ctx, http.MethodGet, path, query, nil, "")
@@ -51,7 +61,7 @@ func (c *apiClient) Post(ctx context.Context, path string, query url.Values, bod
 // the REST endpoint.
 func (c *apiClient) PostMultipart(ctx context.Context, path string, body []byte, contentType string, idempotencyKey string) (int, []byte, error) {
 	endpoint := *c.baseURL
-	endpoint.Path = path
+	endpoint.Path = c.joinPath(path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
@@ -111,7 +121,7 @@ func (c *apiClient) Healthz(ctx context.Context) error {
 
 func (c *apiClient) do(ctx context.Context, method, path string, query url.Values, body []byte, idempotencyKey string) (int, []byte, error) {
 	endpoint := *c.baseURL
-	endpoint.Path = path
+	endpoint.Path = c.joinPath(path)
 	if len(query) > 0 {
 		endpoint.RawQuery = query.Encode()
 	}

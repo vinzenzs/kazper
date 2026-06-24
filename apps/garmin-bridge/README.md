@@ -81,7 +81,7 @@ pip install -e ".[dev]"
 export GARMIN_EMAIL=you@example.com
 export GARMIN_PASSWORD='…'
 export GARMIN_API_TOKEN='…'                 # must match the backend's GARMIN_API_TOKEN
-export NUTRITION_API_URL=http://localhost:8080
+export NUTRITION_API_URL=http://localhost:8080/api/v1   # include the /api/v1 version prefix
 
 python -m garmin_bridge      # serves on :8080
 ```

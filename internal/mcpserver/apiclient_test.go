@@ -115,6 +115,45 @@ func TestAPIClient_QueryParamsAppended(t *testing.T) {
 	assert.Contains(t, gotURL, "to=2026-06-07")
 }
 
+// When the base URL carries the /api/v1 version prefix (per add-api-versioning),
+// per-call version-agnostic paths must be JOINED onto it, not replace it.
+func TestAPIClient_JoinsVersionPrefix(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	c := &apiClient{
+		baseURL:   mustURL(srv.URL + "/api/v1"),
+		token:     "t",
+		userAgent: "ua",
+		http:      &http.Client{Timeout: 5 * time.Second},
+	}
+	_, _, err := c.Get(context.Background(), "/meals", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v1/meals", gotPath, "version-agnostic path must join onto the base prefix")
+}
+
+// Health probes live at the root, unversioned — even when the base URL carries
+// the /api/v1 prefix.
+func TestAPIClient_HealthzBypassesVersionPrefix(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	c := &apiClient{
+		baseURL:   mustURL(srv.URL + "/api/v1"),
+		token:     "t",
+		userAgent: "ua",
+		http:      &http.Client{Timeout: 5 * time.Second},
+	}
+	require.NoError(t, c.Healthz(context.Background()))
+	assert.Equal(t, "/healthz", gotPath, "healthz is unversioned (root)")
+}
+
 func mustURL(s string) *url.URL {
 	u, err := url.Parse(s)
 	if err != nil {

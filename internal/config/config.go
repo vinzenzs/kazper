@@ -24,6 +24,15 @@ import (
 // (AES-256 → 32-byte key).
 const garminEncKeyBytes = 32
 
+// APIBasePath is the version prefix every domain REST endpoint is served under
+// (per add-api-versioning). It is the single source of truth shared by the Gin
+// route group, the in-process chat loopback dispatcher, and the NUTRITION_API_URL
+// default below — so the server and its in-binary callers can never drift. Infra
+// endpoints (/healthz, /readyz, /swagger) are deliberately NOT under this prefix.
+// The swag `@BasePath` annotation in cmd/kazper/main.go mirrors this literally
+// (a comment can't reference a Go const) — keep them in sync.
+const APIBasePath = "/api/v1"
+
 // Config is the resolved runtime configuration. Field tags use the env var
 // names that prior versions of the api and mcp binaries already accepted.
 type Config struct {
@@ -133,7 +142,7 @@ func New() *viper.Viper {
 	v.SetDefault("IDEMPOTENCY_TTL_HOURS", 24)
 	v.SetDefault("MIGRATE_ON_START", true)
 	v.SetDefault("SWAGGER_ENABLED", false)
-	v.SetDefault("NUTRITION_API_URL", "http://localhost:8080")
+	v.SetDefault("NUTRITION_API_URL", "http://localhost:8080"+APIBasePath)
 	v.SetDefault("MCP_REQUEST_TIMEOUT_SECONDS", 10)
 	v.SetDefault("CLAUDE_VISION_MODEL", "claude-sonnet-4-6")
 	v.SetDefault("VISION_TIMEOUT_SECONDS", 15)

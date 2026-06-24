@@ -314,7 +314,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 
 	RegisterSwagger(r, cfg.SwaggerEnabled)
 
-	api := r.Group("/")
+	// Domain endpoints are versioned under /api/v1 (per add-api-versioning); the
+	// infra endpoints above (/healthz, /readyz, /swagger) stay at root, unversioned.
+	// config.APIBasePath is the shared source of truth (also used by the MCP client
+	// default and the chat loopback dispatcher).
+	api := r.Group(config.APIBasePath)
 	api.Use(requestLogger(logger))
 	api.Use(auth.Middleware(authCfg))
 	api.Use(idempotency.Middleware(idempRepo, cfg.IdempotencyTTL))

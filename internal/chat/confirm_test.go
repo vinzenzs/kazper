@@ -17,6 +17,7 @@ import (
 
 	"github.com/vinzenzs/kazper/internal/agenttools"
 	"github.com/vinzenzs/kazper/internal/auth"
+	"github.com/vinzenzs/kazper/internal/config"
 )
 
 // scheduleWorkoutSpec is a write-confirm tool injected only in confirm tests —
@@ -73,7 +74,9 @@ func newConfirmEnv(t *testing.T, anthropic *httptest.Server, cfg Config) *confir
 	var scheduleKeys []string
 
 	r := gin.New()
-	api := r.Group("/")
+	// Mirror production: every route (chat endpoint + the tool stubs the loopback
+	// dispatches) lives under /api/v1 (per add-api-versioning).
+	api := r.Group(config.APIBasePath)
 	api.Use(auth.Middleware(auth.Config{MobileToken: "m", AgentToken: testToken}))
 	api.GET("/context/daily", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"date": c.Query("date")})
@@ -91,7 +94,7 @@ func newConfirmEnv(t *testing.T, anthropic *httptest.Server, cfg Config) *confir
 
 func postConfirm(t *testing.T, engine http.Handler, sessionID uuid.UUID, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/chat/sessions/"+sessionID.String()+"/confirm", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, config.APIBasePath+"/chat/sessions/"+sessionID.String()+"/confirm", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

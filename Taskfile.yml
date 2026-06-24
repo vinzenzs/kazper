@@ -198,7 +198,7 @@ tasks:
         DEFAULT_USER_TZ=Europe/Berlin
         HTTP_ADDR=:8080
         MIGRATE_ON_START=true
-        NUTRITION_API_URL=http://localhost:8080
+        NUTRITION_API_URL=http://localhost:8080/api/v1
         MCP_REQUEST_TIMEOUT_SECONDS=10
         SWAGGER_ENABLED=true
         # Garmin integration: enables the /garmin/token endpoints the bridge
@@ -259,7 +259,8 @@ tasks:
         fi
         PORT="${HTTP_ADDR#:}"
         : "${PORT:=8080}"
-        PAYLOAD=$(printf '{"base_url":"http://%s:%s","token":"%s"}' "$IP" "$PORT" "$MOBILE_API_TOKEN")
+        # base_url carries the /api/v1 version prefix (per add-api-versioning).
+        PAYLOAD=$(printf '{"base_url":"http://%s:%s/api/v1","token":"%s"}' "$IP" "$PORT" "$MOBILE_API_TOKEN")
         echo ""
         echo "Pairing payload: $PAYLOAD"
         echo ""
@@ -300,14 +301,16 @@ tasks:
           set -a && . ./.env.prod && set +a
         fi
         if [ -z "$PROD_BASE_URL" ]; then
-          echo "PROD_BASE_URL not set — add it to .env.prod (e.g. PROD_BASE_URL=https://api.example.com) or pass it inline." >&2
+          echo "PROD_BASE_URL not set — add it to .env.prod (e.g. PROD_BASE_URL=https://api.example.com, the origin only; /api/v1 is appended) or pass it inline." >&2
           exit 1
         fi
         if [ -z "$MOBILE_API_TOKEN" ]; then
           echo "MOBILE_API_TOKEN not set — add the production token to .env.prod or pass it inline." >&2
           exit 1
         fi
-        BASE_URL="${PROD_BASE_URL%/}"
+        # Trim a trailing slash, then append the /api/v1 version prefix (per
+        # add-api-versioning). PROD_BASE_URL is the origin only.
+        BASE_URL="${PROD_BASE_URL%/}/api/v1"
         PAYLOAD=$(printf '{"base_url":"%s","token":"%s"}' "$BASE_URL" "$MOBILE_API_TOKEN")
         echo ""
         echo "Pairing payload (PROD): $PAYLOAD"
@@ -354,7 +357,7 @@ tasks:
         GARMIN_EMAIL=
         GARMIN_PASSWORD=
         GARMIN_API_TOKEN=dev-garmin-token-0000000000ccccc
-        NUTRITION_API_URL=http://localhost:8080
+        NUTRITION_API_URL=http://localhost:8080/api/v1
         SYNC_TZ=Europe/Berlin
         PORT={{.GARMIN_BRIDGE_PORT}}
         LOG_LEVEL=INFO

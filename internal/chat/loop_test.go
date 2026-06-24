@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vinzenzs/kazper/internal/auth"
+	"github.com/vinzenzs/kazper/internal/config"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -146,7 +147,9 @@ func newLoopEnv(t *testing.T, anthropic *httptest.Server, cfg Config) *loopEnv {
 	var planKeys []string
 
 	r := gin.New()
-	api := r.Group("/")
+	// Mirror production: chat endpoint + the loopback-dispatched tool stubs all
+	// live under /api/v1 (per add-api-versioning).
+	api := r.Group(config.APIBasePath)
 	api.Use(auth.Middleware(auth.Config{MobileToken: "m", AgentToken: testToken}))
 	// Stub tool endpoints (no DB) — enough for the loop to dispatch against.
 	api.GET("/context/daily", func(c *gin.Context) {
@@ -176,7 +179,7 @@ func postMsg(t *testing.T, env *loopEnv, message string) *httptest.ResponseRecor
 
 func postChat(t *testing.T, engine http.Handler, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, config.APIBasePath+"/chat", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -317,8 +320,8 @@ func TestChat_WriteToolForwardsAuthAndStableIdempotencyKey(t *testing.T) {
 // 503 when the service is unconfigured (no API key).
 func TestChat_NilServiceReturns503(t *testing.T) {
 	r := gin.New()
-	NewHandlers(nil).Register(r.Group("/"))
-	req := httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(`{}`))
+	NewHandlers(nil).Register(r.Group(config.APIBasePath))
+	req := httptest.NewRequest(http.MethodPost, config.APIBasePath+"/chat", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)

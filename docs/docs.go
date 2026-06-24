@@ -13679,7 +13679,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "0.1.0",
 	Host:             "",
-	BasePath:         "/",
+	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Kazper",
 	Description:      "Kazper — personal endurance-fueling and training-coach REST API. All endpoints under /products, /meals, and /summary require a bearer token.",

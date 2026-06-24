@@ -5,7 +5,7 @@
 // @title           Kazper
 // @version         0.1.0
 // @description     Kazper — personal endurance-fueling and training-coach REST API. All endpoints under /products, /meals, and /summary require a bearer token.
-// @BasePath        /
+// @BasePath        /api/v1
 // @securityDefinitions.apikey  BearerAuth
 // @in                          header
 // @name                        Authorization
