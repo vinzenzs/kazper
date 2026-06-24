@@ -151,7 +151,7 @@ task db:down          # stop + remove the container; keep the data volume
 task db:wipe          # stop + remove the container AND delete the data volume
 task web:install      # install the dashboard's Node deps (first time only)
 task web:dev          # run the dashboard dev server (Vite, proxies /api → :8080)
-task web:build        # rebuild apps/web/dist (committed + embedded)
+task web:build        # build apps/web/dist (gitignored; embedded via -tags webembed)
 task web:test         # run the dashboard's component tests (Vitest)
 ```
 
@@ -162,15 +162,20 @@ as the `/api/v1` REST API). To enable it, set both `WEB_USER` and `WEB_PASSWORD`
 (e.g. in `.env.local`) and reach the binary in a browser:
 
 ```bash
-WEB_USER=coach WEB_PASSWORD="$(openssl rand -hex 24)" task run
+task build   # builds the SPA + embeds it (-tags webembed)
+WEB_USER=coach WEB_PASSWORD="$(openssl rand -hex 24)" ./bin/kazper serve
 # then open http://localhost:8080/ and enter the credential when prompted
+# (a plain `task run` would serve the placeholder shell — see below)
 ```
 
-The committed `apps/web/dist` is what the binary serves, so the dashboard works
-straight from `task run` / `task build` with no Node toolchain. Use `task web:dev`
-only when iterating on the SPA itself (it serves source with hot reload and
-proxies `/api` to a running backend on `:8080`); run `task web:build` and commit
-the `dist/` diff before relying on the embedded build.
+`apps/web/dist` is **not committed** — it's built by `task web:build` (or the
+container image's Node stage) and gitignored. `task build` embeds the real
+dashboard (it runs `web:build` then compiles with `-tags webembed`), so
+`./bin/kazper serve` serves it. A plain `go build` / `task run` / `task dev`
+(no tag) compiles with **no Node toolchain** but embeds a small placeholder shell
+instead of the real dashboard. Use `task web:dev` when iterating on the SPA
+itself (hot reload, proxies `/api` to a backend on `:8080`); use `task build`
+when you want the real dashboard embedded in the binary.
 
 > **Transport note.** HTTP Basic auth sends the credential as base64 (not
 > encryption) on every request. Locally that's fine over `localhost`; anywhere

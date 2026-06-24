@@ -11,8 +11,15 @@ build/
 .gitignore
 .gitattributes
 
-# Other clients live in this monorepo but are not part of the API image
-apps/
+# Other clients live in this monorepo but are not part of the API image —
+# EXCEPT apps/web SOURCE, which the Dockerfile's Node stage compiles into the
+# embedded SPA. Exclude its node_modules and the (gitignored) local dist; the
+# image always builds a fresh dist in the node stage. Use `apps/*` (not `apps/`)
+# so the parent dir isn't excluded and apps/web can be re-included.
+apps/*
+!apps/web
+apps/web/node_modules
+apps/web/dist
 extensions/
 
 # Spec-driven workflow files — not source code

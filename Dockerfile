@@ -16,6 +16,18 @@
 ARG VERSION=dev
 ARG COMMIT=unknown
 
+# Stage 1: build the coach-dashboard SPA. apps/web/dist is NOT committed (per
+# build-spa-in-pipeline) — it's produced here and embedded into the binary under
+# `-tags webembed` in the Go stage. Runs on the build platform (TS→JS is arch-
+# independent), so no QEMU cost on cross-builds.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+WORKDIR /web
+# Cache npm install independently of source changes.
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci
+COPY apps/web/ ./
+RUN npm run build   # → /web/dist
+
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG VERSION
 ARG COMMIT
@@ -29,13 +41,17 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Overlay the freshly-built SPA so `//go:embed all:dist` (under -tags webembed)
+# finds it. dist is gitignored, so it isn't in the build context otherwise.
+COPY --from=web /web/dist ./apps/web/dist
 
 # CGO_ENABLED=0 + -trimpath give us a deterministic, statically-linked
 # binary suitable for distroless/static. -s -w strip symbol + DWARF tables;
-# combined they save ~25% of the binary size.
+# combined they save ~25% of the binary size. -tags webembed embeds the real
+# dashboard build (default builds embed the placeholder stub).
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath \
+    go build -trimpath -tags webembed \
         -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
         -o /out/kazper ./cmd/kazper
 

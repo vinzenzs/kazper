@@ -26,9 +26,13 @@ tasks:
       - task --list
 
   build:
-    desc: Compile the binary to {{.BIN}}
+    desc: Compile the binary to {{.BIN}} with the real embedded dashboard
+    # web:build first so apps/web/dist exists, then `-tags webembed` embeds it.
+    # A plain `go build` (no tag) compiles fine too but embeds the placeholder
+    # stub — see build-spa-in-pipeline.
+    deps: [web:build]
     cmds:
-      - go build -o {{.BIN}} ./cmd/kazper
+      - go build -tags webembed -o {{.BIN}} ./cmd/kazper
 
   run:
     desc: Run the REST API from source (uses current env)
@@ -310,7 +314,7 @@ tasks:
       - npm run dev
 
   web:build:
-    desc: Build the web dashboard into apps/web/dist (committed + embedded)
+    desc: Build the web dashboard into apps/web/dist (gitignored; embedded via -tags webembed)
     dir: apps/web
     cmds:
       - npm run build
