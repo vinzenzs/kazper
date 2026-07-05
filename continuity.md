@@ -2,30 +2,32 @@
 
 _Forward plan for OpenSpec changes. Tracks **what's next**, **what's in flight**, and **what's queued**._
 _Companion to `openspec/priorities.md` (tier/triage framing) — this file is the operational queue._
-_Last refreshed: 2026-06-25 by the `continuity` skill (the web-dashboard arc shipped & archived — `add-api-versioning` → `add-coach-dashboard` → `expand-coach-dashboard-fitness`, plus `add-companion-push` and `add-helm-fcm-push-config`; **all open changes archived, queue is empty**, nothing in flight; migration head unchanged at `052`; `main` is well ahead of `origin/main`)._
+_Last refreshed: 2026-07-05 by the `continuity` skill (proposed the **Strava-stats trilogy** — `strava-stats-frontend-phase-1/2/3` — via an explore→propose session; **Phase 1 implemented** (24/24 tasks, 49 web tests + webembed serving tests green) on `feat/strava-stats-frontend-phase-1` and committed — ready to archive; Phase 2 & 3 queued in Up next; `garmin-bridge-call-resilience` sits in Backlog awaiting artifacts; migration head still `052` on disk (Phase 3 will add `053`); `main` still ahead of `origin/main`)._
 
 ## In progress
 
 | Change | Branch | Started | Owner | Notes |
 |---|---|---|---|---|
-| _(none)_ | | | | |
-
-_Nothing in flight; `openspec/changes/` is empty._
+| strava-stats-frontend-phase-1 | `feat/strava-stats-frontend-phase-1` | 2026-07-05 | Vinzenz Stadtmueller | **Implemented & committed** — 24/24 tasks, 49 web tests + webembed serving green. Router (`react-router-dom`) + `/records`, `/gear`, `/workouts/:id` routes surfacing existing PR/gear/achievement/detail endpoints; frontend-only, no backend touch. **Ready to `/opsx:archive`.** |
 
 ## Up next
 
 Ordered queue — top is next to pick up.
 
-_(empty — no open proposals. Next change must be proposed first via `/opsx:propose`.)_
+1. **strava-stats-frontend-phase-2** — Volume totals: new `workout-stats` capability (`GET /workouts/summary`, per-day + windowed totals by sport), Week/Month/YTD toggle + activity heatmap; +1 MCP tool (`training_totals`). _Why now: 2nd of the Strava-stats trilogy; build after Phase 1 ships._
+2. **strava-stats-frontend-phase-3** — Power/pace curve (gated, largest): bridge ingests Garmin streams → new `effort-analytics` capability (migration `053`, mean-maximal best-efforts) → `GET /workouts/power-curve` + visx log-x chart; +1 MCP tool (`power_curve`). _Why now: 3rd of the trilogy; optional — build only when the curve is actually wanted._
 
 ## Backlog
 
 Planned changes not yet prioritized.
 
-- _No open proposals._ Future-but-unproposed candidate seams if needed: multisport "Phase 4" niceties (per-segment duration in the template view) and the still-open priorities-flagged items below.
+- **garmin-bridge-call-resilience** — proposal dir exists (`openspec/changes/garmin-bridge-call-resilience/`) but has no artifacts yet; author via `/opsx:propose` before queueing.
+- Future-but-unproposed candidate seams if needed: multisport "Phase 4" niceties (per-segment duration in the template view) and the still-open priorities-flagged items below.
 
 ## Notes
 
+- **The Strava-stats trilogy — explore→propose→apply, 2026-07-05.** Explore-mode reframe: the backend already mirrors Strava-shaped Garmin data (`personal-records`, `gear`, `achievements`, per-workout `splits`/zones) — surfacing it in the SPA is a frontend problem, not a data problem. Split into three proposals: **Phase 1** (frontend-only — router + surface existing endpoints), **Phase 2** (`workout-stats` capability → `GET /workouts/summary` volume totals + heatmap; +MCP `training_totals`), **Phase 3** (gated — `effort-analytics`: bridge ingests Garmin streams → mean-maximal best-efforts, migration `053`, power/pace curve; +MCP `power_curve`).
+  - **`strava-stats-frontend-phase-1` — IMPLEMENTED (ready to archive).** Added `react-router-dom`; `App.tsx` → `BrowserRouter` shell over a `Layout` (nav: Dashboard·Records·Gear) + `DashboardView` at `/`. New routes: `/records` (PR best-efforts table + achievements strip), `/gear` (km mileage + muted wear bar, retired dimmed), `/workouts/:id` (summary `Stat` grid + `ZoneTimeStrip` time-in-zone + `SplitsTable`, 404→not-found, no-splits degrades). `WorkoutList` rows now `<Link>` to detail. **Analyst aesthetic only** — reused `Panel`/`Stat`/exported `ZONE_COLORS`, no celebratory treatment. **No backend touch** — reads existing `/personal-records`, `/gear`, `/achievements`, `/workouts/:id`. **Decision resolved in apply:** PR `activity_id` is a Garmin external id (not a Kazper workout id) → PR rows are display-only, no link. Verified: `tsc`+`vite build` clean, **49 web tests** (incl. deep-link + nav routing test), `go test -tags webembed ./internal/httpserver/...` green. `dist` is pipeline-built (gitignored), not committed.
 - **The web-dashboard arc is COMPLETE — 3/3 shipped + archived (2026-06-24).** A new browser surface, served same-origin from the binary:
   - `add-api-versioning` (archived 2026-06-24) — **prerequisite cutover.** Relocated every domain endpoint from the root group to `/api/v1` (`config.APIBasePath` is the single source of truth, shared by the Gin group, the in-process chat loopback dispatcher, and the `NUTRITION_API_URL` default); infra (`/healthz`,`/readyz`,`/swagger`) stays at root. Behavior-preserving — same handlers/auth/payloads. All three clients moved in lockstep: MCP client joins base+path (was *replacing* it), mobile pairing QR carries `/api/v1` (**re-pair required**), garmin-bridge `NUTRITION_API_URL` gains the prefix (httpx/Helm). `@BasePath` + `docs/` regenerated. Breaking, all-at-once (no dual-mount). _Caught mid-apply: the chat loopback was a 4th path consumer not in the original tasks._
   - `add-coach-dashboard` (archived 2026-06-24) — **the SPA.** Vite + React + TS + visx + Tailwind training dashboard embedded via `embed.FS`, served at `/`; a new **`web` Basic-auth identity** (`WEB_USER`/`WEB_PASSWORD`, opt-in, full access) gates the shell + its API calls in one realm. Reads the existing `/context/training` + `/context/recovery` + `/fitness-metrics` — **no new data endpoints.** Committed `apps/web/dist` (mirrors the `docs/` precedent) so `go build` needs no Node. Reach it over TLS/Tailscale (Basic is base64, not encryption). _Implemented out-of-band by the owner; spec synced to `auth` + new `coach-dashboard` capability._

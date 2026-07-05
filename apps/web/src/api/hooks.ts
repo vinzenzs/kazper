@@ -2,9 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiGet } from "./client";
 import type {
+  AchievementsList,
   FitnessMetricsList,
+  GearList,
+  PersonalRecordsList,
   RecoveryContext,
   TrainingContext,
+  Workout,
 } from "./types";
 
 // Garmin sync lands data ~daily, so we don't poll aggressively. The query
@@ -47,5 +51,43 @@ export function useFitnessTrend(windowDays = 42) {
     queryFn: () =>
       apiGet<FitnessMetricsList>(`/fitness-metrics?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// Personal records (best efforts), gear inventory, and achievements are
+// slowly-changing Garmin mirrors — the same slow-revalidate policy as the
+// context reads is plenty.
+export function usePersonalRecords() {
+  return useQuery({
+    queryKey: ["personal-records"],
+    queryFn: () => apiGet<PersonalRecordsList>("/personal-records"),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+export function useGear() {
+  return useQuery({
+    queryKey: ["gear"],
+    queryFn: () => apiGet<GearList>("/gear"),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+export function useAchievements() {
+  return useQuery({
+    queryKey: ["achievements"],
+    queryFn: () => apiGet<AchievementsList>("/achievements"),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// A single workout's detail (splits, sets, HR-zone time) — the list-shaped
+// context payloads omit these, so the detail route fetches by id on demand.
+// `enabled` guards the missing-param case; the API returns 404 for an unknown id.
+export function useWorkout(id: string | undefined) {
+  return useQuery({
+    queryKey: ["workout", id],
+    queryFn: () => apiGet<Workout>(`/workouts/${id}`),
+    enabled: !!id,
   });
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 import { Header } from "../Header";
 import { FormGauge } from "../FormGauge";
@@ -158,18 +159,36 @@ describe("Zones", () => {
 
 describe("WorkoutList", () => {
   it("renders workouts when present", () => {
-    render(<WorkoutList title="Recent workouts" workouts={populatedTraining.recent_workouts} />);
+    render(
+      <MemoryRouter>
+        <WorkoutList title="Recent workouts" workouts={populatedTraining.recent_workouts} />
+      </MemoryRouter>,
+    );
     expect(screen.getByText("Threshold 4x8")).toBeInTheDocument();
     expect(screen.getByText("120")).toBeInTheDocument();
   });
 
+  it("links each workout row to its detail route", () => {
+    render(
+      <MemoryRouter>
+        <WorkoutList title="Recent workouts" workouts={populatedTraining.recent_workouts} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: /threshold 4x8/i })).toHaveAttribute(
+      "href",
+      "/workouts/w1",
+    );
+  });
+
   it("renders by-sport chips when provided", () => {
     render(
-      <WorkoutList
-        title="Recent workouts"
-        workouts={populatedTraining.recent_workouts}
-        bySport={populatedTraining.recent_load.by_sport}
-      />,
+      <MemoryRouter>
+        <WorkoutList
+          title="Recent workouts"
+          workouts={populatedTraining.recent_workouts}
+          bySport={populatedTraining.recent_load.by_sport}
+        />
+      </MemoryRouter>,
     );
     expect(screen.getByText("Cycling ×3")).toBeInTheDocument();
     expect(screen.getByText("Running ×2")).toBeInTheDocument();
@@ -177,11 +196,13 @@ describe("WorkoutList", () => {
 
   it("shows an empty state with no workouts", () => {
     render(
-      <WorkoutList
-        title="Upcoming workouts"
-        workouts={emptyTraining.upcoming_workouts}
-        emptyHint="Nothing scheduled"
-      />,
+      <MemoryRouter>
+        <WorkoutList
+          title="Upcoming workouts"
+          workouts={emptyTraining.upcoming_workouts}
+          emptyHint="Nothing scheduled"
+        />
+      </MemoryRouter>,
     );
     expect(screen.getByText(/nothing scheduled/i)).toBeInTheDocument();
   });

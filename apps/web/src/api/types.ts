@@ -120,3 +120,104 @@ export interface RecoveryContext {
 export interface FitnessMetricsList {
   fitness_metrics: FitnessSnapshot[];
 }
+
+// Mirrors internal/personalrecords/types.go. `value` carries an accompanying
+// `unit` (e.g. "s" for a time, "m" for a distance) so a row renders without a
+// hard-coded PR-type lookup. `activity_id` is a Garmin external id (not a Kazper
+// workout id), so it is display-only — not a link into /workouts/:id.
+export interface PersonalRecord {
+  id: string;
+  external_id: string;
+  pr_type: string;
+  value: number | null;
+  unit: string;
+  activity_id?: string | null;
+  achieved_at: string;
+}
+
+export interface PersonalRecordsList {
+  personal_records: PersonalRecord[];
+}
+
+// Mirrors internal/achievements/types.go. `kind` is "badge" | "challenge".
+export interface Achievement {
+  id: string;
+  external_id: string;
+  kind: string;
+  name: string;
+  earned_at?: string | null;
+  progress_pct?: number | null;
+}
+
+export interface AchievementsList {
+  achievements: Achievement[];
+}
+
+// Mirrors internal/gear/types.go. `gear_type` is "shoes" | "bike" | "other";
+// distance is metres on the wire (rendered as km). `retired` gear is dimmed.
+export interface Gear {
+  id: string;
+  external_id: string;
+  gear_type: string;
+  display_name: string;
+  total_distance_m?: number | null;
+  total_activities?: number | null;
+  retired: boolean;
+  date_begin?: string | null;
+  date_end?: string | null;
+}
+
+export interface GearList {
+  gear: Gear[];
+}
+
+// Mirrors a workout_splits row (internal/workouts/types.go). One per lap; all
+// metrics nullable. avg_speed_mps is stored sport-agnostically (pace derivable).
+export interface Split {
+  split_index: number;
+  distance_m?: number | null;
+  duration_s?: number | null;
+  avg_hr?: number | null;
+  avg_power_w?: number | null;
+  avg_speed_mps?: number | null;
+  elevation_gain_m?: number | null;
+}
+
+// Mirrors a workout_sets row — one per strength set; all fields nullable.
+export interface WorkoutSet {
+  set_index: number;
+  exercise_name?: string | null;
+  exercise_category?: string | null;
+  reps?: number | null;
+  weight_kg?: number | null;
+  duration_s?: number | null;
+}
+
+// Mirrors the single-get GET /workouts/:id response (internal/workouts/types.go).
+// The list-shaped WorkoutLite omits the nested splits/sets and the extended
+// scalar/zone detail; this detail shape carries them. Every metric is nullable.
+export interface Workout {
+  id: string;
+  sport: string;
+  status: string;
+  name?: string | null;
+  started_at: string;
+  ended_at: string;
+  kcal_burned?: number | null;
+  avg_hr?: number | null;
+  max_hr?: number | null;
+  tss?: number | null;
+  distance_m?: number | null;
+  elevation_gain_m?: number | null;
+  avg_power_w?: number | null;
+  normalized_power_w?: number | null;
+  intensity_factor?: number | null;
+  avg_cadence?: number | null;
+  secs_in_zone_1?: number | null;
+  secs_in_zone_2?: number | null;
+  secs_in_zone_3?: number | null;
+  secs_in_zone_4?: number | null;
+  secs_in_zone_5?: number | null;
+  splits?: Split[] | null;
+  sets?: WorkoutSet[] | null;
+}

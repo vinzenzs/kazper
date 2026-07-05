@@ -67,6 +67,19 @@ export function pace100(secPer100m: number | null | undefined): string {
   return `${m}:${s} /100m`;
 }
 
+// km formats a metre distance as kilometres (1dp), placeholder-aware. Used by
+// the gear mileage and workout-detail views.
+export function km(metres: number | null | undefined): string {
+  if (metres === null || metres === undefined || Number.isNaN(metres)) {
+    return PLACEHOLDER;
+  }
+  return num(metres / 1000, 1);
+}
+
+// clock formats a whole-second duration as m:ss / h:mm:ss — same shape as
+// raceTime, used for split durations and HR-zone time.
+export const clock = raceTime;
+
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return PLACEHOLDER;
   const d = new Date(iso);

@@ -1,7 +1,8 @@
 import { PLACEHOLDER } from "../lib/format";
 
 // Zone colors run cool → hot (Z1 easy … Z5 max), reusing the accent palette.
-const ZONE_COLORS = ["#38bdf8", "#34d399", "#fbbf24", "#fb923c", "#f87171"];
+// Exported so the workout-detail time-in-zone strip shares the same language.
+export const ZONE_COLORS = ["#38bdf8", "#34d399", "#fbbf24", "#fb923c", "#f87171"];
 
 interface ZoneStripProps {
   label: string;

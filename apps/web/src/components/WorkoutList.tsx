@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { Panel } from "./Panel";
 import type { WorkoutLite } from "../api/types";
 import { duration, num, shortDate, titleCase, weekday } from "../lib/format";
@@ -71,7 +73,11 @@ function statusColor(status: string): string {
 
 function Row({ workout }: { workout: WorkoutLite }) {
   return (
-    <li className="flex items-center justify-between gap-3 py-2">
+    <li>
+      <Link
+        to={`/workouts/${workout.id}`}
+        className="-mx-1 flex items-center justify-between gap-3 rounded-md px-1 py-2 transition-colors hover:bg-ink-700/40"
+      >
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-slate-100">
           {workout.name || titleCase(workout.sport)}
@@ -94,6 +100,7 @@ function Row({ workout }: { workout: WorkoutLite }) {
           {titleCase(workout.status)}
         </span>
       </div>
+      </Link>
     </li>
   );
 }

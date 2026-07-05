@@ -1,7 +1,11 @@
 import type {
+  Achievement,
   FitnessSnapshot,
+  Gear,
+  PersonalRecord,
   RecoveryContext,
   TrainingContext,
+  Workout,
 } from "../api/types";
 
 // A populated training context covering the happy path.
@@ -138,6 +142,121 @@ export const emptyRecovery: RecoveryContext = {
   days: 7,
   latest: null,
   recent: null,
+};
+
+export const populatedRecords: PersonalRecord[] = [
+  {
+    id: "pr1",
+    external_id: "garmin:pr:1",
+    pr_type: "fastest_5k",
+    value: 1112, // 18:32
+    unit: "s",
+    activity_id: "garmin:act:9",
+    achieved_at: "2026-05-10T07:00:00Z",
+  },
+  {
+    id: "pr2",
+    external_id: "garmin:pr:2",
+    pr_type: "longest_ride",
+    value: 182000, // 182 km
+    unit: "m",
+    achieved_at: "2026-04-02T06:00:00Z",
+  },
+];
+
+export const populatedAchievements: Achievement[] = [
+  {
+    id: "a1",
+    external_id: "garmin:badge:1",
+    kind: "badge",
+    name: "Century Ride",
+    earned_at: "2026-04-02T09:00:00Z",
+  },
+  {
+    id: "a2",
+    external_id: "garmin:challenge:1",
+    kind: "challenge",
+    name: "March 200km",
+    progress_pct: 64,
+  },
+];
+
+export const populatedGear: Gear[] = [
+  {
+    id: "g1",
+    external_id: "garmin:gear:1",
+    gear_type: "shoes",
+    display_name: "Vaporfly 3",
+    total_distance_m: 412000,
+    total_activities: 58,
+    retired: false,
+  },
+  {
+    id: "g2",
+    external_id: "garmin:gear:2",
+    gear_type: "bike",
+    display_name: "Canyon Aeroad",
+    total_distance_m: 8140000,
+    total_activities: 210,
+    retired: true,
+  },
+];
+
+export const populatedWorkoutDetail: Workout = {
+  id: "w1",
+  sport: "cycling",
+  status: "completed",
+  name: "Threshold 4x8",
+  started_at: "2026-06-23T06:00:00Z",
+  ended_at: "2026-06-23T07:30:00Z",
+  kcal_burned: 1100,
+  avg_hr: 152,
+  max_hr: 178,
+  tss: 120,
+  distance_m: 48200,
+  elevation_gain_m: 640,
+  avg_power_w: 232,
+  normalized_power_w: 258,
+  intensity_factor: 0.9,
+  avg_cadence: 88,
+  secs_in_zone_1: 600,
+  secs_in_zone_2: 1800,
+  secs_in_zone_3: 900,
+  secs_in_zone_4: 1500,
+  secs_in_zone_5: 600,
+  splits: [
+    {
+      split_index: 0,
+      distance_m: 1000,
+      duration_s: 150,
+      avg_hr: 148,
+      avg_power_w: 230,
+      avg_speed_mps: 6.7,
+      elevation_gain_m: 12,
+    },
+    {
+      split_index: 1,
+      distance_m: 1000,
+      duration_s: 145,
+      avg_hr: 156,
+      avg_power_w: 245,
+      avg_speed_mps: 6.9,
+      elevation_gain_m: 8,
+    },
+  ],
+  sets: null,
+};
+
+// A minimal completed workout with no splits and no zone time — the graceful
+// degrade case for the detail view.
+export const bareWorkoutDetail: Workout = {
+  id: "w2",
+  sport: "running",
+  status: "completed",
+  started_at: "2026-06-24T06:00:00Z",
+  ended_at: "2026-06-24T06:40:00Z",
+  splits: null,
+  sets: null,
 };
 
 export const populatedTrend: FitnessSnapshot[] = [

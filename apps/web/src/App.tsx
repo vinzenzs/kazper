@@ -1,106 +1,33 @@
-import { Header } from "./components/Header";
-import { FormGauge } from "./components/FormGauge";
-import { LoadTrend } from "./components/LoadTrend";
-import { FitnessPanel } from "./components/FitnessPanel";
-import { RacePredictions } from "./components/RacePredictions";
-import { PowerThresholds } from "./components/PowerThresholds";
-import { Zones } from "./components/Zones";
-import { RecoverySnapshot } from "./components/RecoverySnapshot";
-import { WorkoutList } from "./components/WorkoutList";
-import {
-  useFitnessTrend,
-  useRecoveryContext,
-  useTrainingContext,
-} from "./api/hooks";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 
-// The dashboard is training-only: header, ACWR/form gauge, acute/chronic load
-// trend, fitness / race-prediction / power-threshold / zone panels, recovery
-// snapshot, and recent + upcoming workouts. All data comes from the existing
-// context payloads. No fueling / energy-availability / nutrition panels.
-export function App() {
-  const training = useTrainingContext();
-  const recovery = useRecoveryContext();
-  const trend = useFitnessTrend();
+import { Layout } from "./components/Layout";
+import { DashboardView } from "./views/DashboardView";
+import { RecordsView } from "./views/RecordsView";
+import { GearView } from "./views/GearView";
+import { WorkoutDetailView } from "./views/WorkoutDetailView";
 
-  const t = training.data;
-
+// The client-side route tree, shared by the app shell and the routing tests
+// (which mount it inside a MemoryRouter).
+export function AppRoutes() {
   return (
-    <div className="mx-auto flex min-h-full max-w-screen-2xl flex-col gap-4 p-4 lg:p-6">
-      <Header training={t} isLoading={training.isLoading} />
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<DashboardView />} />
+        <Route path="records" element={<RecordsView />} />
+        <Route path="gear" element={<GearView />} />
+        <Route path="workouts/:id" element={<WorkoutDetailView />} />
+      </Route>
+    </Routes>
+  );
+}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <FormGauge
-          acwr={t?.acwr ?? null}
-          isLoading={training.isLoading}
-          isError={training.isError}
-          error={training.error}
-        />
-        <div className="lg:col-span-2">
-          <LoadTrend
-            metrics={trend.data?.fitness_metrics}
-            isLoading={trend.isLoading}
-            isError={trend.isError}
-            error={trend.error}
-          />
-        </div>
-      </div>
-
-      <FitnessPanel
-        fitness={t?.fitness ?? null}
-        isLoading={training.isLoading}
-        isError={training.isError}
-        error={training.error}
-      />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <RacePredictions
-          fitness={t?.fitness ?? null}
-          isLoading={training.isLoading}
-          isError={training.isError}
-          error={training.error}
-        />
-        <PowerThresholds
-          config={t?.athlete_config ?? null}
-          wattsPerKg={t?.watts_per_kg ?? null}
-          isLoading={training.isLoading}
-          isError={training.isError}
-          error={training.error}
-        />
-      </div>
-
-      <Zones
-        config={t?.athlete_config ?? null}
-        isLoading={training.isLoading}
-        isError={training.isError}
-        error={training.error}
-      />
-
-      <RecoverySnapshot
-        latest={recovery.data?.latest ?? null}
-        isLoading={recovery.isLoading}
-        isError={recovery.isError}
-        error={recovery.error}
-      />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <WorkoutList
-          title="Recent workouts"
-          workouts={t?.recent_workouts}
-          bySport={t?.recent_load?.by_sport ?? null}
-          isLoading={training.isLoading}
-          isError={training.isError}
-          error={training.error}
-          emptyHint="No completed workouts in window"
-        />
-        <WorkoutList
-          title="Upcoming workouts"
-          workouts={t?.upcoming_workouts}
-          isLoading={training.isLoading}
-          isError={training.isError}
-          error={training.error}
-          emptyHint="Nothing scheduled"
-        />
-      </div>
-    </div>
+// The SPA is a multi-route app served from `/`. The server's SPA fallback serves
+// index.html for any non-API GET (and keeps the JSON 404 under /api/v1), so
+// deep-linking and reloads on any of these client-side routes resolve here.
+export function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
