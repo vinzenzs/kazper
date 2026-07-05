@@ -56,6 +56,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workoutfueling"
 	"github.com/vinzenzs/kazper/internal/workouts"
+	"github.com/vinzenzs/kazper/internal/workoutstats"
 	"github.com/vinzenzs/kazper/internal/workouttemplates"
 )
 
@@ -202,6 +203,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	hydrationSvc := hydration.NewService(hydrationRepo)
 	workoutsRepo := workouts.NewRepo(pool)
 	workoutsSvc := workouts.NewService(workoutsRepo, pool, cfg.DefaultUserTZ)
+	workoutStatsSvc := workoutstats.NewService(workoutsRepo)
 	// Wire workouts existence-checks into meals + hydration services so the
 	// optional workout_id link is validated before insert/patch (added by
 	// add-meal-workout-link).
@@ -345,6 +347,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
+	workoutstats.NewHandlers(workoutStatsSvc, cfg.DefaultUserTZ, logger).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
 	multisportRepo := multisport.NewRepo(pool)

@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { Layout } from "./components/Layout";
 import { DashboardView } from "./views/DashboardView";
+import { StatsView } from "./views/StatsView";
 import { RecordsView } from "./views/RecordsView";
 import { GearView } from "./views/GearView";
 import { WorkoutDetailView } from "./views/WorkoutDetailView";
@@ -13,6 +14,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<DashboardView />} />
+        <Route path="stats" element={<StatsView />} />
         <Route path="records" element={<RecordsView />} />
         <Route path="gear" element={<GearView />} />
         <Route path="workouts/:id" element={<WorkoutDetailView />} />

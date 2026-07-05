@@ -6,6 +6,7 @@ import type {
   RecoveryContext,
   TrainingContext,
   Workout,
+  WorkoutStats,
 } from "../api/types";
 
 // A populated training context covering the happy path.
@@ -257,6 +258,60 @@ export const bareWorkoutDetail: Workout = {
   ended_at: "2026-06-24T06:40:00Z",
   splits: null,
   sets: null,
+};
+
+export const populatedWorkoutStats: WorkoutStats = {
+  from: "2026-06-22",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  days: [
+    {
+      date: "2026-06-22",
+      count: 1,
+      total_duration_min: 90,
+      total_distance_m: 45000,
+      total_elevation_gain_m: 600,
+      total_kcal: 1100,
+      by_sport: { cycling: 1 },
+    },
+    {
+      date: "2026-06-23",
+      count: 0,
+      total_duration_min: 0,
+      total_distance_m: 0,
+      total_elevation_gain_m: 0,
+      total_kcal: 0,
+      by_sport: {},
+    },
+    {
+      date: "2026-06-24",
+      count: 1,
+      total_duration_min: 45,
+      total_distance_m: 10000,
+      total_elevation_gain_m: 80,
+      total_kcal: 520,
+      by_sport: { running: 1 },
+    },
+  ],
+  total: {
+    count: 2,
+    total_duration_min: 135,
+    total_distance_m: 55000,
+    total_elevation_gain_m: 680,
+    total_kcal: 1620,
+    by_sport: { cycling: 1, running: 1 },
+  },
+};
+
+export const emptyWorkoutStats: WorkoutStats = {
+  from: "2026-06-22",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  days: [
+    { date: "2026-06-22", count: 0, total_duration_min: 0, total_distance_m: 0, total_elevation_gain_m: 0, total_kcal: 0, by_sport: {} },
+    { date: "2026-06-23", count: 0, total_duration_min: 0, total_distance_m: 0, total_elevation_gain_m: 0, total_kcal: 0, by_sport: {} },
+  ],
+  total: { count: 0, total_duration_min: 0, total_distance_m: 0, total_elevation_gain_m: 0, total_kcal: 0, by_sport: {} },
 };
 
 export const populatedTrend: FitnessSnapshot[] = [

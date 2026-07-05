@@ -9,6 +9,7 @@ import type {
   RecoveryContext,
   TrainingContext,
   Workout,
+  WorkoutStats,
 } from "./types";
 
 // Garmin sync lands data ~daily, so we don't poll aggressively. The query
@@ -77,6 +78,17 @@ export function useAchievements() {
   return useQuery({
     queryKey: ["achievements"],
     queryFn: () => apiGet<AchievementsList>("/achievements"),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// Workout volume totals over a date range — per-day series + window total.
+// The StatsView picks from/to for the Week/Month/YTD toggle.
+export function useWorkoutStats(from: string, to: string) {
+  return useQuery({
+    queryKey: ["workout-stats", from, to],
+    queryFn: () =>
+      apiGet<WorkoutStats>(`/workouts/summary?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

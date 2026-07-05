@@ -5,6 +5,7 @@ import { NavLink, Outlet } from "react-router-dom";
 // dashboard view; this bar is the always-present navigation.
 const NAV = [
   { to: "/", label: "Dashboard", end: true },
+  { to: "/stats", label: "Stats", end: false },
   { to: "/records", label: "Records", end: false },
   { to: "/gear", label: "Gear", end: false },
 ];

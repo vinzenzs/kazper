@@ -171,6 +171,29 @@ export interface GearList {
   gear: Gear[];
 }
 
+// Mirrors internal/workoutstats/types.go. One bucket per calendar day (date set)
+// or the window total (date absent). by_sport is count-per-sport. Distance and
+// elevation are metres on the wire; duration is elapsed minutes.
+export interface WorkoutStatsBucket {
+  date?: string;
+  count: number;
+  total_duration_min: number;
+  total_distance_m: number;
+  total_elevation_gain_m: number;
+  total_kcal: number;
+  by_sport: Record<string, number>;
+}
+
+// The GET /workouts/summary response: a per-day series (every calendar day in
+// [from, to], zero-filled) plus the window total.
+export interface WorkoutStats {
+  from: string;
+  to: string;
+  tz: string;
+  days: WorkoutStatsBucket[];
+  total: WorkoutStatsBucket;
+}
+
 // Mirrors a workout_splits row (internal/workouts/types.go). One per lap; all
 // metrics nullable. avg_speed_mps is stored sport-agnostically (pace derivable).
 export interface Split {

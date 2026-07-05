@@ -3057,6 +3057,40 @@ definitions:
       completed_id:
         type: string
     type: object
+  workoutstats.Bucket:
+    properties:
+      by_sport:
+        additionalProperties:
+          type: integer
+        type: object
+      count:
+        type: integer
+      date:
+        type: string
+      total_distance_m:
+        type: number
+      total_duration_min:
+        type: number
+      total_elevation_gain_m:
+        type: number
+      total_kcal:
+        type: number
+    type: object
+  workoutstats.Summary:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/workoutstats.Bucket'
+        type: array
+      from:
+        type: string
+      to:
+        type: string
+      total:
+        $ref: '#/definitions/workoutstats.Bucket'
+      tz:
+        type: string
+    type: object
   workouttemplates.Duration:
     properties:
       kind:
@@ -9391,6 +9425,48 @@ paths:
       security:
       - BearerAuth: []
       summary: Upsert a batch of workouts (max 100 per request)
+      tags:
+      - workouts
+  /workouts/summary:
+    get:
+      description: Aggregates completed workouts in `[from, to]` into a per-day series
+        (one bucket per calendar day, zero-filled) plus a window total, each carrying
+        count, total duration (min), total distance (m), total elevation gain (m),
+        total kcal, and a by-sport count breakdown. Distance/elevation/duration are
+        workout-only and are never merged into nutrition totals. Planned workouts
+        are excluded. Nullable metrics are summed present-only. Range is capped at
+        400 days so year-to-date is supported.
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workoutstats.Summary'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Workout volume totals across a date range
       tags:
       - workouts
 securityDefinitions:
