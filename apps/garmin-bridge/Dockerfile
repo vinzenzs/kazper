@@ -1,7 +1,7 @@
 # Slim, non-root image for the garmin-bridge service.
 # Two stages: install deps into a venv, then copy into a clean runtime layer so
 # build tooling never ships in the final image.
-FROM python:3.11-slim AS build
+FROM python:3.12-slim AS build
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -11,7 +11,7 @@ COPY requirements.txt ./
 RUN python -m venv /venv \
     && /venv/bin/pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 ENV PATH="/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
