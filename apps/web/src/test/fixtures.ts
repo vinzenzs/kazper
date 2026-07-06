@@ -5,6 +5,7 @@ import type {
   PersonalRecord,
   RecoveryContext,
   TrainingContext,
+  PowerCurve,
   Workout,
   WorkoutStats,
 } from "../api/types";
@@ -312,6 +313,29 @@ export const emptyWorkoutStats: WorkoutStats = {
     { date: "2026-06-23", count: 0, total_duration_min: 0, total_distance_m: 0, total_elevation_gain_m: 0, total_kcal: 0, by_sport: {} },
   ],
   total: { count: 0, total_duration_min: 0, total_distance_m: 0, total_elevation_gain_m: 0, total_kcal: 0, by_sport: {} },
+};
+
+export const populatedPowerCurve: PowerCurve = {
+  from: "2026-06-18",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  sport: "bike",
+  metric: "power",
+  points: [
+    { duration_s: 5, value: 780, workout_id: "w1", date: "2026-06-23" },
+    { duration_s: 60, value: 480, workout_id: "w1", date: "2026-06-23" },
+    { duration_s: 300, value: 360, workout_id: "w1", date: "2026-06-20" },
+    { duration_s: 1200, value: 300, workout_id: "w1", date: "2026-06-20" },
+  ],
+};
+
+export const emptyPowerCurve: PowerCurve = {
+  from: "2026-06-18",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  sport: "bike",
+  metric: "power",
+  points: [],
 };
 
 export const populatedTrend: FitnessSnapshot[] = [

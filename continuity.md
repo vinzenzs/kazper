@@ -2,21 +2,19 @@
 
 _Forward plan for OpenSpec changes. Tracks **what's next**, **what's in flight**, and **what's queued**._
 _Companion to `openspec/priorities.md` (tier/triage framing) — this file is the operational queue._
-_Last refreshed: 2026-07-06 by the `continuity` skill (**Strava-stats trilogy two-thirds shipped & archived** — Phase 1 (2026-07-05) + Phase 2 (2026-07-06) both on `main`. Phase 2 synced a NEW `workout-stats` spec (2 reqs) + a coach-dashboard addition (→7 reqs). Queue is clean of in-flight work; **Phase 3 (gated) is next up**; `garmin-bridge-call-resilience` in Backlog awaiting artifacts; migration head still `052` on disk (Phase 3 will add `053`); `main` ahead of `origin/main`)._
+_Last refreshed: 2026-07-06 by the `continuity` skill (**Strava-stats trilogy fully implemented** — Phase 1 + Phase 2 archived; **Phase 3 implemented & committed on `main`**, ready to archive. Phase 3 added the `effort-analytics` capability (migration `053` — head is now `053`), the Garmin-bridge stream ingestion, and the frontend power/pace curve. Queue is clean; `garmin-bridge-call-resilience` in Backlog awaiting artifacts; `main` ahead of `origin/main`)._
 
 ## In progress
 
 | Change | Branch | Started | Owner | Notes |
 |---|---|---|---|---|
-| _(none)_ | | | | |
-
-_Nothing in flight. `strava-stats-frontend-phase-2` archived 2026-07-06._
+| strava-stats-frontend-phase-3 | `main` | 2026-07-06 | Vinzenz Stadtmueller | **Implemented & committed on `main`** — new `internal/effortanalytics/` (migration `053_add_workout_best_efforts`; `POST /workouts/{id}/streams` computes mean-maximal best-efforts from 1 Hz power/speed and discards raw streams; `GET /workouts/power-curve` windowed MAX curve), `power_curve` MCP tool (golden regenerated), Garmin-bridge stream ingest (`get_activity_details` → extract → post-after-bulk, guarded/idempotent), `/stats` power-curve chart (visx log-x) + sport selector. **Decisions:** raw streams NOT persisted (best-efforts only); per-workout curve overlay (4.4) + historical backfill (5.2) deferred. Verified: effortanalytics + store(migration) + mcp + httpserver Go tests, **144 bridge tests**, **54 web tests**, webembed, `task vet` — all green. **Ready to `/opsx:archive`.** |
 
 ## Up next
 
 Ordered queue — top is next to pick up.
 
-1. **strava-stats-frontend-phase-3** — Power/pace curve (gated, largest): bridge ingests Garmin streams → new `effort-analytics` capability (migration `053`, mean-maximal best-efforts) → `GET /workouts/power-curve` + visx log-x chart; +1 MCP tool (`power_curve`). _Why now: final of the trilogy; optional — build only when the curve is actually wanted (it's the one part that needs new data ingestion)._
+_(empty — the Strava-stats trilogy is complete. Next change must be proposed first, or promote `garmin-bridge-call-resilience` from Backlog once it has artifacts.)_
 
 ## Backlog
 

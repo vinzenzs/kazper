@@ -406,6 +406,74 @@ def map_workouts(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def map_workout_streams(raw: dict[str, Any]) -> dict[str, dict[str, list[float]]]:
+    """Garmin activity detail streams → {external_id: {"power":[…], "speed":[…]}}.
+
+    Keyed by the same ``garmin:{activityId}`` external id the workout upsert uses,
+    so the sync can join a posted workout's id to its streams. Only activities
+    with a usable (non-flat) power or speed series appear; everything else is
+    omitted (a run without a power meter, an indoor session, a failed fetch).
+    """
+    details = raw.get("activity_details") or {}
+    out: dict[str, dict[str, list[float]]] = {}
+    for act in raw.get("activities") or []:
+        activity_id = act.get("activityId")
+        if activity_id is None:
+            continue
+        payload = _extract_streams((details.get(str(activity_id)) or {}).get("stream"))
+        if payload:
+            out[f"garmin:{activity_id}"] = payload
+    return out
+
+
+def _extract_streams(detail: Any) -> dict[str, list[float]]:
+    """get_activity_details → contiguous power (W) / speed (m/s) sample arrays.
+
+    Reads ``metricDescriptors`` to locate the power/speed columns, then pulls
+    those columns out of ``activityDetailMetrics`` (treated as ~1 Hz samples).
+    Missing samples become 0 so coasting counts toward mean-maximal power, the
+    way Strava/intervals compute it. Defensive: any unexpected shape → ``{}``.
+    A series that is entirely non-positive (no meter present) is dropped.
+    """
+    if not isinstance(detail, dict):
+        return {}
+    descriptors = detail.get("metricDescriptors") or []
+    metrics = detail.get("activityDetailMetrics") or []
+    if not descriptors or not metrics:
+        return {}
+
+    index_of: dict[str, int] = {}
+    for d in descriptors:
+        if not isinstance(d, dict):
+            continue
+        key = d.get("key")
+        i = d.get("metricsIndex")
+        if isinstance(key, str) and isinstance(i, int):
+            index_of[key] = i
+
+    def column(i: int | None) -> list[float] | None:
+        if i is None:
+            return None
+        col: list[float] = []
+        for row in metrics:
+            vals = row.get("metrics") if isinstance(row, dict) else None
+            if not isinstance(vals, list) or i >= len(vals):
+                col.append(0.0)
+                continue
+            v = vals[i]
+            col.append(float(v) if isinstance(v, (int, float)) else 0.0)
+        return col
+
+    out: dict[str, list[float]] = {}
+    power = column(index_of.get("directPower"))
+    if power and any(v > 0 for v in power):
+        out["power"] = power
+    speed = column(index_of.get("directSpeed"))
+    if speed and any(v > 0 for v in speed):
+        out["speed"] = speed
+    return out
+
+
 def _avg_cadence(act: dict[str, Any]) -> Any:
     """Average cadence across run/bike summary shapes (steps/min or rev/min)."""
     return (
@@ -855,6 +923,7 @@ def map_day(raw: dict[str, Any], date: str) -> dict[str, Any]:
         "daily_summary": map_daily_summary(raw, date),
         "weights": map_weights(raw),
         "workouts": map_workouts(raw),
+        "workout_streams": map_workout_streams(raw),
         "gear": map_gear(raw),
         "personal_records": map_personal_records(raw),
         "athlete_config": map_athlete_config(raw),

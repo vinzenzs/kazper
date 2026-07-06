@@ -8,6 +8,7 @@ import type {
   PersonalRecordsList,
   RecoveryContext,
   TrainingContext,
+  PowerCurve,
   Workout,
   WorkoutStats,
 } from "./types";
@@ -89,6 +90,19 @@ export function useWorkoutStats(from: string, to: string) {
     queryKey: ["workout-stats", from, to],
     queryFn: () =>
       apiGet<WorkoutStats>(`/workouts/summary?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The mean-maximal power/pace curve over a window. `sport` selects the metric
+// (bike → power, run/swim → pace).
+export function usePowerCurve(from: string, to: string, sport: string) {
+  return useQuery({
+    queryKey: ["power-curve", from, to, sport],
+    queryFn: () =>
+      apiGet<PowerCurve>(
+        `/workouts/power-curve?from=${from}&to=${to}&sport=${sport}`,
+      ),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

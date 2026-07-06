@@ -8792,6 +8792,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/power-curve": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns, per ladder duration, the best (max) mean value achieved across completed workouts in ` + "`" + `[from, to]` + "`" + `, with the contributing workout id and date. Metric is derived from ` + "`" + `sport` + "`" + `: cycling → power (W), run/swim → speed (m/s, rendered as pace by clients). Range capped at 400 days. Empty window returns an empty points list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Mean-maximal power/pace curve over a window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "bike (→power) | run | swim (→speed); defaults to bike",
+                        "name": "sport",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.Curve"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/summary": {
             "get": {
                 "security": [
@@ -9141,6 +9201,70 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/trainingplan.Program"
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/workouts/{id}/streams": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Accepts contiguous 1 Hz power (W) and/or speed (m/s) sample arrays for a completed workout, computes the mean-maximal value at the fixed duration ladder (5s…60m), and stores the compact best-effort records (replacing any prior set for the workout). Raw streams are not persisted. An empty body writes nothing. Distance/power/speed are workout-only and feed no nutrition total.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Ingest a workout's power/speed streams",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "1 Hz power/speed sample arrays",
+                        "name": "streams",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.StreamPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.IngestResult"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "404": {
@@ -10265,6 +10389,85 @@ const docTemplate = `{
                 },
                 "model": {
                     "type": "string"
+                }
+            }
+        },
+        "effortanalytics.Curve": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "metric": {
+                    "$ref": "#/definitions/effortanalytics.Metric"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.CurvePoint"
+                    }
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.CurvePoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.IngestResult": {
+            "type": "object",
+            "properties": {
+                "records_written": {
+                    "type": "integer"
+                }
+            }
+        },
+        "effortanalytics.Metric": {
+            "type": "string",
+            "enum": [
+                "power",
+                "speed"
+            ],
+            "x-enum-varnames": [
+                "MetricPower",
+                "MetricSpeed"
+            ]
+        },
+        "effortanalytics.StreamPayload": {
+            "type": "object",
+            "properties": {
+                "power": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "speed": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
                 }
             }
         },

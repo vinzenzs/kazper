@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Panel } from "../components/Panel";
 import { StatsTotals } from "../components/StatsTotals";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
-import { useWorkoutStats } from "../api/hooks";
+import { PowerCurveChart } from "../components/PowerCurveChart";
+import { usePowerCurve, useWorkoutStats } from "../api/hooks";
 
 type Period = "week" | "month" | "ytd";
 
@@ -13,34 +14,58 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "ytd", label: "YTD" },
 ];
 
+const SPORTS: { key: string; label: string }[] = [
+  { key: "bike", label: "Bike" },
+  { key: "run", label: "Run" },
+  { key: "swim", label: "Swim" },
+];
+
+// A small segmented toggle shared by the period and sport selectors.
+function Toggle<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+            value === o.key
+              ? "bg-ink-700/70 text-slate-100"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // The /stats route: a training-log view. A Week/Month/YTD toggle selects the
 // range that drives the volume totals and the activity heatmap.
 export function StatsView() {
   const [period, setPeriod] = useState<Period>("week");
+  const [sport, setSport] = useState<string>("bike");
   const { from, to } = rangeFor(period);
   const { data, isLoading, isError, error } = useWorkoutStats(from, to);
+  const curve = usePowerCurve(from, to, sport);
 
   const total = data?.total;
   const isEmpty = !!total && total.count === 0;
+  const curveEmpty = !!curve.data && curve.data.points.length === 0;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-1">
-        {PERIODS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => setPeriod(p.key)}
-            className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-              period === p.key
-                ? "bg-ink-700/70 text-slate-100"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <Toggle options={PERIODS} value={period} onChange={setPeriod} />
 
       <Panel
         title="Totals"
@@ -62,6 +87,26 @@ export function StatsView() {
         emptyHint="No activity in this period"
       >
         {data && <ActivityHeatmap days={data.days} />}
+      </Panel>
+
+      <Panel
+        title="Power / pace curve"
+        isLoading={curve.isLoading}
+        isError={curve.isError}
+        error={curve.error}
+      >
+        {/* The sport selector stays visible even when a sport has no data, so
+            the user can switch to one that does. */}
+        <div className="flex flex-col gap-3">
+          <Toggle options={SPORTS} value={sport} onChange={setSport} />
+          {curve.data && !curveEmpty ? (
+            <PowerCurveChart curve={curve.data} />
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-500">
+              No effort data for {sport} in this period
+            </div>
+          )}
+        </div>
       </Panel>
     </div>
   );

@@ -194,6 +194,25 @@ export interface WorkoutStats {
   total: WorkoutStatsBucket;
 }
 
+// Mirrors internal/effortanalytics/types.go. One point per ladder duration: the
+// best mean value across the window and the workout/day it came from. `value` is
+// watts when metric is "power", m/s when metric is "speed" (rendered as pace).
+export interface CurvePoint {
+  duration_s: number;
+  value: number;
+  workout_id: string;
+  date: string;
+}
+
+export interface PowerCurve {
+  from: string;
+  to: string;
+  tz: string;
+  sport: string;
+  metric: "power" | "speed";
+  points: CurvePoint[];
+}
+
 // Mirrors a workout_splits row (internal/workouts/types.go). One per lap; all
 // metrics nullable. avg_speed_mps is stored sport-agnostically (pace derivable).
 export interface Split {

@@ -78,6 +78,7 @@ def sync_day(backend: Backend, raw: dict[str, Any], date: str) -> dict[str, Any]
                 )
                 if errors:
                     summary["errors"]["workouts"] = errors
+                _post_workout_streams(backend, mapped, workouts, results, summary)
             else:
                 summary["errors"]["workouts"] = f"bulk -> {resp.status_code}"
         except Exception as exc:  # noqa: BLE001
@@ -121,6 +122,49 @@ def sync_day(backend: Backend, raw: dict[str, Any], date: str) -> dict[str, Any]
 
     summary["ok"] = not summary["errors"]
     return summary
+
+
+def _post_workout_streams(
+    backend: Backend,
+    mapped: dict[str, Any],
+    workouts: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> None:
+    """After the bulk upsert, POST each workout's power/speed streams so the
+    backend can compute its best-effort records (effort-analytics).
+
+    The bulk result rows carry the workout ``index`` + minted ``id``; we join the
+    index back to the upserted payload's ``external_id`` to find the matching
+    stream. Each post is individually guarded — a missing stream or a failed
+    post is skipped, never aborting the day. Re-posting replaces (idempotent).
+    """
+    streams = mapped.get("workout_streams") or {}
+    if not streams:
+        return
+    posted = 0
+    for r in results:
+        if "error" in r:
+            continue
+        idx = r.get("index")
+        wid = r.get("id")
+        if wid is None or not isinstance(idx, int) or idx >= len(workouts):
+            continue
+        payload = streams.get(workouts[idx].get("external_id"))
+        if not payload:
+            continue
+        try:
+            sresp = backend.post_json(f"/workouts/{wid}/streams", payload)
+            if sresp.status_code == 200:
+                posted += 1
+            else:
+                summary["errors"].setdefault("workout_streams", []).append(
+                    f"{sresp.status_code}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workout streams post failed: %s", exc)
+            summary["errors"].setdefault("workout_streams", []).append(str(exc))
+    summary["results"]["workout_streams"] = f"{posted} posted"
 
 
 def _upsert_each(

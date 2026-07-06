@@ -239,6 +239,13 @@ def fetch_day(api, date: str) -> dict[str, Any]:
                 "activity_sets", lambda aid=aid: api.get_activity_exercise_sets(aid)
             ),
             "weather": safe("activity_weather", lambda aid=aid: api.get_activity_weather(aid)),
+            # Per-sample streams for the effort-analytics power/pace curve
+            # (strava-stats-frontend-phase-3). maxpoly=0 skips the GPS polyline we
+            # don't need. Guarded like the rest — an activity with no power/speed
+            # detail simply yields no streams, never an aborted day.
+            "stream": safe(
+                "activity_stream", lambda aid=aid: api.get_activity_details(aid, 2000, 0)
+            ),
         }
     raw["activity_details"] = details
 

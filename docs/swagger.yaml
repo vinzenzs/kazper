@@ -733,6 +733,58 @@ definitions:
       model:
         type: string
     type: object
+  effortanalytics.Curve:
+    properties:
+      from:
+        type: string
+      metric:
+        $ref: '#/definitions/effortanalytics.Metric'
+      points:
+        items:
+          $ref: '#/definitions/effortanalytics.CurvePoint'
+        type: array
+      sport:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+    type: object
+  effortanalytics.CurvePoint:
+    properties:
+      date:
+        type: string
+      duration_s:
+        type: integer
+      value:
+        type: number
+      workout_id:
+        type: string
+    type: object
+  effortanalytics.IngestResult:
+    properties:
+      records_written:
+        type: integer
+    type: object
+  effortanalytics.Metric:
+    enum:
+    - power
+    - speed
+    type: string
+    x-enum-varnames:
+    - MetricPower
+    - MetricSpeed
+  effortanalytics.StreamPayload:
+    properties:
+      power:
+        items:
+          type: number
+        type: array
+      speed:
+        items:
+          type: number
+        type: array
+    type: object
   energy.Availability:
     properties:
       composition:
@@ -9309,6 +9361,51 @@ paths:
         overrides)
       tags:
       - workouts
+  /workouts/{id}/streams:
+    post:
+      consumes:
+      - application/json
+      description: Accepts contiguous 1 Hz power (W) and/or speed (m/s) sample arrays
+        for a completed workout, computes the mean-maximal value at the fixed duration
+        ladder (5s…60m), and stores the compact best-effort records (replacing any
+        prior set for the workout). Raw streams are not persisted. An empty body writes
+        nothing. Distance/power/speed are workout-only and feed no nutrition total.
+      parameters:
+      - description: Workout id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 1 Hz power/speed sample arrays
+        in: body
+        name: streams
+        required: true
+        schema:
+          $ref: '#/definitions/effortanalytics.StreamPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/effortanalytics.IngestResult'
+        "400":
+          description: invalid_body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: workout_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ingest a workout's power/speed streams
+      tags:
+      - workouts
   /workouts/{id}/unfulfill:
     post:
       description: 'Reverses a merge: clears the workout''s external_id and actual
@@ -9425,6 +9522,50 @@ paths:
       security:
       - BearerAuth: []
       summary: Upsert a batch of workouts (max 100 per request)
+      tags:
+      - workouts
+  /workouts/power-curve:
+    get:
+      description: 'Returns, per ladder duration, the best (max) mean value achieved
+        across completed workouts in `[from, to]`, with the contributing workout id
+        and date. Metric is derived from `sport`: cycling → power (W), run/swim →
+        speed (m/s, rendered as pace by clients). Range capped at 400 days. Empty
+        window returns an empty points list.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: bike (→power) | run | swim (→speed); defaults to bike
+        in: query
+        name: sport
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/effortanalytics.Curve'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mean-maximal power/pace curve over a window
       tags:
       - workouts
   /workouts/summary:

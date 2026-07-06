@@ -80,6 +80,21 @@ export function km(metres: number | null | undefined): string {
 // raceTime, used for split durations and HR-zone time.
 export const clock = raceTime;
 
+// durationLabel formats a power-curve ladder duration compactly: "5s", "1m",
+// "20m", "1h". Whole minutes/hours drop their sub-unit.
+export function durationLabel(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) {
+    return PLACEHOLDER;
+  }
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) {
+    const m = seconds / 60;
+    return Number.isInteger(m) ? `${m}m` : `${m.toFixed(1)}m`;
+  }
+  const h = seconds / 3600;
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
+}
+
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return PLACEHOLDER;
   const d = new Date(iso);
