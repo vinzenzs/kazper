@@ -1,11 +1,15 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-06-25 by the `roadmap` skill (92 implemented, 0 planned)._
+_Generated from OpenSpec changes. Last refreshed: 2026-07-06 by the `roadmap` skill (96 implemented, 1 planned)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-07-06 | strava-stats-frontend-phase-3 | The one Strava/intervals.icu statistic Phases 1–2 can't deliver is the power/pace curve — best mean power for every duration ~5s–60min, aggregated over a window (mean-maximal). Absent because only per-lap splits were stored, not per-second streams; adds `effort-analytics` + bridge stream ingestion. | Vinzenz Stadtmueller | [`5f077f0`](https://github.com/vinzenzs/kazper/commit/5f077f0) |
+| 2026-07-06 | strava-stats-frontend-phase-2 | Phase 1 surfaced the Strava data the backend already had. The most iconic Strava statistic was still missing: volume totals — weekly/monthly/YTD distance·time·elevation by sport, plus the calendar activity heatmap (`workout-stats` + `/stats`). | Vinzenz Stadtmueller | [`812f602`](https://github.com/vinzenzs/kazper/commit/812f602) |
+| 2026-07-05 | strava-stats-frontend-phase-1 | The dashboard already rendered the analyst core, but the Strava-shaped data the backend mirrors from Garmin — PRs, gear, achievements, per-workout detail — was exposed over REST yet never shown. Adds a router + those routes. | Vinzenz Stadtmueller | [`d3a4814`](https://github.com/vinzenzs/kazper/commit/d3a4814) |
+| 2026-06-24 | build-spa-in-pipeline | The coach-dashboard SPA build output (`apps/web/dist`) was committed to git and embedded via embed.FS; build it in the pipeline instead so the committed dist can't drift from source. | Vinzenz Stadtmueller | [`a3adc66`](https://github.com/vinzenzs/kazper/commit/a3adc66) |
 | 2026-06-24 | expand-coach-dashboard-fitness | The coach dashboard already *fetches* far more than it renders. `GET /api/v1/context/training` and `GET /api/v1/context/recovery` carry a rich fitness/performance picture — VO₂max, race predictions, training status, e… | Vinzenz Stadtmueller | [`dfa99ad`](https://github.com/vinzenzs/kazper/commit/dfa99ad) |
 | 2026-06-24 | add-helm-fcm-push-config | The `add-garmin-relogin-push` change shipped opt-in FCM push in the binary (`FCM_PROJECT_ID` + `FCM_SERVICE_ACCOUNT_JSON`, validated at startup, redacted in dumps), but the Helm chart was never updated to expose those… | Vinzenz Stadtmueller | [`dfad306`](https://github.com/vinzenzs/kazper/commit/dfad306) |
 | 2026-06-24 | add-coach-dashboard | Kazper has two clients — a capture-first mobile app and a conversational MCP agent — but no surface for *sitting at a monitor and reading training trends at a glance*. The data already exists: `GET /context/training`… | Vinzenz Stadtmueller | [`2bb1299`](https://github.com/vinzenzs/kazper/commit/2bb1299) |
@@ -101,7 +105,9 @@ _Generated from OpenSpec changes. Last refreshed: 2026-06-25 by the `roadmap` sk
 
 ## Planned
 
-_No active changes — the queue is empty._
+| Change | Summary | Proposed by | Proposed |
+|---|---|---|---|
+| garmin-bridge-call-resilience | The backend proxies every Garmin operation to the garmin-bridge; each proxy handler in `internal/garmincontrol` builds its outbound request behind a shared 30s timeout — resilience gap when the bridge is slow/unreachable. | Vinzenz Stadtmueller | uncommitted |
 
 ---
 _To regenerate: ask Claude "update the roadmap"._

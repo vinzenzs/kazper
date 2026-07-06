@@ -2,7 +2,7 @@
 
 _Forward plan for OpenSpec changes. Tracks **what's next**, **what's in flight**, and **what's queued**._
 _Companion to `openspec/priorities.md` (tier/triage framing) — this file is the operational queue._
-_Last refreshed: 2026-07-06 by the `continuity` skill (**Strava-stats trilogy COMPLETE — all three phases shipped & archived** on `main`: Phase 1 (2026-07-05), Phase 2 + Phase 3 (2026-07-06). Phase 3 synced a NEW `effort-analytics` spec (3 reqs) + coach-dashboard (→8) + garmin-bridge (→20) additions. Migration head is now `053`. Queue is clean; `garmin-bridge-call-resilience` in Backlog awaiting artifacts; `main` ahead of `origin/main` — about to push)._
+_Last refreshed: 2026-07-06 by the `continuity` skill (**Strava-stats trilogy COMPLETE — all three phases shipped & archived** on `main`: Phase 1 (2026-07-05), Phase 2 + Phase 3 (2026-07-06). Phase 3 synced a NEW `effort-analytics` spec (3 reqs) + coach-dashboard (→8) + garmin-bridge (→20) additions. Migration head is now `053`. Queue is clean; the sole planned change `garmin-bridge-call-resilience` sits in Backlog (artifacts written, dir uncommitted); `main` pushed to `origin/main` through the trilogy)._
 
 ## In progress
 
@@ -22,7 +22,7 @@ _(empty — the Strava-stats trilogy is complete. Next change must be proposed f
 
 Planned changes not yet prioritized.
 
-- **garmin-bridge-call-resilience** — proposal dir exists (`openspec/changes/garmin-bridge-call-resilience/`) but has no artifacts yet; author via `/opsx:propose` before queueing.
+- **garmin-bridge-call-resilience** — the backend proxies every Garmin op to the garmin-bridge; each `internal/garmincontrol` proxy handler builds its outbound request behind a shared 30s timeout — a resilience gap when the bridge is slow/unreachable. Full artifacts exist (proposal/design/specs/tasks) but the dir is **uncommitted** (untracked). Promote to Up next + commit the proposal when ready to build.
 - Future-but-unproposed candidate seams if needed: multisport "Phase 4" niceties (per-segment duration in the template view) and the still-open priorities-flagged items below.
 
 ## Notes
