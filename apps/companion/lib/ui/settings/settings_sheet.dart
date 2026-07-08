@@ -62,12 +62,15 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
         0,
         16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        // Keyboard inset (viewInsets) plus the system navigation bar
+        // (viewPadding), so the Unpair button clears the gesture/nav bar.
+        16 + media.viewInsets.bottom + media.viewPadding.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

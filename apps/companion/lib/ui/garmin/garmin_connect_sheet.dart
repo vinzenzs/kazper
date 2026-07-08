@@ -37,12 +37,15 @@ class _GarminSheetState extends ConsumerState<_GarminSheet> {
     final connect = ref.watch(garminConnectProvider);
     final sync = ref.watch(garminSyncProvider);
 
+    final media = MediaQuery.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
         0,
         16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        // Keyboard inset (viewInsets) plus the system navigation bar
+        // (viewPadding), so bottom actions clear the gesture/nav bar.
+        16 + media.viewInsets.bottom + media.viewPadding.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
