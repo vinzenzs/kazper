@@ -27,4 +27,4 @@
 
 - [x] 5.1 Run `task swag` to regenerate `docs/` for the grown response shape. (`missed_sessions`/`missed_sessions_truncated`/`weekly` + `MissedSession`/`WeeklyBucket` present in `docs/swagger.json`.)
 - [x] 5.2 Run `go test -count=1 ./internal/workouts/...`, the MCP integration test, and `task vet`; note any testcontainers parallel-boot flakes and re-run isolated. (`workouts` ok 198s; MCP announced-schema golden green; `task vet` clean. Pre-existing, unrelated E2E failure: `create_workout_template → not_found`, reproduced on a stashed clean tree — not caused by this change.)
-- [ ] 5.3 Update `openspec/specs/workouts/spec.md` at archive time (two ADDED requirements synced in).
+- [x] 5.3 Update `openspec/specs/workouts/spec.md` at archive time (two ADDED requirements synced in).
