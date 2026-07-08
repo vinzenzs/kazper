@@ -531,46 +531,36 @@ The bridge SHALL expose, alongside its workout-library operations, five activity
 
 ### Requirement: Bounded, paced, idempotent history backfill over a date range
 
-The bridge SHALL expose `POST /sync/backfill` accepting an inclusive `from` and `to` date (`YYYY-MM-DD`) and SHALL replay the existing per-day sync over every date in `[from, to]`, calling the same token-load + day-fetch + `sync_day` path used by `POST /sync` so that any per-activity or per-day enrichment added elsewhere is picked up with no backfill-specific mapping. The range SHALL be capped: when the requested span exceeds `BACKFILL_MAX_DAYS`, the bridge SHALL reject the request with `400 range_too_large` (including the cap) and write nothing. Days SHALL be processed oldest-first, with a configurable `BACKFILL_DAY_DELAY_SECONDS` pause between consecutive days to pace Garmin calls. Each day SHALL be isolated: a failing day SHALL be recorded and the range SHALL continue. The response SHALL carry a per-day summary plus a roll-up (`days_total`, `days_ok`, `days_failed`), returning `200` when every day succeeded and `207` when the range completed with one or more failed days. Re-running the same range SHALL be idempotent via the existing date-keyed upserts and `external_id` activity dedup — no new dedup mechanism and no migration.
+The bridge SHALL expose `POST /sync/backfill` accepting an inclusive `from` and `to` date (`YYYY-MM-DD`). The range SHALL be capped: when the requested span exceeds `BACKFILL_MAX_DAYS`, the bridge SHALL reject the request synchronously with `400 range_too_large` (including the cap), opening no sync run and writing nothing. For an accepted range the bridge SHALL open a sync run covering `[from, to]`, launch the replay as a **background task**, and return `202 Accepted` immediately with `{run_id, from, to, days_total}` — it SHALL NOT block until the range completes and SHALL NOT return a synchronous per-day body. The background replay SHALL process every date in `[from, to]` oldest-first through the same token-load + day-fetch + `sync_day` path used by `POST /sync` (so any per-activity or per-day enrichment is picked up with no backfill-specific mapping), pausing `BACKFILL_DAY_DELAY_SECONDS` between consecutive days to pace Garmin calls. Each day SHALL be isolated: a failing day SHALL be recorded and the range SHALL continue. On completion the background task SHALL record the per-day results and roll-up (`days_total`, `days_ok`, `days_failed`) on the sync run and close it: `success` when every day succeeded, `partial` when the range completed with one or more failed days, and `error` when the run itself failed (e.g. auth/token). Re-running the same range SHALL be idempotent via the existing date-keyed upserts and `external_id` activity dedup — no new dedup mechanism.
 
-#### Scenario: Backfilling a range replays each day through the existing sync path
+#### Scenario: An accepted range returns 202 immediately and runs in the background
 
 - **WHEN** `POST /sync/backfill` is called with `{"from":"2026-03-01","to":"2026-03-05"}` and a valid stored token
-- **THEN** the bridge syncs each date from `2026-03-01` through `2026-03-05` inclusive using the same per-day mapping as `POST /sync`
-- **AND** whatever enrichment the per-day path produces (scalar/zone/split/set detail, daily snapshots, recovery/fitness extensions) is written for each day with no backfill-specific field handling
-- **AND** the response lists one entry per date plus `days_total`, `days_ok`, and `days_failed`
+- **THEN** the bridge opens a sync run for the range and returns `202` with `{run_id, from, to, days_total}` without waiting for the replay to finish
+- **AND** the paced day-by-day replay proceeds in the background, syncing each date `2026-03-01`…`2026-03-05` inclusive through the same per-day mapping as `POST /sync`
+- **AND** whatever enrichment the per-day path produces is written for each day with no backfill-specific field handling
 
-#### Scenario: One bad day does not abort the range
+#### Scenario: The completed run records the roll-up for polling
+
+- **WHEN** a background backfill finishes all of its days successfully
+- **THEN** the run is closed `success` with a recorded roll-up of `days_total`, `days_ok`, and `days_failed`
+- **AND** the outcome is readable via `GET /garmin/sync-status` (by `run_id`) rather than from the trigger response
+
+#### Scenario: One bad day does not abort the range and closes the run partial
 
 - **WHEN** a backfill spans several days and the Garmin fetch or a backend write fails for exactly one of them
 - **THEN** that day's entry records its error (`{date, ok:false, error}`) and the remaining days still sync
-- **AND** the roll-up reports `days_failed` ≥ 1 and the HTTP status is `207`
-- **AND** re-issuing the backfill for the failed date alone re-attempts only that day
+- **AND** the run closes with status `partial`, a roll-up of `days_failed` ≥ 1, and re-issuing the backfill for the failed date alone re-attempts only that day
+
+#### Scenario: An over-cap range is rejected before any work
+
+- **WHEN** `POST /sync/backfill` is called with a span exceeding `BACKFILL_MAX_DAYS`
+- **THEN** the response is `400 range_too_large` (including the cap), no sync run is opened, and nothing is written
 
 #### Scenario: Pacing inserts a delay between days
 
 - **WHEN** a multi-day backfill runs with `BACKFILL_DAY_DELAY_SECONDS` set to a positive value
-- **THEN** the bridge pauses that many seconds between consecutive day-syncs to spread Garmin calls
-- **AND** a value of `0` disables the pause (no sleep between days)
-
-#### Scenario: An over-large range is rejected before any sync
-
-- **WHEN** `POST /sync/backfill` is called with a span larger than `BACKFILL_MAX_DAYS`
-- **THEN** the bridge responds `400 range_too_large` including the configured cap
-- **AND** no day is synced and nothing is written
-
-#### Scenario: Re-running a backfill range is idempotent
-
-- **WHEN** `POST /sync/backfill` is run twice over the same range
-- **THEN** date-keyed snapshots are upserted (not duplicated) and activities are deduped by `external_id = "garmin:<activity_id>"` via the existing `/workouts` UPSERT
-- **AND** any nested per-activity detail is replaced (not duplicated) on the second run
-- **AND** the second run requires no new field and no migration
-
-#### Scenario: Backfill with no stored token fails clearly
-
-- **WHEN** `POST /sync/backfill` runs and the backend has no stored token
-- **THEN** the bridge returns an error indicating a login is required
-- **AND** writes nothing
+- **THEN** the background replay pauses that many seconds between consecutive days
 
 ### Requirement: The bridge reports each sync run to the backend
 
