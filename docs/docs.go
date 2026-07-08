@@ -1858,7 +1858,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Forwards ` + "`" + `{from, to}` + "`" + ` to the bridge's bounded, paced, idempotent ` + "`" + `POST /sync/backfill` + "`" + `, returning its per-day summary + roll-up verbatim. Re-runs are safe (date-keyed upserts + external_id dedup). 207 when some days failed.",
+                "description": "Forwards ` + "`" + `{from, to}` + "`" + ` to the bridge's ` + "`" + `POST /sync/backfill` + "`" + `, which validates + caps the range, opens a sync run, and runs the paced day-by-day replay in the BACKGROUND — returning ` + "`" + `202 {run_id, from, to, days_total}` + "`" + ` immediately (verbatim). Poll ` + "`" + `GET /garmin/sync-status?run_id=…` + "`" + ` for the outcome. Re-runs are safe (date-keyed upserts + external_id dedup).",
                 "consumes": [
                     "application/json"
                 ],
@@ -1868,7 +1868,7 @@ const docTemplate = `{
                 "tags": [
                     "garmin"
                 ],
-                "summary": "Backfill the Garmin sync over a historical date range",
+                "summary": "Trigger a Garmin history backfill over a date range (async)",
                 "parameters": [
                     {
                         "description": "{ from, to } (YYYY-MM-DD, inclusive)",
@@ -1882,15 +1882,8 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "the bridge backfill summary verbatim",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "207": {
-                        "description": "completed with one or more failed days",
+                    "202": {
+                        "description": "{ run_id, from, to, days_total } — poll sync-status for the outcome",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2649,7 +2642,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the latest sync run, the timestamp of the newest successful run (independent of ` + "`" + `latest` + "`" + `, so a failed latest still shows when data was last good), and a derived ` + "`" + `is_stale` + "`" + ` flag. Available to any authenticated identity. 503 when the Garmin integration is unconfigured.",
+                "description": "Returns a sync run as ` + "`" + `latest` + "`" + ` (the most recent by default, or the run named by the optional ` + "`" + `run_id` + "`" + ` query — used to poll a specific async backfill), the timestamp of the newest successful run (independent of ` + "`" + `latest` + "`" + `, so a failed latest still shows when data was last good), and a derived ` + "`" + `is_stale` + "`" + ` flag. Only ` + "`" + `success` + "`" + ` runs count toward freshness (a ` + "`" + `partial` + "`" + `/` + "`" + `error` + "`" + ` run does not). Available to any authenticated identity. 404 for an unknown ` + "`" + `run_id` + "`" + `; 503 when the Garmin integration is unconfigured.",
                 "produces": [
                     "application/json"
                 ],
@@ -2657,11 +2650,28 @@ const docTemplate = `{
                     "garmin"
                 ],
                 "summary": "Read Garmin sync status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Return this specific run as ` + "`" + `latest` + "`" + ` (e.g. a 202 backfill's run_id)",
+                        "name": "run_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/garminsyncstatus.SyncStatus"
+                        }
+                    },
+                    "404": {
+                        "description": "sync_run_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "503": {
@@ -10668,12 +10678,14 @@ const docTemplate = `{
             "enum": [
                 "running",
                 "success",
-                "error"
+                "error",
+                "partial"
             ],
             "x-enum-varnames": [
                 "StatusRunning",
                 "StatusSuccess",
-                "StatusError"
+                "StatusError",
+                "StatusPartial"
             ]
         },
         "garminsyncstatus.SyncRun": {
@@ -10696,6 +10708,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/garminsyncstatus.Status"
+                },
+                "summary": {
+                    "description": "Summary is the roll-up of a multi-day/long job (a backfill's\ndays_total/days_ok/days_failed plus per-day results), recorded on close so\na non-blocking job's outcome is readable via sync-status. Null otherwise.",
+                    "type": "object"
                 },
                 "updated_at": {
                     "type": "string"
@@ -10730,6 +10746,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "summary": {
+                    "type": "object"
                 }
             }
         },

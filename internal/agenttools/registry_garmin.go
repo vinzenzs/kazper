@@ -429,10 +429,13 @@ func garminSpecs() []Spec {
 		},
 		{
 			Name: "garmin_backfill",
-			Description: "Backfill the Garmin sync over a historical date range [from, to] (YYYY-MM-DD), re-syncing each " +
+			Description: "Trigger a Garmin history backfill over a date range [from, to] (YYYY-MM-DD), re-syncing each " +
 				"day so older activities gain the detail the rolling daily window missed. Bounded (a max-days cap), " +
 				"paced (a delay between days), oldest-first and resumable, and idempotent — re-running a range is safe. " +
-				"Returns a per-day summary plus a roll-up (days_total/days_ok/days_failed); 207 if some days failed.",
+				"ASYNC: because a range replay takes minutes, this returns 202 immediately with {run_id, from, to, " +
+				"days_total} and runs in the background. Do NOT expect per-day results here — poll `garmin_sync_status` " +
+				"(the run reaches status `success`, `partial` when some days failed, or `error`) and read its `summary` " +
+				"roll-up (days_total/days_ok/days_failed) for the outcome.",
 			SchemaType: GarminBackfillArgs{},
 			Tier:       TierWriteAuto,
 			Build: func(in json.RawMessage) (HTTPCall, error) {

@@ -915,11 +915,13 @@ definitions:
     - running
     - success
     - error
+    - partial
     type: string
     x-enum-varnames:
     - StatusRunning
     - StatusSuccess
     - StatusError
+    - StatusPartial
   garminsyncstatus.SyncRun:
     properties:
       created_at:
@@ -934,6 +936,12 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/garminsyncstatus.Status'
+      summary:
+        description: |-
+          Summary is the roll-up of a multi-day/long job (a backfill's
+          days_total/days_ok/days_failed plus per-day results), recorded on close so
+          a non-blocking job's outcome is readable via sync-status. Null otherwise.
+        type: object
       updated_at:
         type: string
       window_from:
@@ -956,6 +964,8 @@ definitions:
         type: string
       status:
         type: string
+      summary:
+        type: object
     type: object
   garminsyncstatus.openRequest:
     properties:
@@ -4505,9 +4515,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: Forwards `{from, to}` to the bridge's bounded, paced, idempotent
-        `POST /sync/backfill`, returning its per-day summary + roll-up verbatim. Re-runs
-        are safe (date-keyed upserts + external_id dedup). 207 when some days failed.
+      description: Forwards `{from, to}` to the bridge's `POST /sync/backfill`, which
+        validates + caps the range, opens a sync run, and runs the paced day-by-day
+        replay in the BACKGROUND — returning `202 {run_id, from, to, days_total}`
+        immediately (verbatim). Poll `GET /garmin/sync-status?run_id=…` for the outcome.
+        Re-runs are safe (date-keyed upserts + external_id dedup).
       parameters:
       - description: '{ from, to } (YYYY-MM-DD, inclusive)'
         in: body
@@ -4519,13 +4531,9 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: the bridge backfill summary verbatim
-          schema:
-            additionalProperties: true
-            type: object
-        "207":
-          description: completed with one or more failed days
+        "202":
+          description: '{ run_id, from, to, days_total } — poll sync-status for the
+            outcome'
           schema:
             additionalProperties: true
             type: object
@@ -4548,7 +4556,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: Backfill the Garmin sync over a historical date range
+      summary: Trigger a Garmin history backfill over a date range (async)
       tags:
       - garmin
   /garmin/calendar:
@@ -5044,10 +5052,18 @@ paths:
       - garmin
   /garmin/sync-status:
     get:
-      description: Returns the latest sync run, the timestamp of the newest successful
-        run (independent of `latest`, so a failed latest still shows when data was
-        last good), and a derived `is_stale` flag. Available to any authenticated
-        identity. 503 when the Garmin integration is unconfigured.
+      description: Returns a sync run as `latest` (the most recent by default, or
+        the run named by the optional `run_id` query — used to poll a specific async
+        backfill), the timestamp of the newest successful run (independent of `latest`,
+        so a failed latest still shows when data was last good), and a derived `is_stale`
+        flag. Only `success` runs count toward freshness (a `partial`/`error` run
+        does not). Available to any authenticated identity. 404 for an unknown `run_id`;
+        503 when the Garmin integration is unconfigured.
+      parameters:
+      - description: Return this specific run as `latest` (e.g. a 202 backfill's run_id)
+        in: query
+        name: run_id
+        type: string
       produces:
       - application/json
       responses:
@@ -5055,6 +5071,12 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/garminsyncstatus.SyncStatus'
+        "404":
+          description: sync_run_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "503":
           description: garmin_disabled
           schema:

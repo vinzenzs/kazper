@@ -67,14 +67,14 @@ func (s *Service) Open(ctx context.Context, windowFrom, windowTo *string) (*Sync
 	return s.repo.Open(ctx, windowFrom, windowTo)
 }
 
-// Close terminates a run with status success|error, recording an optional error
-// message. Rejects a non-terminal status with ErrStatusInvalid and a missing run
-// with ErrNotFound.
-func (s *Service) Close(ctx context.Context, id uuid.UUID, status string, errMsg *string) (*SyncRun, error) {
+// Close terminates a run with status success|error|partial, recording an
+// optional error message and roll-up summary. Rejects a non-terminal status with
+// ErrStatusInvalid and a missing run with ErrNotFound.
+func (s *Service) Close(ctx context.Context, id uuid.UUID, status string, errMsg *string, summary []byte) (*SyncRun, error) {
 	if !ValidCloseStatus(status) {
 		return nil, ErrStatusInvalid
 	}
-	run, err := s.repo.Close(ctx, id, status, errMsg)
+	run, err := s.repo.Close(ctx, id, status, errMsg, summary)
 	if err != nil {
 		return nil, err
 	}
@@ -115,14 +115,30 @@ func (s *Service) afterClose(ctx context.Context, status Status) {
 	}
 }
 
-// Status returns the latest run, the last-successful timestamp, and a derived
-// staleness flag. Pure composition — no synthesis over the stored runs.
-func (s *Service) Status(ctx context.Context) (*SyncStatus, error) {
+// Status returns a run, the last-successful timestamp, and a derived staleness
+// flag. When runID is non-nil the named run is returned as `latest` (ErrNotFound
+// when it does not exist), so a caller holding a 202 backfill's run_id can poll
+// that specific run even while a concurrent daily sync opens newer runs;
+// otherwise the most recent run is used. `last_successful_at`/`is_stale` are
+// always derived globally (only `success` runs count). Pure composition — no
+// synthesis over the stored runs.
+func (s *Service) Status(ctx context.Context, runID *uuid.UUID) (*SyncStatus, error) {
 	out := &SyncStatus{}
 
-	latest, err := s.repo.Latest(ctx)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, err
+	var (
+		latest *SyncRun
+		err    error
+	)
+	if runID != nil {
+		latest, err = s.repo.GetByID(ctx, *runID)
+		if err != nil {
+			return nil, err // ErrNotFound surfaces so the handler 404s
+		}
+	} else {
+		latest, err = s.repo.Latest(ctx)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
 	}
 	if latest != nil {
 		out.Latest = latest

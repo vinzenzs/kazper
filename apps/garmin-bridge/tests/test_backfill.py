@@ -101,3 +101,83 @@ def test_config_backfill_defaults_and_overrides():
     # invalid → fall back to default
     cfg3 = config_mod.load({**base, "BACKFILL_MAX_DAYS": "notanint"})
     assert cfg3.backfill_max_days == 120
+
+
+# --- HTTP surface: async 202 + background replay (garmin-bridge-call-resilience) ---
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from garmin_bridge.app import create_app  # noqa: E402
+from tests.conftest import FakeBackend as SyncRunBackend  # noqa: E402
+
+
+def _http_gc(fail_dates=()):
+    """A gc stub with load_api + fetch_day for the full HTTP backfill path."""
+    stub = types.SimpleNamespace()
+    stub.load_api = lambda token_b64: object()
+
+    def fetch_day(api, date_str):
+        if date_str in fail_dates:
+            raise RuntimeError(f"garmin boom on {date_str}")
+        return {"date": date_str}
+
+    stub.fetch_day = fetch_day
+    return stub
+
+
+def _client(config, backend, gc):
+    # Zero the inter-day pacing so the background replay does not actually sleep
+    # during tests (pacing itself is covered by the unit tests above).
+    import dataclasses
+
+    fast = dataclasses.replace(config, backfill_day_delay_seconds=0)
+    return TestClient(create_app(fast, gc=gc, backend_factory=lambda: backend))
+
+
+def test_backfill_returns_202_and_runs_in_background(config):
+    backend = SyncRunBackend()
+    client = _client(config, backend, _http_gc())
+    resp = client.post("/sync/backfill", json={"from": "2026-03-01", "to": "2026-03-03"})
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["run_id"] == "run-id-1"
+    assert body["from"] == "2026-03-01" and body["to"] == "2026-03-03"
+    assert body["days_total"] == 3
+    # A run was opened for the range before the 202 returned...
+    assert backend.sync_runs_opened == [("2026-03-01", "2026-03-03")]
+    # ...and the background replay (run synchronously by TestClient) closed it
+    # success with the roll-up recorded as the summary.
+    assert backend.sync_runs_closed == [("run-id-1", "success", None)]
+    summary = backend.sync_runs_closed_summaries[-1]
+    assert summary["days_total"] == 3 and summary["days_ok"] == 3 and summary["days_failed"] == 0
+
+
+def test_backfill_partial_closes_run_partial(config):
+    backend = SyncRunBackend()
+    client = _client(config, backend, _http_gc(fail_dates={"2026-03-02"}))
+    resp = client.post("/sync/backfill", json={"from": "2026-03-01", "to": "2026-03-03"})
+
+    assert resp.status_code == 202
+    assert backend.sync_runs_closed[-1][1] == "partial"
+    assert backend.sync_runs_closed_summaries[-1]["days_failed"] == 1
+
+
+def test_backfill_over_cap_rejected_opens_no_run(config):
+    backend = SyncRunBackend()
+    client = _client(config, backend, _http_gc())
+    resp = client.post("/sync/backfill", json={"from": "2026-01-01", "to": "2026-12-31"})
+
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "range_too_large"
+    assert backend.sync_runs_opened == []  # nothing opened, nothing written
+    assert backend.sync_runs_closed == []
+
+
+def test_backfill_missing_token_returns_login_required_no_run(config):
+    backend = SyncRunBackend(token=None)
+    client = _client(config, backend, _http_gc())
+    resp = client.post("/sync/backfill", json={"from": "2026-03-01", "to": "2026-03-02"})
+
+    assert resp.status_code == 409
+    assert backend.sync_runs_opened == []

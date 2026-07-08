@@ -41,7 +41,7 @@ func TestClose_ErrorWithAbsentToken_Notifies(t *testing.T) {
 	run, err := svc.Open(ctx, nil, nil)
 	require.NoError(t, err)
 
-	_, err = svc.Close(ctx, run.ID, "error", strptr("garmin auth expired"))
+	_, err = svc.Close(ctx, run.ID, "error", strptr("garmin auth expired"), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, n.notified, "absent token on error-close must notify")
@@ -54,7 +54,7 @@ func TestClose_ErrorWithTokenPresent_DoesNotNotify(t *testing.T) {
 	run, err := svc.Open(ctx, nil, nil)
 	require.NoError(t, err)
 
-	_, err = svc.Close(ctx, run.ID, "error", strptr("garmin 429 rate limited"))
+	_, err = svc.Close(ctx, run.ID, "error", strptr("garmin 429 rate limited"), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, n.notified, "token present on error-close must not notify")
@@ -66,7 +66,7 @@ func TestClose_Success_ClearsLatch(t *testing.T) {
 	run, err := svc.Open(ctx, nil, nil)
 	require.NoError(t, err)
 
-	_, err = svc.Close(ctx, run.ID, "success", nil)
+	_, err = svc.Close(ctx, run.ID, "success", nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, n.cleared, "success-close must clear the latch")

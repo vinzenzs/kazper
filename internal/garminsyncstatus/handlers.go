@@ -1,6 +1,7 @@
 package garminsyncstatus
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -84,8 +85,9 @@ func (h *Handlers) open(c *gin.Context) {
 }
 
 type closeRequest struct {
-	Status string  `json:"status"`
-	Error  *string `json:"error,omitempty"`
+	Status  string          `json:"status"`
+	Error   *string         `json:"error,omitempty"`
+	Summary json.RawMessage `json:"summary,omitempty" swaggertype:"object"`
 }
 
 // close godoc
@@ -117,7 +119,7 @@ func (h *Handlers) close(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
 		return
 	}
-	run, err := h.svc.Close(c.Request.Context(), id, req.Status, req.Error)
+	run, err := h.svc.Close(c.Request.Context(), id, req.Status, req.Error, req.Summary)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrStatusInvalid):
@@ -134,10 +136,12 @@ func (h *Handlers) close(c *gin.Context) {
 
 // status godoc
 // @Summary      Read Garmin sync status
-// @Description  Returns the latest sync run, the timestamp of the newest successful run (independent of `latest`, so a failed latest still shows when data was last good), and a derived `is_stale` flag. Available to any authenticated identity. 503 when the Garmin integration is unconfigured.
+// @Description  Returns a sync run as `latest` (the most recent by default, or the run named by the optional `run_id` query — used to poll a specific async backfill), the timestamp of the newest successful run (independent of `latest`, so a failed latest still shows when data was last good), and a derived `is_stale` flag. Only `success` runs count toward freshness (a `partial`/`error` run does not). Available to any authenticated identity. 404 for an unknown `run_id`; 503 when the Garmin integration is unconfigured.
 // @Tags         garmin
 // @Produce      json
+// @Param        run_id  query  string  false  "Return this specific run as `latest` (e.g. a 202 backfill's run_id)"
 // @Success      200  {object}  SyncStatus
+// @Failure      404  {object}  map[string]string  "sync_run_not_found"
 // @Failure      503  {object}  map[string]string  "garmin_disabled"
 // @Security     BearerAuth
 // @Router       /garmin/sync-status [get]
@@ -145,8 +149,21 @@ func (h *Handlers) status(c *gin.Context) {
 	if !h.requireEnabled(c) {
 		return
 	}
-	out, err := h.svc.Status(c.Request.Context())
+	var runID *uuid.UUID
+	if v := c.Query("run_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sync_run_not_found"})
+			return
+		}
+		runID = &id
+	}
+	out, err := h.svc.Status(c.Request.Context(), runID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sync_run_not_found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "status_failed"})
 		return
 	}

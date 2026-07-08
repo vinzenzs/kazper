@@ -97,13 +97,24 @@ class Backend:
             logger.warning("open sync run failed: %s", exc)
         return None
 
-    def close_sync_run(self, run_id: str | None, status: str, error: str | None = None) -> None:
-        """Close a sync-run row as ``success``/``error`` (best-effort, no-op when id is None)."""
+    def close_sync_run(
+        self,
+        run_id: str | None,
+        status: str,
+        error: str | None = None,
+        summary: dict | None = None,
+    ) -> None:
+        """Close a sync-run row as ``success``/``error``/``partial`` (best-effort,
+        no-op when id is None). ``summary`` records a long job's roll-up (e.g. a
+        backfill's per-day results) so a non-blocking job's outcome is pollable
+        via GET /garmin/sync-status."""
         if not run_id:
             return
         body: dict = {"status": status}
         if error is not None:
             body["error"] = error[:500]  # keep the stored message bounded
+        if summary is not None:
+            body["summary"] = summary
         try:
             resp = self._client.patch(f"/garmin/sync-runs/{run_id}", json=body)
             if resp.status_code != 200:

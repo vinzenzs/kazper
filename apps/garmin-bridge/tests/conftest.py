@@ -51,6 +51,7 @@ class FakeBackend:
         # sync-run reporting (best-effort surface the app calls around /sync)
         self.sync_runs_opened: list[tuple[str | None, str | None]] = []
         self.sync_runs_closed: list[tuple[str | None, str, str | None]] = []
+        self.sync_runs_closed_summaries: list[dict | None] = []
         self.open_run_returns: str | None = "run-id-1"
 
     # context manager
@@ -88,5 +89,6 @@ class FakeBackend:
         self.sync_runs_opened.append((window_from, window_to))
         return self.open_run_returns
 
-    def close_sync_run(self, run_id, status, error=None) -> None:
+    def close_sync_run(self, run_id, status, error=None, summary=None) -> None:
         self.sync_runs_closed.append((run_id, status, error))
+        self.sync_runs_closed_summaries.append(summary)

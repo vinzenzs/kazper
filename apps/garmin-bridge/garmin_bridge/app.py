@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Query
+from fastapi import BackgroundTasks, FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -197,10 +197,14 @@ def create_app(
         return JSONResponse(status_code=status, content=result)
 
     @app.post("/sync/backfill")
-    def do_backfill(req: BackfillRequest) -> JSONResponse:
-        """Replay the per-day sync over [from, to] — bounded, paced, per-day
-        tolerant, idempotent. Reuses the exact sync_day path, so it picks up
-        whatever enrichment the rest of the arc added with no per-field work."""
+    def do_backfill(req: BackfillRequest, background: BackgroundTasks) -> JSONResponse:
+        """Trigger a paced history backfill over [from, to] — bounded, per-day
+        tolerant, idempotent. Validates + caps the range synchronously, opens a
+        sync run, then runs the day-by-day replay in the BACKGROUND (a multi-week
+        range legitimately takes minutes) and returns 202 {run_id, from, to,
+        days_total} immediately. Poll GET /garmin/sync-status?run_id=… for the
+        outcome. Reuses the exact sync_day path, so it picks up whatever
+        enrichment the rest of the arc added with no per-field work."""
         try:
             start = date.fromisoformat(req.from_)
             end = date.fromisoformat(req.to)
@@ -219,16 +223,31 @@ def create_app(
         if errResp is not None:
             return errResp
         backend, api = pair
-        try:
-            result = sync.run_backfill(
-                backend, gc, api, start, end,
-                day_delay_seconds=config.backfill_day_delay_seconds,
-            )
-        finally:
-            backend.close()
-        result = {"from": req.from_, "to": req.to, **result}
-        status = 200 if result["days_failed"] == 0 else 207
-        return JSONResponse(status_code=status, content=result)
+        # Open the run BEFORE returning so the 202 hands back a pollable id.
+        run_id = backend.open_sync_run(req.from_, req.to)
+
+        def _replay() -> None:
+            # The paced replay owns `backend`/`api` for its lifetime and closes the
+            # run (success/partial/error) plus the backend when done. It never
+            # raises out of the worker — a failure closes the run as `error`.
+            try:
+                result = sync.run_backfill(
+                    backend, gc, api, start, end,
+                    day_delay_seconds=config.backfill_day_delay_seconds,
+                )
+                status = "success" if result["days_failed"] == 0 else "partial"
+                backend.close_sync_run(run_id, status, summary={"from": req.from_, "to": req.to, **result})
+            except Exception as exc:  # noqa: BLE001 — close the run, never crash the worker
+                logger.error("backfill run failed: %s", exc)
+                backend.close_sync_run(run_id, "error", error=str(exc))
+            finally:
+                backend.close()
+
+        background.add_task(_replay)
+        return JSONResponse(
+            status_code=202,
+            content={"run_id": run_id, "from": req.from_, "to": req.to, "days_total": span_days},
+        )
 
     # --- structured-workout write/read plane (add-garmin-scheduling) ----
     #

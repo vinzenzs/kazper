@@ -13,6 +13,7 @@ package garmincontrol
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -21,10 +22,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// forwardTimeout bounds the proxied call. The bridge's SSO handshake can take a
-// few seconds (and MFA submission completes the OAuth exchange), so this is
-// generous but still bounded (design open question resolved here).
-const forwardTimeout = 30 * time.Second
+// Per-operation timeout budgets, sized by class (per garmin-bridge-call-resilience).
+// These bound the outbound bridge call via the request's context deadline, NOT
+// the http.Client's own Timeout — the client is left unbounded so each call is
+// governed solely by its own budget.
+const (
+	// interactiveTimeout covers login/MFA (SSO handshake), single-item reads and
+	// writes (hydration, rename, delete), calendar/library reads, blob export,
+	// and the now-immediate backfill trigger (the bridge replies 202 at once).
+	interactiveTimeout = 30 * time.Second
+	// scheduleTimeout covers a single-target push that fans out a few bridge
+	// round-trips (unschedule → delete → create → schedule).
+	scheduleTimeout = 5 * time.Minute
+	// fanoutTimeout covers a plan-scope push that loops the single-workout path
+	// over every planned workout in the scope.
+	fanoutTimeout = 20 * time.Minute
+)
 
 // maxBodyBytes caps both the forwarded request body and the bridge's response
 // we read back. The MFA payload is a few bytes ({"code":"123456"}); the bridge
@@ -49,8 +62,21 @@ type Handlers struct {
 func NewHandlers(bridgeURL string) *Handlers {
 	return &Handlers{
 		bridgeURL: strings.TrimRight(strings.TrimSpace(bridgeURL), "/"),
-		client:    &http.Client{Timeout: forwardTimeout},
+		// No client-level Timeout: each call is bounded by its own per-operation
+		// context deadline (see bridgeCtx), so a long fan-out is not capped by a
+		// single blanket value.
+		client: &http.Client{},
 	}
+}
+
+// bridgeCtx derives the outbound context for a bridge call. It is decoupled from
+// the inbound request context — a gateway/client disconnect (which cancels
+// c.Request.Context()) SHALL NOT cancel an in-flight bridge operation — while
+// preserving request-scoped values (trace/log correlation) via WithoutCancel.
+// The operation is bounded only by its own timeout budget. Callers must
+// defer cancel().
+func (h *Handlers) bridgeCtx(c *gin.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(c.Request.Context()), timeout)
 }
 
 // SetSchedulingDeps wires the repos/service the scheduling endpoints need.
@@ -147,7 +173,9 @@ func (h *Handlers) forward(c *gin.Context, bridgePath string, body []byte) {
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, h.bridgeURL+bridgePath, reader)
+	ctx, cancel := h.bridgeCtx(c, interactiveTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.bridgeURL+bridgePath, reader)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
 		return

@@ -97,7 +97,9 @@ func (h *Handlers) scheduleWorkout(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
 		return
 	}
-	w, err := h.pushOne(c.Request.Context(), id)
+	ctx, cancel := h.bridgeCtx(c, scheduleTimeout)
+	defer cancel()
+	w, err := h.pushOne(ctx, id)
 	if err != nil {
 		h.respondScheduleErr(c, err)
 		return
@@ -144,7 +146,9 @@ func (h *Handlers) scheduleTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date_invalid"})
 		return
 	}
-	w, err := h.scheduleTemplateOne(c.Request.Context(), tmplID, date)
+	ctx, cancel := h.bridgeCtx(c, scheduleTimeout)
+	defer cancel()
+	w, err := h.scheduleTemplateOne(ctx, tmplID, date)
 	if err != nil {
 		h.respondScheduleErr(c, err)
 		return
@@ -225,7 +229,9 @@ func (h *Handlers) scheduleMultisport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date_invalid"})
 		return
 	}
-	out, err := h.scheduleMultisportOne(c.Request.Context(), tmplID, date)
+	ctx, cancel := h.bridgeCtx(c, scheduleTimeout)
+	defer cancel()
+	out, err := h.scheduleMultisportOne(ctx, tmplID, date)
 	if err != nil {
 		h.respondScheduleErr(c, err)
 		return
@@ -284,7 +290,8 @@ func (h *Handlers) unscheduleWorkout(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
 		return
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := h.bridgeCtx(c, scheduleTimeout)
+	defer cancel()
 	w, err := h.workoutsRepo.GetByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
@@ -352,7 +359,10 @@ func (h *Handlers) schedulePlan(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "training_plan_not_found"})
 		return
 	}
-	ctx := c.Request.Context()
+	// Fan-out over N workouts: decouple from the inbound request and give it the
+	// long budget so a gateway/client timeout neither aborts nor caps the push.
+	ctx, cancel := h.bridgeCtx(c, fanoutTimeout)
+	defer cancel()
 	ids, err := h.planSvc.PlannedWorkoutsInScope(ctx, planID, trainingplan.Scope{Kind: req.Scope, Week: req.Week, From: req.From, To: req.To})
 	if err != nil {
 		if errors.Is(err, trainingplan.ErrScopeInvalid) {
@@ -397,7 +407,9 @@ func (h *Handlers) calendar(c *gin.Context) {
 	q := url.Values{}
 	q.Set("from", c.Query("from"))
 	q.Set("to", c.Query("to"))
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, h.bridgeURL+"/calendar?"+q.Encode(), nil)
+	ctx, cancel := h.bridgeCtx(c, interactiveTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.bridgeURL+"/calendar?"+q.Encode(), nil)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
 		return

@@ -29,7 +29,7 @@ func NewRepo(q store.Querier) *Repo {
 const selectCols = `id, started_at, finished_at, status, ` +
 	`to_char(window_from, 'YYYY-MM-DD') AS window_from, ` +
 	`to_char(window_to, 'YYYY-MM-DD') AS window_to, ` +
-	`error, created_at, updated_at`
+	`error, summary, created_at, updated_at`
 
 // Open inserts a new run with status='running' and the supplied rolling window
 // (either may be nil), returning the created row.
@@ -43,15 +43,16 @@ func (r *Repo) Open(ctx context.Context, windowFrom, windowTo *string) (*SyncRun
 	return scanRow(row)
 }
 
-// Close sets a run's terminal status (success|error), stamps finished_at, and
-// records an optional error message. Returns ErrNotFound when no row matches.
-func (r *Repo) Close(ctx context.Context, id uuid.UUID, status string, errMsg *string) (*SyncRun, error) {
+// Close sets a run's terminal status (success|error|partial), stamps
+// finished_at, and records an optional error message and roll-up summary
+// (raw JSON, or nil to leave it null). Returns ErrNotFound when no row matches.
+func (r *Repo) Close(ctx context.Context, id uuid.UUID, status string, errMsg *string, summary []byte) (*SyncRun, error) {
 	row := r.q.QueryRow(ctx, `
         UPDATE sync_runs
-        SET status = $2, error = $3, finished_at = now(), updated_at = now()
+        SET status = $2, error = $3, summary = $4::jsonb, finished_at = now(), updated_at = now()
         WHERE id = $1
         RETURNING `+selectCols,
-		id, status, errMsg,
+		id, status, errMsg, summary,
 	)
 	return scanRow(row)
 }
@@ -59,6 +60,14 @@ func (r *Repo) Close(ctx context.Context, id uuid.UUID, status string, errMsg *s
 // Latest returns the most recent run by started_at, or ErrNotFound when none.
 func (r *Repo) Latest(ctx context.Context) (*SyncRun, error) {
 	row := r.q.QueryRow(ctx, `SELECT `+selectCols+` FROM sync_runs ORDER BY started_at DESC LIMIT 1`)
+	return scanRow(row)
+}
+
+// GetByID returns a single run by id, or ErrNotFound. Used by the sync-status
+// read's optional run_id selector so a caller can poll a specific backfill run
+// even while a concurrent daily sync opens newer runs.
+func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*SyncRun, error) {
+	row := r.q.QueryRow(ctx, `SELECT `+selectCols+` FROM sync_runs WHERE id = $1`, id)
 	return scanRow(row)
 }
 
@@ -89,7 +98,7 @@ func scanRow(s scanner) (*SyncRun, error) {
 	)
 	err := s.Scan(
 		&run.ID, &run.StartedAt, &run.FinishedAt, &statusStr,
-		&run.WindowFrom, &run.WindowTo, &run.Error,
+		&run.WindowFrom, &run.WindowTo, &run.Error, &run.Summary,
 		&run.CreatedAt, &run.UpdatedAt,
 	)
 	if err != nil {

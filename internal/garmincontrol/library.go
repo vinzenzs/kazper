@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,20 +15,14 @@ import (
 // far above the 16 KB maxBodyBytes used for the small JSON control responses.
 const maxExportBodyBytes = 8 * 1024 * 1024
 
-// backfillTimeout bounds the backfill proxy. A paced multi-month replay
-// (up to BACKFILL_MAX_DAYS days × the inter-day delay) runs far longer than the
-// 30 s interactive forward timeout, so this path gets its own generous ceiling.
-const backfillTimeout = 30 * time.Minute
-
 // backfill godoc
-// @Summary      Backfill the Garmin sync over a historical date range
-// @Description  Forwards `{from, to}` to the bridge's bounded, paced, idempotent `POST /sync/backfill`, returning its per-day summary + roll-up verbatim. Re-runs are safe (date-keyed upserts + external_id dedup). 207 when some days failed.
+// @Summary      Trigger a Garmin history backfill over a date range (async)
+// @Description  Forwards `{from, to}` to the bridge's `POST /sync/backfill`, which validates + caps the range, opens a sync run, and runs the paced day-by-day replay in the BACKGROUND — returning `202 {run_id, from, to, days_total}` immediately (verbatim). Poll `GET /garmin/sync-status?run_id=…` for the outcome. Re-runs are safe (date-keyed upserts + external_id dedup).
 // @Tags         garmin
 // @Accept       json
 // @Produce      json
 // @Param        body  body  map[string]interface{}  true  "{ from, to } (YYYY-MM-DD, inclusive)"
-// @Success      200  {object}  map[string]interface{}  "the bridge backfill summary verbatim"
-// @Success      207  {object}  map[string]interface{}  "completed with one or more failed days"
+// @Success      202  {object}  map[string]interface{}  "{ run_id, from, to, days_total } — poll sync-status for the outcome"
 // @Failure      400  {object}  map[string]interface{}  "range_too_large | date_invalid"
 // @Failure      502  {object}  map[string]string  "garmin_bridge_unreachable"
 // @Failure      503  {object}  map[string]string  "garmin_disabled"
@@ -45,30 +38,10 @@ func (h *Handlers) backfill(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "request_body_unreadable"})
 		return
 	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, h.bridgeURL+"/sync/backfill", bytes.NewReader(body))
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	// A dedicated long-timeout client — the paced replay outlasts h.client's 30 s.
-	client := &http.Client{Timeout: backfillTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
-		return
-	}
-	defer resp.Body.Close()
-	out, err := io.ReadAll(io.LimitReader(resp.Body, maxExportBodyBytes))
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
-		return
-	}
-	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/json"
-	}
-	c.Data(resp.StatusCode, ct, out)
+	// The bridge now returns 202 immediately (it runs the replay in the
+	// background), so this is a short verbatim forward like the other proxies —
+	// no bespoke long-timeout client.
+	h.proxy(c, http.MethodPost, "/sync/backfill", body, maxBodyBytes)
 }
 
 // deleteWorkoutObject godoc
@@ -93,7 +66,8 @@ func (h *Handlers) deleteWorkoutObject(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
 		return
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := h.bridgeCtx(c, scheduleTimeout)
+	defer cancel()
 	w, err := h.workoutsRepo.GetByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
@@ -223,7 +197,9 @@ func (h *Handlers) proxy(c *gin.Context, method, bridgePath string, body []byte,
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), method, h.bridgeURL+bridgePath, reader)
+	ctx, cancel := h.bridgeCtx(c, interactiveTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, h.bridgeURL+bridgePath, reader)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "garmin_bridge_unreachable"})
 		return

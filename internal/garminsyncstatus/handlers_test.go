@@ -171,3 +171,61 @@ func TestUnconfigured_Returns503(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, doReq(t, f.r, http.MethodGet, "/garmin/sync-status", mobileToken, "").Code)
 	assert.Equal(t, http.StatusServiceUnavailable, doReq(t, f.r, http.MethodPost, "/garmin/sync-runs", mobileToken, "").Code)
 }
+
+// --- async-backfill additions (garmin-bridge-call-resilience) ---
+
+func TestClosePartial_WithSummary_RoundTrips(t *testing.T) {
+	f := setup(t, true)
+	id := openRun(t, f, `{"window_from":"2026-03-01","window_to":"2026-03-03"}`)
+	rec := doReq(t, f.r, http.MethodPatch, "/garmin/sync-runs/"+id, garminToken,
+		`{"status":"partial","summary":{"days_total":3,"days_ok":2,"days_failed":1}}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var run garminsyncstatus.SyncRun
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &run))
+	assert.Equal(t, garminsyncstatus.StatusPartial, run.Status)
+	require.NotNil(t, run.Summary)
+	assert.JSONEq(t, `{"days_total":3,"days_ok":2,"days_failed":1}`, string(run.Summary))
+}
+
+func TestStatus_ByRunID_ReturnsThatRun(t *testing.T) {
+	f := setup(t, true)
+	// A backfill run, then a NEWER daily-sync run that would otherwise be "latest".
+	backfill := openRun(t, f, `{"window_from":"2026-03-01","window_to":"2026-03-03"}`)
+	require.Equal(t, http.StatusOK, doReq(t, f.r, http.MethodPatch, "/garmin/sync-runs/"+backfill, garminToken,
+		`{"status":"partial","summary":{"days_failed":1}}`).Code)
+	newer := openRun(t, f, "")
+	require.Equal(t, http.StatusOK, doReq(t, f.r, http.MethodPatch, "/garmin/sync-runs/"+newer, garminToken, `{"status":"success"}`).Code)
+
+	// Polling by the backfill's run_id returns IT, not the newer run.
+	rec := doReq(t, f.r, http.MethodGet, "/garmin/sync-status?run_id="+backfill, agentToken, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var st garminsyncstatus.SyncStatus
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &st))
+	require.NotNil(t, st.Latest)
+	assert.Equal(t, backfill, st.Latest.ID.String())
+	assert.Equal(t, garminsyncstatus.StatusPartial, st.Latest.Status)
+	// A partial run is NOT a success: last_successful_at reflects the newer success.
+	require.NotNil(t, st.LastSuccessfulAt)
+}
+
+func TestStatus_ByUnknownRunID_Is404(t *testing.T) {
+	f := setup(t, true)
+	rec := doReq(t, f.r, http.MethodGet, "/garmin/sync-status?run_id=11111111-1111-1111-1111-111111111111", mobileToken, "")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestStatus_PartialDoesNotCountAsSuccess(t *testing.T) {
+	f := setup(t, true)
+	// The only run is a partial ⇒ no success ever ⇒ stale, no last_successful_at.
+	id := openRun(t, f, "")
+	require.Equal(t, http.StatusOK, doReq(t, f.r, http.MethodPatch, "/garmin/sync-runs/"+id, garminToken,
+		`{"status":"partial","summary":{"days_failed":1}}`).Code)
+	rec := doReq(t, f.r, http.MethodGet, "/garmin/sync-status", mobileToken, "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var st garminsyncstatus.SyncStatus
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &st))
+	require.NotNil(t, st.Latest)
+	assert.Equal(t, garminsyncstatus.StatusPartial, st.Latest.Status)
+	assert.Nil(t, st.LastSuccessfulAt, "a partial run is not a success")
+	assert.True(t, st.IsStale)
+}

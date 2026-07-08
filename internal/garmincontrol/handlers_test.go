@@ -1,6 +1,7 @@
 package garmincontrol_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -138,4 +139,42 @@ func TestRequiresAuth(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Empty(t, bridge.gotPath, "must not forward to the bridge unauthenticated")
+}
+
+// --- async backfill + cancellation-decoupling (garmin-bridge-call-resilience) ---
+
+// The backfill proxy forwards to the bridge's /sync/backfill and relays the
+// bridge's immediate 202 + {run_id,…} verbatim (no held-open connection).
+func TestBackfillForwardsAsync202Verbatim(t *testing.T) {
+	bridge := newRecordingBridge(t, http.StatusAccepted,
+		`{"run_id":"r1","from":"2026-03-01","to":"2026-03-31","days_total":31}`)
+	r := setup(bridge.server.URL)
+
+	w := doPost(t, r, "/garmin/backfill", `{"from":"2026-03-01","to":"2026-03-31"}`)
+
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.JSONEq(t, `{"run_id":"r1","from":"2026-03-01","to":"2026-03-31","days_total":31}`, w.Body.String())
+	assert.Equal(t, "/sync/backfill", bridge.gotPath)
+	assert.JSONEq(t, `{"from":"2026-03-01","to":"2026-03-31"}`, bridge.gotBody)
+}
+
+// A gateway/client disconnect cancels the inbound request context. Because the
+// proxy decouples the outbound bridge call via context.WithoutCancel, the call
+// still completes rather than failing with context.Canceled (which would surface
+// as 502). Here the inbound context is already cancelled before the handler runs.
+func TestBridgeCallSurvivesInboundCancellation(t *testing.T) {
+	bridge := newRecordingBridge(t, http.StatusAccepted, `{"run_id":"r1"}`)
+	r := setup(bridge.server.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled, as a dropped client connection would be
+	req := httptest.NewRequest(http.MethodPost, "/garmin/backfill",
+		strings.NewReader(`{"from":"2026-03-01","to":"2026-03-02"}`)).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+agentToken)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusAccepted, w.Code, "decoupled bridge call must complete despite inbound cancellation")
+	assert.Equal(t, "/sync/backfill", bridge.gotPath, "the bridge still received the forward")
 }
