@@ -71,17 +71,31 @@ func TestAdherenceCandidates_WindowAndPlanScope(t *testing.T) {
 	from := base
 	to := base.Add(24 * time.Hour) // half-open: excludes the prior-day row
 
-	// Unscoped: both in-window rows, off-plan included.
+	// Unscoped: both in-window rows, off-plan included; each carries its id and
+	// no plan-week provenance (unscoped read has no join).
 	all, err := f.repo.AdherenceCandidates(ctx, from, to, nil)
 	require.NoError(t, err)
 	assert.Len(t, all, 2, "both in-window rows; the prior-day row is outside [from, to)")
+	for _, r := range all {
+		assert.NotEqual(t, uuid.Nil, r.ID, "id populated on every row")
+		assert.Nil(t, r.PlanWeekOrdinal, "unscoped rows carry no plan-week provenance")
+		assert.Nil(t, r.PlanStartDate)
+	}
 
-	// Plan-scoped: only the on-plan row; off-plan (no-slot) excluded by the join.
+	// Plan-scoped: only the on-plan row; off-plan (no-slot) excluded by the join,
+	// and the row carries ordinal + plan start_date (phase is null — adhPlan sets
+	// no phase_id).
 	scoped, err := f.repo.AdherenceCandidates(ctx, from, to, &planID)
 	require.NoError(t, err)
 	require.Len(t, scoped, 1, "off-plan and out-of-window rows excluded")
 	require.NotNil(t, scoped[0].PlanSlotID)
 	assert.Equal(t, slot, *scoped[0].PlanSlotID)
+	assert.NotEqual(t, uuid.Nil, scoped[0].ID)
+	require.NotNil(t, scoped[0].PlanWeekOrdinal)
+	assert.Equal(t, 1, *scoped[0].PlanWeekOrdinal)
+	require.NotNil(t, scoped[0].PlanStartDate)
+	assert.Equal(t, "2026-06-01", scoped[0].PlanStartDate.Format("2006-01-02"))
+	assert.Nil(t, scoped[0].PlanPhase, "no phase_id on the plan week → null phase")
 
 	// A foreign plan id matches nothing.
 	other, err := f.repo.AdherenceCandidates(ctx, from, to, ptrUUID(uuid.New()))
@@ -153,6 +167,72 @@ func TestAdherenceEndpoint_PlanScopeExcludesUnplanned(t *testing.T) {
 	assert.Equal(t, 1, s.Missed)
 	assert.Equal(t, 1, s.Upcoming)
 	assert.Equal(t, 0, s.Unplanned, "off-plan work excluded when plan_id is set")
+}
+
+func TestAdherenceEndpoint_MissedListAndCalendarTrend(t *testing.T) {
+	f := setup(t)
+	seedAdherenceWindow(t, f)
+
+	rec := doReq(t, f.r, http.MethodGet, "/workouts/adherence?"+adherenceWindowQuery(), "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var s workouts.AdherenceSummary
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &s))
+
+	// The single missed (bike) session is named; the fulfilled/upcoming/unplanned
+	// rows are not, and the small list is not truncated.
+	require.Len(t, s.MissedSessions, 1)
+	assert.Equal(t, workouts.SportBike, s.MissedSessions[0].Sport)
+	assert.InDelta(t, 60.0, s.MissedSessions[0].PlannedDurationMin, 0.001)
+	assert.False(t, s.MissedSessionsTruncated)
+
+	// Unscoped → calendar-week buckets: ordinal/phase null, trend reconciles with
+	// the top-line completed/missed counts.
+	require.NotEmpty(t, s.Weekly)
+	var wc, wm int
+	for _, w := range s.Weekly {
+		assert.Nil(t, w.Ordinal, "calendar mode → null ordinal")
+		assert.Nil(t, w.Phase)
+		wc += w.Completed
+		wm += w.Missed
+	}
+	assert.Equal(t, s.Completed, wc)
+	assert.Equal(t, s.Missed, wm)
+}
+
+func TestAdherenceEndpoint_PlanWeekTrend(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	planID := seedAdherenceWindow(t, f)
+
+	// Attach a phase to the plan's single week so it surfaces in the trend
+	// (training_phases has no id default — supply one).
+	phaseID := uuid.New()
+	_, err := f.pool.Exec(ctx,
+		`INSERT INTO training_phases (id, name, type, start_date, end_date)
+		 VALUES ($1, 'Base', 'base', '2026-06-01', '2026-06-30')`, phaseID)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(ctx, `UPDATE plan_weeks SET phase_id = $1 WHERE plan_id = $2`, phaseID, planID)
+	require.NoError(t, err)
+
+	rec := doReq(t, f.r, http.MethodGet,
+		"/workouts/adherence?"+adherenceWindowQuery()+"&plan_id="+planID.String(), "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var s workouts.AdherenceSummary
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &s))
+
+	// One plan week (ordinal 1) → one bucket, keyed by plan week with phase +
+	// week_start derived from the plan's start_date (not the workouts' dates).
+	require.Len(t, s.Weekly, 1)
+	require.NotNil(t, s.Weekly[0].Ordinal)
+	assert.Equal(t, 1, *s.Weekly[0].Ordinal)
+	require.NotNil(t, s.Weekly[0].Phase)
+	assert.Equal(t, "Base", *s.Weekly[0].Phase)
+	assert.Equal(t, "2026-06-01", s.Weekly[0].WeekStart)
+	assert.Equal(t, 1, s.Weekly[0].Completed)
+	assert.Equal(t, 1, s.Weekly[0].Missed)
+	// plan-scoped excludes off-plan work, so the missed list is still just the bike.
+	require.Len(t, s.MissedSessions, 1)
+	assert.Equal(t, workouts.SportBike, s.MissedSessions[0].Sport)
 }
 
 func TestAdherenceEndpoint_Validation(t *testing.T) {

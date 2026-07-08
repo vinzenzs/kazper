@@ -708,28 +708,50 @@ func (r *Repo) List(ctx context.Context, from, to time.Time, sessionGroup, statu
 	return out, rows.Err()
 }
 
-// AdherenceCandidates returns the minimal projection plan-adherence needs for
-// every workout whose started_at falls in the half-open window [from, to) —
+// AdherenceCandidates returns the per-workout projection plan-adherence needs
+// for every workout whose started_at falls in the half-open window [from, to) —
 // the handler builds that window from inclusive local dates. When planID is
 // non-nil the query INNER JOINs workouts.plan_slot_id → plan_slots →
 // plan_weeks and restricts to that plan, which inherently drops rows with no
-// plan_slot_id (off-plan completed work). Ordered by started_at ascending.
+// plan_slot_id (off-plan completed work), and carries each row's plan-week
+// provenance (ordinal, phase name, plan start_date) for the weekly trend.
+// Ordered by started_at ascending.
 func (r *Repo) AdherenceCandidates(ctx context.Context, from, to time.Time, planID *uuid.UUID) ([]AdherenceRow, error) {
-	cols := `w.status, w.sport, w.plan_slot_id, w.started_at, w.ended_at, w.tss`
-	q := `SELECT ` + cols + ` FROM workouts w`
-	args := []any{from, to}
+	base := `w.id, w.status, w.sport, w.plan_slot_id, w.started_at, w.ended_at, w.tss`
+	// Plan-scoped rows additionally carry their plan-week provenance so the
+	// weekly trend can bucket by plan week: ordinal, the week's phase name (via
+	// a LEFT JOIN so a phaseless week is null, not dropped), and the plan's
+	// start_date (constant per plan) for deriving each week's week_start.
 	if planID != nil {
-		q += `
+		q := `SELECT ` + base + `, pw.ordinal, tph.name, tpl.start_date
+            FROM workouts w
             JOIN plan_slots ps ON ps.id = w.plan_slot_id
-            JOIN plan_weeks pw ON pw.id = ps.plan_week_id`
+            JOIN plan_weeks pw ON pw.id = ps.plan_week_id
+            JOIN training_plans tpl ON tpl.id = pw.plan_id
+            LEFT JOIN training_phases tph ON tph.id = pw.phase_id
+            WHERE w.started_at >= $1 AND w.started_at < $2 AND pw.plan_id = $3
+            ORDER BY w.started_at ASC`
+		rows, err := r.q.Query(ctx, q, from, to, *planID)
+		if err != nil {
+			return nil, fmt.Errorf("adherence candidates: %w", err)
+		}
+		defer rows.Close()
+		var out []AdherenceRow
+		for rows.Next() {
+			var a AdherenceRow
+			if err := rows.Scan(&a.ID, &a.Status, &a.Sport, &a.PlanSlotID, &a.StartedAt, &a.EndedAt, &a.TSS,
+				&a.PlanWeekOrdinal, &a.PlanPhase, &a.PlanStartDate); err != nil {
+				return nil, fmt.Errorf("scan adherence row: %w", err)
+			}
+			out = append(out, a)
+		}
+		return out, rows.Err()
 	}
-	q += ` WHERE w.started_at >= $1 AND w.started_at < $2`
-	if planID != nil {
-		q += ` AND pw.plan_id = $3`
-		args = append(args, *planID)
-	}
-	q += ` ORDER BY w.started_at ASC`
-	rows, err := r.q.Query(ctx, q, args...)
+
+	q := `SELECT ` + base + ` FROM workouts w
+        WHERE w.started_at >= $1 AND w.started_at < $2
+        ORDER BY w.started_at ASC`
+	rows, err := r.q.Query(ctx, q, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("adherence candidates: %w", err)
 	}
@@ -737,7 +759,7 @@ func (r *Repo) AdherenceCandidates(ctx context.Context, from, to time.Time, plan
 	var out []AdherenceRow
 	for rows.Next() {
 		var a AdherenceRow
-		if err := rows.Scan(&a.Status, &a.Sport, &a.PlanSlotID, &a.StartedAt, &a.EndedAt, &a.TSS); err != nil {
+		if err := rows.Scan(&a.ID, &a.Status, &a.Sport, &a.PlanSlotID, &a.StartedAt, &a.EndedAt, &a.TSS); err != nil {
 			return nil, fmt.Errorf("scan adherence row: %w", err)
 		}
 		out = append(out, a)

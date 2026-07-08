@@ -8695,7 +8695,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. \"Now\" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.",
+                "description": "Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. Also returns `missed_sessions` — a compact, oldest-first list of the overdue sessions (id/date/sport/planned_duration_min/planned_tss), capped with `missed_sessions_truncated` when the tail is dropped — and `weekly`, a per-week trend. Weekly buckets are plan-week-aware: with `plan_id` they align to the plan's weeks (`ordinal` + `phase`, `week_start` from the plan start date); without, they are Monday-started calendar weeks. \"Now\" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.",
                 "produces": [
                     "application/json"
                 ],
@@ -13465,6 +13465,16 @@
                 "missed": {
                     "type": "integer"
                 },
+                "missed_sessions": {
+                    "description": "MissedSessions names the overdue-unfulfilled sessions (oldest first),\ncapped at missedSessionsCap; MissedSessionsTruncated is set when the tail\nwas dropped. Weekly is the per-week trend (plan-week or calendar buckets).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workouts.MissedSession"
+                    }
+                },
+                "missed_sessions_truncated": {
+                    "type": "boolean"
+                },
                 "planned_duration_min": {
                     "type": "number"
                 },
@@ -13476,6 +13486,12 @@
                 },
                 "upcoming": {
                     "type": "integer"
+                },
+                "weekly": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workouts.WeeklyBucket"
+                    }
                 }
             }
         },
@@ -13487,6 +13503,26 @@
                 },
                 "missed": {
                     "type": "integer"
+                }
+            }
+        },
+        "workouts.MissedSession": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "planned_duration_min": {
+                    "type": "number"
+                },
+                "planned_tss": {
+                    "type": "number"
+                },
+                "sport": {
+                    "$ref": "#/definitions/workouts.Sport"
                 }
             }
         },
@@ -13615,6 +13651,35 @@
                 "TrainingFocusPeak",
                 "TrainingFocusStrengthEndurance"
             ]
+        },
+        "workouts.WeeklyBucket": {
+            "type": "object",
+            "properties": {
+                "adherence_rate": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "completed_duration_min": {
+                    "type": "number"
+                },
+                "missed": {
+                    "type": "integer"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "planned_duration_min": {
+                    "type": "number"
+                },
+                "week_start": {
+                    "type": "string"
+                }
+            }
         },
         "workouts.Workout": {
             "type": "object",

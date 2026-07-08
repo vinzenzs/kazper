@@ -332,7 +332,7 @@ func (h *Handlers) list(c *gin.Context) {
 
 // adherence godoc
 // @Summary      Plan-adherence analytics over a date window
-// @Description  Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. "Now" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.
+// @Description  Classifies each workout in [from, to] as completed (a planned session that was done), missed (a planned session now overdue), upcoming (planned, not yet due), or unplanned (completed with no plan slot). Returns the four counts, `adherence_rate` = completed / (completed + missed) over due sessions only (null when none due), planned-vs-actual `duration_min`/`tss`, and a `by_sport` completed/missed breakdown. Also returns `missed_sessions` — a compact, oldest-first list of the overdue sessions (id/date/sport/planned_duration_min/planned_tss), capped with `missed_sessions_truncated` when the tail is dropped — and `weekly`, a per-week trend. Weekly buckets are plan-week-aware: with `plan_id` they align to the plan's weeks (`ordinal` + `phase`, `week_start` from the plan start date); without, they are Monday-started calendar weeks. "Now" is the server clock in the resolved timezone. When `plan_id` is supplied the window is restricted to that plan's slots (off-plan rows excluded). Read-only.
 // @Tags         workouts
 // @Produce      json
 // @Param        from     query  string  true   "Inclusive start date YYYY-MM-DD (local)"
@@ -389,7 +389,7 @@ func (h *Handlers) adherence(c *gin.Context) {
 	// Inclusive local-date window → half-open [fromDay 00:00, (toDay+1) 00:00).
 	from := fromDay
 	to := toDay.AddDate(0, 0, 1)
-	sum, err := h.svc.Adherence(c.Request.Context(), from, to, planID)
+	sum, err := h.svc.Adherence(c.Request.Context(), from, to, planID, loc)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "adherence_failed")
 		return
