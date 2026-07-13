@@ -47,6 +47,8 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(serveCmd())
 	root.AddCommand(mcpCmd())
 	root.AddCommand(migrateCmd())
+	root.AddCommand(exportCmd())
+	root.AddCommand(importCmd())
 	root.AddCommand(versionCmd())
 	return root
 }

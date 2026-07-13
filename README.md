@@ -1403,6 +1403,32 @@ task swag                     # regenerate docs/ from handler annotations
 task --list                   # show every available target
 ```
 
+### Data export / import
+
+Two complementary copies of the database exist, for different jobs:
+
+- **`pg_dump` backup** (`task db:backup`, Helm CronJob) — *physical* disaster
+  recovery: fast, byte-exact, Postgres-major-version-coupled, opaque. See
+  [`BACKUP.md`](BACKUP.md).
+- **`kazper export` / `kazper import`** — *logical* portability: a single,
+  human-readable, version-independent JSON document of all user data. Use it to
+  inspect/diff the data, migrate to a fresh instance, or answer "give me all my
+  data". Neither replaces the other.
+
+```bash
+kazper export --out mydata.json     # full logical export (stdout by default)
+kazper import mydata.json           # restore into an EMPTY database at the same migration head
+```
+
+`export` connects directly to `DATABASE_URL` (like `migrate`), writes JSON to
+stdout (or `--out <file>`), and refuses if the live schema has a table its
+inventory doesn't know (drift guard). `import` refuses unless the target
+database is **empty** and at the export's exact migration head, loads everything
+in one transaction (rolling back on any error), and verifies row counts against
+the manifest. Secrets and transient state are never exported (`garmin_tokens`,
+push tokens, idempotency/sync records) — **after importing into a new instance,
+Garmin needs a re-login and the mobile companion re-registers its push token.**
+
 Integration tests boot a Postgres container via
 [testcontainers-go](https://golang.testcontainers.org/). Docker or Podman must
 be running. On Podman, the test helper disables the Ryuk reaper automatically

@@ -160,6 +160,32 @@ task web:test         # run the dashboard's component tests (Vitest)
 Backing up and restoring your local database — and the restore drill that proves
 a dump actually works — are documented in [`BACKUP.md`](BACKUP.md).
 
+### Export / import your data as JSON
+
+Separate from the physical `pg_dump` backup, the binary can produce a **logical**
+JSON export of all user data — portable, human-readable, and independent of the
+Postgres version. Use it to inspect/diff the data or migrate to a fresh instance;
+use `task db:backup` (physical, in `BACKUP.md`) for disaster recovery.
+
+```bash
+# Source the dev env so DATABASE_URL is set (see the fast path above).
+set -a && . ./.env.local && set +a
+
+# Export everything to a file (or omit --out to write JSON to stdout).
+go run ./cmd/kazper export --out mydata.json
+
+# Import into an EMPTY database at the same migration head. Locally:
+task db:wipe && task db:up            # fresh, empty database
+go run ./cmd/kazper migrate           # bring it to head
+go run ./cmd/kazper import mydata.json # loads in one transaction, verifies counts
+```
+
+`import` refuses a non-empty database, a migration-head mismatch, or a newer file
+format — naming the reason and changing nothing. Secrets and transient state are
+never exported (`garmin_tokens`, push tokens, idempotency/sync records): after
+importing into a new instance, **re-run the Garmin login and the companion app
+re-registers its push token on next launch.**
+
 ### Coach dashboard (web)
 
 The training dashboard is embedded in the binary and served at `/` (same origin
