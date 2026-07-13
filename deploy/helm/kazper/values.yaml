@@ -240,3 +240,34 @@ garminBridge:
     #    days (safe to re-run — date upserts + external_id dedup). Set back to 0
     #    after the initial import.
     backfillDays: 0
+
+# -- Scheduled database backup (opt-in). Disabled by default — when
+#    backup.enabled is false the chart renders NO CronJob and NO backup PVC, so
+#    a fresh install's object set is identical to the pre-backup contract. When
+#    enabled, a CronJob runs `pg_dump -Fc` against the same DATABASE_URL Secret
+#    the Deployment uses (honoring existingSecret) and writes a timestamped dump
+#    to a chart-managed PVC, keeping the newest `retention` files. See BACKUP.md
+#    for retrieving a dump and the restore drill.
+backup:
+  enabled: false
+
+  # -- Cron schedule (cluster timezone). Default 03:00 daily — off-peak, and
+  #    pg_dump takes a consistent MVCC snapshot so no locking concern at this
+  #    write volume.
+  schedule: "0 3 * * *"
+
+  # -- Postgres client image used purely for its version-matched pg_dump. The
+  #    app image is distroless (no shell, no pg tools). Track the SERVER major
+  #    version: pg_dump newer-than-server is supported, older-than-server is not.
+  image: postgres:16
+
+  # -- Keep-last-N retention. Pruning runs only AFTER a successful dump, so a
+  #    failing dump can never rotate out existing good backups. 14 dailies ≈ two
+  #    weeks with the default schedule.
+  retention: 14
+
+  storage:
+    # -- Size of the chart-managed PVC the dumps are written to.
+    size: 5Gi
+    # -- Optional StorageClass. Empty uses the cluster default.
+    storageClassName: ""

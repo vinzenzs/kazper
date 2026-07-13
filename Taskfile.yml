@@ -185,6 +185,105 @@ tasks:
         $COMPOSE -f {{.COMPOSE_FILE}} down -v >/dev/null
         echo "removed {{.POSTGRES_CONTAINER}} + volume {{.POSTGRES_VOLUME}}"
 
+  # ---- Backup / restore (see BACKUP.md) ----
+
+  db:backup:
+    desc: Dump the local database to backups/kazper-<UTC>.dump (pg_dump -Fc; see BACKUP.md)
+    deps: [db:up]
+    cmds:
+      - |
+        set -eu
+
+        # Same compose-runtime detection as db:up/db:down/db:wipe.
+        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+          COMPOSE="docker compose"
+        elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+          COMPOSE="podman compose"
+        else
+          echo "no docker/podman compose runtime found in PATH" >&2
+          exit 1
+        fi
+
+        # Connection string: prefer the .env.local value, fall back to the dev
+        # default. Inside the Postgres container "localhost:5432" is the server's
+        # own socket/listener, so the dev URL resolves without host pg tooling.
+        DB_URL="{{.DATABASE_URL}}"
+        if [ -f .env.local ]; then
+          FROM_ENV=$(grep -E '^DATABASE_URL=' .env.local | tail -n1 | cut -d= -f2- || true)
+          if [ -n "${FROM_ENV:-}" ]; then DB_URL="$FROM_ENV"; fi
+        fi
+
+        mkdir -p backups
+        TS=$(date -u +%Y%m%dT%H%M%SZ)
+        OUT="backups/kazper-${TS}.dump"
+
+        # pg_dump runs INSIDE the Postgres container (version-matched client, no
+        # host pg tooling needed). -Fc = custom format: compressed, and captures
+        # schema + data + the schema_migrations version table in one archive, so
+        # a restored database is exactly what MIGRATE_ON_START expects. -T (no
+        # TTY) keeps the binary stream on stdout uncorrupted. Write to a .partial
+        # first and rename only on success, so a failed dump never leaves a
+        # truncated kazper-*.dump behind (set -e aborts before the mv).
+        $COMPOSE -f {{.COMPOSE_FILE}} exec -T postgres pg_dump -Fc "$DB_URL" > "${OUT}.partial"
+        mv "${OUT}.partial" "$OUT"
+
+        echo "wrote $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)"
+
+  db:restore:
+    desc: 'Restore a dump into the LOCAL database (usage: task db:restore FILE=backups/kazper-<ts>.dump [FORCE=1])'
+    deps: [db:up]
+    cmds:
+      - |
+        set -eu
+
+        if [ -z "{{.FILE}}" ]; then
+          echo "FILE= is required, e.g. task db:restore FILE=backups/kazper-<ts>.dump" >&2
+          exit 1
+        fi
+        if [ ! -f "{{.FILE}}" ]; then
+          echo "no such dump file: {{.FILE}}" >&2
+          exit 1
+        fi
+
+        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+          COMPOSE="docker compose"
+        elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+          COMPOSE="podman compose"
+        else
+          echo "no docker/podman compose runtime found in PATH" >&2
+          exit 1
+        fi
+
+        # Confirmation gate — restore DROPs and recreates the local database.
+        # FORCE=1 bypasses it for scripted drills.
+        if [ "{{.FORCE}}" != "1" ]; then
+          printf 'This will DROP and recreate the LOCAL database from %s. Continue? [y/N] ' "{{.FILE}}"
+          read REPLY || REPLY=""
+          case "$REPLY" in
+            y|Y|yes|YES) ;;
+            *) echo "aborted — database unchanged"; exit 0 ;;
+          esac
+        fi
+
+        # Derive a maintenance connection (the "postgres" database) from the dev
+        # URL by swapping the database path — pg_restore --create must connect to
+        # a database other than the one it drops and recreates. This targets the
+        # LOCAL compose container only; production restore is a documented manual
+        # procedure in BACKUP.md, never a task target.
+        DB_URL="{{.DATABASE_URL}}"
+        if [ -f .env.local ]; then
+          FROM_ENV=$(grep -E '^DATABASE_URL=' .env.local | tail -n1 | cut -d= -f2- || true)
+          if [ -n "${FROM_ENV:-}" ]; then DB_URL="$FROM_ENV"; fi
+        fi
+        MAINT_URL=$(printf '%s' "$DB_URL" | sed -E 's#(://[^/]+)/[^?]+#\1/postgres#')
+
+        # --clean --create --if-exists: drop the target database if present, then
+        # recreate and restore it. Reads the dump from the host over stdin (-T).
+        $COMPOSE -f {{.COMPOSE_FILE}} exec -T postgres \
+          pg_restore --clean --create --if-exists -d "$MAINT_URL" < "{{.FILE}}"
+
+        echo "restored {{.FILE}} into the local database"
+
   # ---- One-command local dev ----
 
   _write-env-local:

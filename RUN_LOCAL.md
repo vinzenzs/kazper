@@ -149,11 +149,16 @@ task mcp:install      # alias for `install` — same binary serves REST and MCP
 task db:up            # start the Postgres compose service (idempotent)
 task db:down          # stop + remove the container; keep the data volume
 task db:wipe          # stop + remove the container AND delete the data volume
+task db:backup        # dump the local DB to backups/kazper-<UTC>.dump (see BACKUP.md)
+task db:restore FILE=backups/kazper-<ts>.dump   # restore a dump into the local DB
 task web:install      # install the dashboard's Node deps (first time only)
 task web:dev          # run the dashboard dev server (Vite, proxies /api → :8080)
 task web:build        # build apps/web/dist (gitignored; embedded via -tags webembed)
 task web:test         # run the dashboard's component tests (Vitest)
 ```
+
+Backing up and restoring your local database — and the restore drill that proves
+a dump actually works — are documented in [`BACKUP.md`](BACKUP.md).
 
 ### Coach dashboard (web)
 

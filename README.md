@@ -1380,6 +1380,11 @@ Packaged Helm charts publish on `v*` tags to
 externally provisioned Postgres reachable via `DATABASE_URL` — there is
 no in-chart database.
 
+**Backups.** The database is the single copy of all history. Local backup/restore
+(`task db:backup` / `task db:restore`), the opt-in in-cluster scheduled dump
+(`backup.enabled`), and the tested restore drill are documented in
+[`BACKUP.md`](BACKUP.md).
+
 ## Development
 
 ```bash

@@ -1,0 +1,24 @@
+{{- if .Values.backup.enabled -}}
+{{- /*
+  Chart-managed PVC the scheduled backup CronJob writes dumps to. Gated on
+  backup.enabled, so a default install renders neither this nor the CronJob.
+  The PVC is retained on `helm uninstall` unless explicitly deleted — dumps
+  should outlive a chart teardown.
+*/ -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kazper.fullname" . }}-backups
+  labels:
+    {{- include "kazper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.backup.storage.storageClassName }}
+  storageClassName: {{ .Values.backup.storage.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage.size | quote }}
+{{- end }}

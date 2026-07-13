@@ -1,0 +1,92 @@
+{{- if .Values.backup.enabled -}}
+{{- /*
+  Scheduled database backup. Gated on backup.enabled so a default install
+  renders nothing here. Runs `pg_dump -Fc` against the same DATABASE_URL Secret
+  the Deployment binds to (kazper.secretName — so existingSecret installs work
+  unchanged), writes a timestamped custom-format dump to the chart-managed PVC,
+  then prunes to the newest backup.retention files. `set -e` before the prune
+  guarantees a failed dump never rotates out existing good backups.
+*/ -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kazper.fullname" . }}-backup
+  labels:
+    {{- include "kazper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "kazper.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: backup
+              image: {{ .Values.backup.image | quote }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                # DATABASE_URL from the SAME Secret the Deployment uses. Honors
+                # existingSecret via the kazper.secretName helper.
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "kazper.secretName" . }}
+                      key: DATABASE_URL
+                - name: RETENTION
+                  value: {{ .Values.backup.retention | int | quote }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  TS=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT="/backups/kazper-${TS}.dump"
+                  # -Fc custom format: compressed, restorable with pg_restore,
+                  # captures schema + data + the schema_migrations table. Write a
+                  # .partial first and rename on success so a failed dump leaves
+                  # no truncated kazper-*.dump behind.
+                  pg_dump -Fc "$DATABASE_URL" > "${OUT}.partial"
+                  mv "${OUT}.partial" "$OUT"
+                  echo "wrote $OUT ($(wc -c < "$OUT") bytes)"
+                  # Prune AFTER a successful dump: keep the newest RETENTION
+                  # dumps, delete the rest. set -e above means we never reach
+                  # here on a dump failure, so good backups are safe.
+                  ls -1t /backups/kazper-*.dump | tail -n +$((RETENTION + 1)) | xargs -r rm -f
+                  echo "retained newest $RETENTION dump(s)"
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "kazper.fullname" . }}-backups
+            # Writable scratch for the pg client under readOnlyRootFilesystem.
+            - name: tmp
+              emptyDir: {}
+      {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+      {{- end }}
+{{- end }}
