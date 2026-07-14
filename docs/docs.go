@@ -9126,6 +9126,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/cp-model": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fits the 2-parameter critical-power model to the window's best-effort records (bike **power** only): for each ladder duration between 2 and 30 minutes it takes the windowed best (the same per-duration MAX the power curve serves) as one fit point and computes an OLS fit in work–time form, returning ` + "`" + `model` + "`" + ` with ` + "`" + `cp_watts` + "`" + `, ` + "`" + `w_prime_kj` + "`" + `, ` + "`" + `r_squared` + "`" + `, ` + "`" + `rmse_w` + "`" + ` plus the ` + "`" + `points` + "`" + ` used. The model is **advisory** — this endpoint never reads or writes athlete-config; comparing CP against the configured FTP is the caller's job. When the window can't support a fit the response is still ` + "`" + `200` + "`" + ` with ` + "`" + `model: null` + "`" + ` and a ` + "`" + `reason` + "`" + ` (` + "`" + `insufficient_points` + "`" + ` / ` + "`" + `span_too_narrow` + "`" + `). Compute-on-read; nothing persisted. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Critical-power (CP2) model over a window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.CPModelResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/intensity-distribution": {
             "get": {
                 "security": [
@@ -11033,6 +11087,66 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.CPModel": {
+            "type": "object",
+            "properties": {
+                "cp_watts": {
+                    "type": "number"
+                },
+                "r_squared": {
+                    "type": "number"
+                },
+                "rmse_w": {
+                    "type": "number"
+                },
+                "w_prime_kj": {
+                    "type": "number"
+                }
+            }
+        },
+        "effortanalytics.CPModelResult": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "model": {
+                    "$ref": "#/definitions/effortanalytics.CPModel"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.CPPoint"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.CPPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "watts": {
+                    "type": "number"
+                },
+                "workout_id": {
                     "type": "string"
                 }
             }

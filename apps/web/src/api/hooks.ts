@@ -11,6 +11,7 @@ import type {
   TrainingContext,
   PMCSeries,
   PowerCurve,
+  CPModelResult,
   Workout,
   WorkoutStats,
 } from "./types";
@@ -113,6 +114,15 @@ export function usePMC(from: string, to: string) {
   return useQuery({
     queryKey: ["pmc", from, to],
     queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The critical-power (CP2) model fitted over the window's power best-efforts.
+export function useCPModel(from: string, to: string) {
+  return useQuery({
+    queryKey: ["cp-model", from, to],
+    queryFn: () => apiGet<CPModelResult>(`/workouts/cp-model?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

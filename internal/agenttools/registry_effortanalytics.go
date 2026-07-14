@@ -21,6 +21,13 @@ type PowerCurveArgs struct {
 	TZ    string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
+// CPModelArgs is the input to cp_model. `from`/`to` are inclusive calendar dates.
+type CPModelArgs struct {
+	From string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
 func effortAnalyticsSpecs() []Spec {
 	return []Spec{
 		{
@@ -49,6 +56,35 @@ func effortAnalyticsSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/power-curve", Query: q}, nil
+			},
+		},
+		{
+			Name: "cp_model",
+			Description: "Fit the 2-parameter critical-power model (CP2) over a date window's power best-efforts " +
+				"(cycling only). Returns the estimated CRITICAL POWER `cp_watts` (the athlete's data-derived " +
+				"sustainable threshold, ≈ FTP) and `w_prime_kj` (anaerobic work capacity above CP), with fit " +
+				"quality (`r_squared`, `rmse_w`) and the exact effort points used (2–30 min durations). Use it to " +
+				"sanity-check the CONFIGURED `ftp_watts` (read via athlete_config_get) against what recent racing/" +
+				"training actually shows — e.g. 'your best efforts fit CP 268 W but your configured FTP is 250 W, " +
+				"worth re-testing'. ADVISORY ONLY: this does not read or change athlete-config; to APPLY a new " +
+				"threshold, use the athlete-config update flow (athlete_config_update). When the window lacks " +
+				"enough spread of long efforts the response is 200 with `model: null` and a `reason` " +
+				"(`insufficient_points` / `span_too_narrow`) plus whatever points were found. Read-only; no " +
+				"idempotency key. Typical call: the trailing 90 days.",
+			SchemaType: CPModelArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a CPModelArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/cp-model", Query: q}, nil
 			},
 		},
 	}

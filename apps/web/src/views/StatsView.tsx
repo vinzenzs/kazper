@@ -5,8 +5,10 @@ import { StatsTotals } from "../components/StatsTotals";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PMCChart, PMCSummary } from "../components/PMCChart";
+import { CPModelChart } from "../components/CPModelChart";
 import { IntensityDistributionPanel } from "../components/IntensityDistribution";
 import {
+  useCPModel,
   useIntensityDistribution,
   usePMC,
   usePowerCurve,
@@ -71,11 +73,14 @@ export function StatsView() {
   const [period, setPeriod] = useState<Period>("week");
   const [sport, setSport] = useState<string>("bike");
   const [pmcWindow, setPmcWindow] = useState<PMCWindow>("90");
+  const [cpWindow, setCpWindow] = useState<PMCWindow>("90");
   const { from, to } = rangeFor(period);
   const { data, isLoading, isError, error } = useWorkoutStats(from, to);
   const curve = usePowerCurve(from, to, sport);
   const pmcRange = trailingDays(Number(pmcWindow) - 1);
   const pmc = usePMC(pmcRange.from, pmcRange.to);
+  const cpRange = trailingDays(Number(cpWindow) - 1);
+  const cp = useCPModel(cpRange.from, cpRange.to);
   const intensity = useIntensityDistribution(from, to);
 
   const total = data?.total;
@@ -164,6 +169,24 @@ export function StatsView() {
           ) : (
             <div className="py-6 text-center text-sm text-slate-500">
               No effort data for {sport} in this period
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel
+        title="Critical power (CP / W′)"
+        isLoading={cp.isLoading}
+        isError={cp.isError}
+        error={cp.error}
+      >
+        <div className="flex flex-col gap-3">
+          <Toggle options={PMC_WINDOWS} value={cpWindow} onChange={setCpWindow} />
+          {cp.data ? (
+            <CPModelChart result={cp.data} />
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-500">
+              Loading critical-power model…
             </div>
           )}
         </div>

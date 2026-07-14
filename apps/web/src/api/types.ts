@@ -213,6 +213,33 @@ export interface PowerCurve {
   points: CurvePoint[];
 }
 
+// Mirrors internal/effortanalytics CP model. The 2-parameter critical-power fit
+// over the window's power best-efforts (2–30 min). Advisory: `cp_watts` ≈ FTP,
+// compared against the configured FTP by the reader. `model` is null when the
+// window can't support a fit, with `reason` naming the gate.
+export interface CPModel {
+  cp_watts: number;
+  w_prime_kj: number;
+  r_squared: number;
+  rmse_w: number;
+}
+
+export interface CPPoint {
+  duration_s: number;
+  watts: number;
+  workout_id: string;
+  date: string;
+}
+
+export interface CPModelResult {
+  from: string;
+  to: string;
+  tz: string;
+  model: CPModel | null;
+  reason?: "insufficient_points" | "span_too_narrow";
+  points: CPPoint[];
+}
+
 // Mirrors internal/pmc/types.go. The Coggan Performance Management Chart: one
 // entry per calendar day with fitness (ctl), fatigue (atl), form (tsb), and the
 // 7-day ramp rate, plus weekly overreaching flags.

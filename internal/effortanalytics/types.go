@@ -56,3 +56,45 @@ type CurveParams struct {
 	Loc    *time.Location
 	Metric Metric
 }
+
+// Critical-power (CP2) model validity band + fit gates. Only ladder durations
+// within [cpBandLowS, cpBandHighS] feed the fit (below 2 min the anaerobic term
+// inflates W′; above 30 min it's motivation/fueling, not physiology). With the
+// current ladder the in-band durations are 5m/10m/20m/30m.
+const (
+	cpBandLowS     = 120  // 2 minutes
+	cpBandHighS    = 1800 // 30 minutes
+	cpMinPoints    = 3    // need ≥3 distinct in-band durations to fit
+	cpMinSpanRatio = 3.0  // longest ≥ 3× shortest, else the fit extrapolates wildly
+)
+
+// CPModel is the fitted 2-parameter critical-power model: CP (asymptotic power,
+// the slope of work vs time) and W′ (the finite work above CP, the intercept),
+// with the fit quality. Bike/power only in v1.
+type CPModel struct {
+	CPWatts  float64 `json:"cp_watts"`
+	WPrimeKJ float64 `json:"w_prime_kj"`
+	RSquared float64 `json:"r_squared"`
+	RMSEW    float64 `json:"rmse_w"`
+}
+
+// CPPoint is one in-band fit point: a windowed per-duration best (the same MAX
+// the power curve serves) with the workout it came from.
+type CPPoint struct {
+	DurationS int     `json:"duration_s"`
+	Watts     float64 `json:"watts"`
+	WorkoutID string  `json:"workout_id"`
+	Date      string  `json:"date"`
+}
+
+// CPModelResult is the GET /workouts/cp-model response. Model is null when the
+// window can't support a fit, with Reason naming the gate; Points always carries
+// whatever in-band bests were found. Nothing is persisted.
+type CPModelResult struct {
+	From   string    `json:"from"`
+	To     string    `json:"to"`
+	TZ     string    `json:"tz"`
+	Model  *CPModel  `json:"model"`
+	Reason string    `json:"reason,omitempty"`
+	Points []CPPoint `json:"points"`
+}

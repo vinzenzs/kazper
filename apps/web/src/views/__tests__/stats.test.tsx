@@ -6,6 +6,8 @@ import {
   emptyPMC,
   emptyPowerCurve,
   emptyWorkoutStats,
+  nullCPModel,
+  populatedCPModel,
   populatedDistribution,
   populatedPMC,
   populatedPowerCurve,
@@ -17,10 +19,12 @@ const h = vi.hoisted(() => ({
   statsCalls: [] as { from: string; to: string }[],
   curveCalls: [] as { from: string; to: string; sport: string }[],
   pmcCalls: [] as { from: string; to: string }[],
+  cpCalls: [] as { from: string; to: string }[],
   intensityCalls: [] as { from: string; to: string }[],
   statsData: undefined as unknown,
   curveData: undefined as unknown,
   pmcData: undefined as unknown,
+  cpData: undefined as unknown,
   intensityData: undefined as unknown,
 }));
 
@@ -37,6 +41,10 @@ vi.mock("../../api/hooks", () => ({
     h.pmcCalls.push({ from, to });
     return { data: h.pmcData, isLoading: false, isError: false, error: null };
   },
+  useCPModel: (from: string, to: string) => {
+    h.cpCalls.push({ from, to });
+    return { data: h.cpData, isLoading: false, isError: false, error: null };
+  },
   useIntensityDistribution: (from: string, to: string) => {
     h.intensityCalls.push({ from, to });
     return { data: h.intensityData, isLoading: false, isError: false, error: null };
@@ -49,10 +57,12 @@ beforeEach(() => {
   h.statsCalls.length = 0;
   h.curveCalls.length = 0;
   h.pmcCalls.length = 0;
+  h.cpCalls.length = 0;
   h.intensityCalls.length = 0;
   h.statsData = populatedWorkoutStats;
   h.curveData = populatedPowerCurve;
   h.pmcData = populatedPMC;
+  h.cpData = populatedCPModel;
   h.intensityData = populatedDistribution;
 });
 afterEach(() => cleanup());
@@ -111,7 +121,9 @@ describe("StatsView", () => {
   it("re-queries the PMC series when the window selector changes", () => {
     render(<StatsView />);
     const first = h.pmcCalls[h.pmcCalls.length - 1].from;
-    fireEvent.click(screen.getByRole("button", { name: "365d" }));
+    // The PMC panel's 90/180/365 toggle is the first on the page (the CP panel
+    // adds a second identical one below it).
+    fireEvent.click(screen.getAllByRole("button", { name: "365d" })[0]);
     const wider = h.pmcCalls[h.pmcCalls.length - 1].from;
     expect(new Date(wider).getTime()).toBeLessThan(new Date(first).getTime());
   });
@@ -120,6 +132,32 @@ describe("StatsView", () => {
     h.pmcData = emptyPMC;
     render(<StatsView />);
     expect(screen.getByText(/no training history to chart yet/i)).toBeInTheDocument();
+  });
+
+  it("renders the critical-power model readout and fitted curve", () => {
+    render(<StatsView />);
+    expect(screen.getByRole("img", { name: /critical-power model/i })).toBeInTheDocument();
+    const readout = screen.getByTestId("cp-readout");
+    expect(readout).toHaveTextContent("268 W"); // CP
+    expect(readout).toHaveTextContent("21.3 kJ"); // W′
+    expect(readout).toHaveTextContent("0.99"); // R²
+  });
+
+  it("re-queries the CP model when its window selector changes", () => {
+    render(<StatsView />);
+    const first = h.cpCalls[h.cpCalls.length - 1].from;
+    // The CP panel has its own 90/180/365 toggle (the last 365d button on the page).
+    const buttons = screen.getAllByRole("button", { name: "365d" });
+    fireEvent.click(buttons[buttons.length - 1]);
+    const wider = h.cpCalls[h.cpCalls.length - 1].from;
+    expect(new Date(wider).getTime()).toBeLessThan(new Date(first).getTime());
+  });
+
+  it("shows the CP degraded state with the gate reason", () => {
+    h.cpData = nullCPModel;
+    render(<StatsView />);
+    expect(screen.getByText(/not enough long efforts/i)).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /critical-power model/i })).not.toBeInTheDocument();
   });
 
   it("renders the intensity distribution with classification badge and missing note", () => {

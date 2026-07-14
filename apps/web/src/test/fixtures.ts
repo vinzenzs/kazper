@@ -8,6 +8,7 @@ import type {
   TrainingContext,
   PMCSeries,
   PowerCurve,
+  CPModelResult,
   Workout,
   WorkoutStats,
 } from "../api/types";
@@ -329,6 +330,28 @@ export const populatedPowerCurve: PowerCurve = {
     { duration_s: 300, value: 360, workout_id: "w1", date: "2026-06-20" },
     { duration_s: 1200, value: 300, workout_id: "w1", date: "2026-06-20" },
   ],
+};
+
+export const populatedCPModel: CPModelResult = {
+  from: "2026-03-26",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  model: { cp_watts: 268.4, w_prime_kj: 21.3, r_squared: 0.987, rmse_w: 3.9 },
+  points: [
+    { duration_s: 300, watts: 336.0, workout_id: "w1", date: "2026-05-02" },
+    { duration_s: 600, watts: 300.0, workout_id: "w2", date: "2026-05-16" },
+    { duration_s: 1200, watts: 284.0, workout_id: "w3", date: "2026-06-01" },
+    { duration_s: 1800, watts: 273.0, workout_id: "w4", date: "2026-06-10" },
+  ],
+};
+
+export const nullCPModel: CPModelResult = {
+  from: "2026-06-18",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  model: null,
+  reason: "insufficient_points",
+  points: [{ duration_s: 300, watts: 336.0, workout_id: "w1", date: "2026-06-20" }],
 };
 
 export const emptyPowerCurve: PowerCurve = {

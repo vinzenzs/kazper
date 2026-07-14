@@ -55,6 +55,28 @@ func (s *Service) CurveFor(ctx context.Context, p CurveParams) ([]CurvePoint, er
 	return s.store.Curve(ctx, fromDay, upper, p.Metric)
 }
 
+// CPModelFor fits the critical-power model over the window's power best-efforts.
+// It reuses the windowed per-duration MAX (the power-curve projection), keeps the
+// in-band points, and either fits or reports a gate reason with a null model.
+// Compute-on-read; reads no athlete-config; persists nothing. From/To/TZ are set
+// by the caller (they carry the resolved display strings).
+func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult, error) {
+	p.Metric = MetricPower
+	curve, err := s.CurveFor(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	pts := selectInBand(curve)
+	res := &CPModelResult{Points: pts}
+	if reason := gateCP(pts); reason != "" {
+		res.Reason = reason
+		return res, nil
+	}
+	m := fitCPModel(pts)
+	res.Model = &m
+	return res, nil
+}
+
 // meanMaximal returns the best rolling-window mean of a 1 Hz sample series at
 // each ladder duration — the mean-maximal (a.k.a. mean-max) curve for one
 // activity. Samples are contiguous seconds (coasting seconds are 0), so a
