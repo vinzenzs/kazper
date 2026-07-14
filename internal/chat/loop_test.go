@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,13 @@ type fakeStore struct {
 	exists map[uuid.UUID]bool
 	turns  map[uuid.UUID][]StoredTurn
 	titles map[uuid.UUID]string
+
+	// Failure injection for the persist-hardening tests. appendCalls counts
+	// AppendTurns invocations; failAppend, when set and it returns true, makes
+	// that call fail WITHOUT storing anything. failTitle fails SetTitleIfEmpty.
+	appendCalls int
+	failAppend  func(call int, turns []StoredTurn) bool
+	failTitle   bool
 }
 
 func newFakeStore() *fakeStore {
@@ -82,6 +90,10 @@ func (f *fakeStore) LoadTurns(_ context.Context, id uuid.UUID, limit int) ([]Sto
 func (f *fakeStore) AppendTurns(_ context.Context, id uuid.UUID, turns []StoredTurn) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.appendCalls++
+	if f.failAppend != nil && f.failAppend(f.appendCalls, turns) {
+		return errors.New("append failed (injected)")
+	}
 	f.turns[id] = append(f.turns[id], turns...)
 	return nil
 }
@@ -89,6 +101,9 @@ func (f *fakeStore) AppendTurns(_ context.Context, id uuid.UUID, turns []StoredT
 func (f *fakeStore) SetTitleIfEmpty(_ context.Context, id uuid.UUID, title string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failTitle {
+		return errors.New("title failed (injected)")
+	}
 	if f.titles[id] == "" {
 		f.titles[id] = title
 	}
@@ -121,6 +136,7 @@ type loopEnv struct {
 	engine       *gin.Engine
 	anthropic    *httptest.Server
 	store        *fakeStore
+	svc          *Service
 	sessionID    uuid.UUID
 	planCreates  *int32
 	planKeys     *[]string
@@ -165,7 +181,7 @@ func newLoopEnv(t *testing.T, anthropic *httptest.Server, cfg Config) *loopEnv {
 	svc.SetLoopbackHandler(r)
 
 	return &loopEnv{
-		engine: r, anthropic: anthropic, store: store, sessionID: sessionID,
+		engine: r, anthropic: anthropic, store: store, svc: svc, sessionID: sessionID,
 		planCreates: &planCreates, planKeys: &planKeys, contextCalls: &contextCalls,
 	}
 }

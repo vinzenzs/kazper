@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +55,7 @@ type Service struct {
 	cfg         Config
 	specs       []agenttools.Spec
 	specsByName map[string]agenttools.Spec
+	logger      *slog.Logger
 }
 
 // New builds the chat Service. Returns ErrAPIKeyMissing when apiKey is empty so
@@ -75,7 +77,23 @@ func New(apiKey string, cfg Config) (*Service, error) {
 		cfg.MaxHistoryMessages = 40
 	}
 	specs := agenttools.ChatRegistry()
-	return &Service{client: c, cfg: cfg, specs: specs, specsByName: agenttools.ByName(specs)}, nil
+	return &Service{client: c, cfg: cfg, specs: specs, specsByName: agenttools.ByName(specs), logger: slog.Default()}, nil
+}
+
+// SetLogger overrides the logger used for persist-failure diagnostics (defaults
+// to slog.Default()). Follows the existing Set* wiring style; injected so tests
+// can assert the failure lines.
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
+}
+
+// logPersistFailure records a turn-persistence failure (ERROR) with the session
+// id and the site that failed, so an operator can see why clients received a
+// persistence_error event.
+func (s *Service) logPersistFailure(sessionID uuid.UUID, site string, err error) {
+	s.logger.Error("chat turn persist failed", "session_id", sessionID, "site", site, "err", err)
 }
 
 // SetToolSpecs overrides the tool surface the loop exposes and dispatches
@@ -125,8 +143,15 @@ func (s *Service) stream(ctx context.Context, sse *sseWriter, sessionID uuid.UUI
 
 	// If the session is paused awaiting a write confirmation, a new free-text
 	// message implicitly rejects the pending writes: append a declined
-	// tool_result for each so the history is well-formed, then proceed (2.6).
-	prior = s.implicitlyRejectPending(ctx, sessionID, prior)
+	// tool_result for each so the history is well-formed, then proceed. A persist
+	// failure here is terminal and aborts BEFORE the new user turn is stored, so
+	// stored history is never left with a user turn after an unanswered tool_use.
+	prior, err = s.implicitlyRejectPending(ctx, sessionID, prior)
+	if err != nil {
+		s.logPersistFailure(sessionID, "implicit_reject", err)
+		sse.error("persistence_error", "could not save the conversation")
+		return
+	}
 
 	messages := toAnthropicMessages(sanitizeHistory(prior, s.specsByName))
 
@@ -134,10 +159,14 @@ func (s *Service) stream(ctx context.Context, sse *sseWriter, sessionID uuid.UUI
 	// session from it. A persist failure here is terminal — nothing has streamed.
 	userContent, _ := json.Marshal(message)
 	if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{{Role: "user", Content: userContent}}); err != nil {
+		s.logPersistFailure(sessionID, "user_turn", err)
 		sse.error("persistence_error", "could not save the message")
 		return
 	}
-	_ = s.store.SetTitleIfEmpty(ctx, sessionID, deriveTitle(message))
+	// Titling is cosmetic — log a failure but never fail the stream over it.
+	if err := s.store.SetTitleIfEmpty(ctx, sessionID, deriveTitle(message)); err != nil {
+		s.logger.Warn("chat session titling failed", "session_id", sessionID, "err", err)
+	}
 	messages = append(messages, anthropicMessage{Role: "user", Content: userContent})
 
 	s.runLoop(ctx, sse, sessionID, messages, bearer)
@@ -187,11 +216,17 @@ func (s *Service) runLoop(ctx context.Context, sse *sseWriter, sessionID uuid.UU
 			if !withTools && rounds >= s.cfg.MaxToolRounds {
 				stop = "max_tool_rounds"
 			}
-			// Persist the final assistant turn (best-effort: the answer has
-			// already streamed) before signalling done.
-			_ = s.store.AppendTurns(ctx, sessionID, []StoredTurn{
+			// Persist the final assistant turn before signalling done. The answer
+			// has already streamed, but a persist failure is terminal: `done` must
+			// never claim durability the store didn't provide, so emit
+			// persistence_error and end without done.
+			if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{
 				{Role: "assistant", Content: marshalBlocks(turn.AssistantContent)},
-			})
+			}); err != nil {
+				s.logPersistFailure(sessionID, "final_answer", err)
+				sse.error("persistence_error", "the reply could not be saved")
+				return
+			}
 			sse.done(full.String(), stop, usage)
 			return
 		}
@@ -203,9 +238,16 @@ func (s *Service) runLoop(ctx context.Context, sse *sseWriter, sessionID uuid.UU
 		// tool_result yet), surface a proposal describing the pending writes, and
 		// end the stream awaiting confirmation. The confirm endpoint resumes it.
 		if pending := agenttools.PendingFromContent(assistantContent, s.specsByName); len(pending) > 0 {
-			_ = s.store.AppendTurns(ctx, sessionID, []StoredTurn{
+			// Persist the awaiting-confirmation anchor BEFORE surfacing anything.
+			// On failure, emit persistence_error and surface no proposal — a
+			// proposal the confirm endpoint would 409 on must never reach the user.
+			if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{
 				{Role: "assistant", Content: assistantContent},
-			})
+			}); err != nil {
+				s.logPersistFailure(sessionID, "pause", err)
+				sse.error("persistence_error", "the proposal could not be saved")
+				return
+			}
 			sse.proposal(agenttools.TurnID(assistantContent), pending)
 			sse.done(full.String(), "awaiting_confirmation", usage)
 			return
@@ -231,10 +273,17 @@ func (s *Service) runLoop(ctx context.Context, sse *sseWriter, sessionID uuid.UU
 		})
 		// Persist the assistant turn and its tool_result reply together (one
 		// atomic append) so a stored session never ends on a dangling tool_use.
-		_ = s.store.AppendTurns(ctx, sessionID, []StoredTurn{
+		// A persist failure is terminal: stop the loop (no further rounds) and
+		// surface persistence_error; previously stored turns stay intact so a
+		// retry resumes from the last durable state.
+		if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{
 			{Role: "assistant", Content: assistantContent},
 			{Role: "user", Content: toolResultContent},
-		})
+		}); err != nil {
+			s.logPersistFailure(sessionID, "tool_round", err)
+			sse.error("persistence_error", "the tool results could not be saved")
+			return
+		}
 		rounds++
 	}
 }
@@ -244,13 +293,13 @@ func (s *Service) runLoop(ctx context.Context, sse *sseWriter, sessionID uuid.UU
 // turn, and returning the extended history. A no-op when the session is not
 // paused. Every tool_use block must be answered before another user message, so
 // even read/write-auto calls in the (rare) mixed paused turn are declined.
-func (s *Service) implicitlyRejectPending(ctx context.Context, sessionID uuid.UUID, prior []StoredTurn) []StoredTurn {
+func (s *Service) implicitlyRejectPending(ctx context.Context, sessionID uuid.UUID, prior []StoredTurn) ([]StoredTurn, error) {
 	if len(prior) == 0 {
-		return prior
+		return prior, nil
 	}
 	last := prior[len(prior)-1]
 	if last.Role != "assistant" || !agenttools.AwaitingConfirmation(last.Content, s.specsByName) {
-		return prior
+		return prior, nil
 	}
 	blocks := agenttools.ParseToolUseBlocks(last.Content)
 	resultBlocks := make([]json.RawMessage, 0, len(blocks))
@@ -258,8 +307,12 @@ func (s *Service) implicitlyRejectPending(ctx context.Context, sessionID uuid.UU
 		resultBlocks = append(resultBlocks, declinedResultBlock(b.ID))
 	}
 	declined := StoredTurn{Role: "user", Content: marshalBlocks(resultBlocks)}
-	_ = s.store.AppendTurns(ctx, sessionID, []StoredTurn{declined})
-	return append(prior, declined)
+	// On failure the declined turn is NOT stored — return the unextended history
+	// and the error so the caller aborts before appending anything further.
+	if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{declined}); err != nil {
+		return prior, err
+	}
+	return append(prior, declined), nil
 }
 
 // toAnthropicMessages maps stored turns to the upstream message shape; each
@@ -471,7 +524,17 @@ func (s *Service) streamConfirm(ctx context.Context, sse *sseWriter, sessionID u
 		sse.tool(b.ID, name, status, summary)
 	}
 	toolResultContent := marshalBlocks(resultBlocks)
-	_ = s.store.AppendTurns(ctx, sessionID, []StoredTurn{{Role: "user", Content: toolResultContent}})
+	// The approved writes have already been dispatched and cannot be un-executed.
+	// If their tool_result turn fails to persist, end the stream with
+	// persistence_error rather than continuing the loop on top of unstored state
+	// (a continuation's own persist would strand still more turns). The stored
+	// trailing turn stays the awaiting-confirmation anchor, so a retry re-enters
+	// execute mode — this exposure is accepted and documented (design D4/Risks).
+	if err := s.store.AppendTurns(ctx, sessionID, []StoredTurn{{Role: "user", Content: toolResultContent}}); err != nil {
+		s.logPersistFailure(sessionID, "confirm_execute", err)
+		sse.error("persistence_error", "the tool results could not be saved")
+		return
+	}
 	messages = append(messages, anthropicMessage{Role: "user", Content: toolResultContent})
 
 	s.runLoop(ctx, sse, sessionID, messages, bearer)

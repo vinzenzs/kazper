@@ -48,6 +48,7 @@ func scheduleWorkoutSpec() agenttools.Spec {
 type confirmEnv struct {
 	engine        *gin.Engine
 	store         *fakeStore
+	svc           *Service
 	sessionID     uuid.UUID
 	scheduleCalls *int32
 	scheduleKeys  *[]string
@@ -89,7 +90,7 @@ func newConfirmEnv(t *testing.T, anthropic *httptest.Server, cfg Config) *confir
 	NewHandlers(svc).Register(api)
 	svc.SetLoopbackHandler(r)
 
-	return &confirmEnv{engine: r, store: store, sessionID: sessionID, scheduleCalls: &scheduleCalls, scheduleKeys: &scheduleKeys}
+	return &confirmEnv{engine: r, store: store, svc: svc, sessionID: sessionID, scheduleCalls: &scheduleCalls, scheduleKeys: &scheduleKeys}
 }
 
 func postConfirm(t *testing.T, engine http.Handler, sessionID uuid.UUID, body string) *httptest.ResponseRecorder {
