@@ -37,11 +37,16 @@ type BySportCount struct {
 	Missed    int `json:"missed"`
 }
 
-// missedSessionsCap bounds the missed_sessions list. Plan-scoped a window is
+// missedSessionsCap is the DEFAULT missed_sessions list bound; a request may
+// raise it via missed_limit up to missedLimitMax. Plan-scoped a window is
 // naturally bounded, but an unscoped YTD window can list many misses — beyond
-// the cap the tail is dropped and MissedSessionsTruncated is set so the list
-// never reads as complete.
-const missedSessionsCap = 50
+// the applied limit the tail is dropped and MissedSessionsTruncated is set so
+// the list never reads as complete.
+const (
+	missedSessionsCap = 50
+	missedLimitMin    = 1
+	missedLimitMax    = 200
+)
 
 // MissedSession is one compact entry in the missed_sessions list — enough to
 // name the session, not to fully describe it (no title/focus by design). Date
@@ -250,14 +255,11 @@ func computeAdherence(rows []AdherenceRow, now time.Time, loc *time.Location) Ad
 	}
 
 	// Missed list: rows arrive started_at-ascending, so it is already oldest
-	// first; truncate the tail (newest) past the cap and flag it.
+	// first. The tunable cap is applied by applyMissedLimit at the presentation
+	// boundary (so a raised missed_limit isn't clipped here first).
 	sort.SliceStable(s.MissedSessions, func(i, j int) bool {
 		return s.MissedSessions[i].Date < s.MissedSessions[j].Date
 	})
-	if len(s.MissedSessions) > missedSessionsCap {
-		s.MissedSessionsTruncated = true
-		s.MissedSessions = s.MissedSessions[:missedSessionsCap]
-	}
 
 	// Weekly trend: finalize each bucket and sort by week_start (monotonic with
 	// ordinal in plan mode, chronological in calendar mode).
@@ -304,7 +306,7 @@ func roundPtr(v *float64) *float64 {
 // missed list's local dates and calendar-week bucketing; the classification
 // "now" is the same instant regardless of loc. from/to are the half-open window
 // the handler built from inclusive local dates.
-func (s *Service) Adherence(ctx context.Context, from, to time.Time, planID *uuid.UUID, loc *time.Location) (*AdherenceSummary, error) {
+func (s *Service) Adherence(ctx context.Context, from, to time.Time, planID *uuid.UUID, loc *time.Location, missedLimit int, zeroFill bool) (*AdherenceSummary, error) {
 	rows, err := s.repo.AdherenceCandidates(ctx, from, to, planID)
 	if err != nil {
 		return nil, err
@@ -313,7 +315,95 @@ func (s *Service) Adherence(ctx context.Context, from, to time.Time, planID *uui
 		loc = s.loc
 	}
 	sum := computeAdherence(rows, time.Now().In(loc), loc)
+	applyMissedLimit(&sum, missedLimit)
+	if zeroFill {
+		sum.Weekly = zeroFillWeekly(sum.Weekly)
+	}
 	return &sum, nil
+}
+
+// applyMissedLimit truncates the (oldest-first) missed list to `limit`, setting
+// MissedSessionsTruncated when the tail is dropped. The default (missedSessionsCap)
+// is used for a non-positive limit.
+func applyMissedLimit(s *AdherenceSummary, limit int) {
+	if limit <= 0 {
+		limit = missedSessionsCap
+	}
+	if len(s.MissedSessions) > limit {
+		s.MissedSessionsTruncated = true
+		s.MissedSessions = s.MissedSessions[:limit]
+	}
+}
+
+// zeroFillWeekly returns the weekly trend with every empty week between the first
+// and last present bucket materialized with zeroed counts (a continuous axis for
+// a charting consumer). Calendar mode fills Mondays; plan mode fills ordinals
+// (week_start extrapolated from a present anchor at 7 days/ordinal). Filled weeks
+// carry null adherence_rate + null durations (nothing was due). A trend with
+// fewer than two buckets is returned unchanged.
+func zeroFillWeekly(weekly []WeeklyBucket) []WeeklyBucket {
+	if len(weekly) < 2 {
+		return weekly
+	}
+	planMode := weekly[0].Ordinal != nil
+
+	if planMode {
+		present := map[int]WeeklyBucket{}
+		minOrd, maxOrd := *weekly[0].Ordinal, *weekly[0].Ordinal
+		for _, b := range weekly {
+			if b.Ordinal == nil {
+				continue
+			}
+			present[*b.Ordinal] = b
+			if *b.Ordinal < minOrd {
+				minOrd = *b.Ordinal
+			}
+			if *b.Ordinal > maxOrd {
+				maxOrd = *b.Ordinal
+			}
+		}
+		// Anchor for week_start extrapolation: any present bucket.
+		anchor := weekly[0]
+		out := make([]WeeklyBucket, 0, maxOrd-minOrd+1)
+		for ord := minOrd; ord <= maxOrd; ord++ {
+			if b, ok := present[ord]; ok {
+				out = append(out, b)
+				continue
+			}
+			o := ord
+			ws := extrapolateWeekStart(anchor.WeekStart, *anchor.Ordinal, ord)
+			out = append(out, WeeklyBucket{WeekStart: ws, Ordinal: &o})
+		}
+		return out
+	}
+
+	// Calendar mode: fill Mondays from the first to the last present week.
+	present := map[string]WeeklyBucket{}
+	for _, b := range weekly {
+		present[b.WeekStart] = b
+	}
+	first, _ := time.Parse("2006-01-02", weekly[0].WeekStart)
+	last, _ := time.Parse("2006-01-02", weekly[len(weekly)-1].WeekStart)
+	var out []WeeklyBucket
+	for d := first; !d.After(last); d = d.AddDate(0, 0, 7) {
+		key := d.Format("2006-01-02")
+		if b, ok := present[key]; ok {
+			out = append(out, b)
+			continue
+		}
+		out = append(out, WeeklyBucket{WeekStart: key})
+	}
+	return out
+}
+
+// extrapolateWeekStart derives the Monday of `targetOrd` from a present anchor
+// (7 days per ordinal).
+func extrapolateWeekStart(anchorWS string, anchorOrd, targetOrd int) string {
+	ws, err := time.Parse("2006-01-02", anchorWS)
+	if err != nil {
+		return ""
+	}
+	return ws.AddDate(0, 0, 7*(targetOrd-anchorOrd)).Format("2006-01-02")
 }
 
 // DefaultLocation exposes the service's configured timezone so the handler can

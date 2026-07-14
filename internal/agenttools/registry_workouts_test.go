@@ -262,3 +262,22 @@ func TestWorkoutFuelingSummary_BuildShape(t *testing.T) {
 	assert.Equal(t, "180", call.Query.Get("pre_window_min"))
 	assert.Equal(t, "90", call.Query.Get("post_window_min"))
 }
+
+// workout_adherence forwards the optional missed_limit + zero_fill knobs.
+func TestBuild_WorkoutAdherence_MissedLimitAndZeroFill(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec := specs["workout_adherence"]
+	require.NotNil(t, spec.Build)
+
+	call, err := spec.Build(json.RawMessage(`{"from":"2026-01-01","to":"2026-03-01","missed_limit":200,"zero_fill":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "/workouts/adherence", call.Path)
+	assert.Equal(t, "200", call.Query.Get("missed_limit"))
+	assert.Equal(t, "true", call.Query.Get("zero_fill"))
+
+	// Omitted knobs aren't forwarded (server defaults apply); zero_fill:false skipped.
+	call2, err := spec.Build(json.RawMessage(`{"from":"2026-01-01","to":"2026-03-01","zero_fill":false}`))
+	require.NoError(t, err)
+	assert.Empty(t, call2.Query.Get("missed_limit"))
+	assert.Empty(t, call2.Query.Get("zero_fill"))
+}

@@ -57,8 +57,10 @@ type GetWorkoutArgs struct {
 type WorkoutAdherenceArgs struct {
 	From   string  `json:"from" jsonschema:"inclusive start date YYYY-MM-DD (local)"`
 	To     string  `json:"to" jsonschema:"inclusive end date YYYY-MM-DD (local); max 92-day span"`
-	TZ     *string `json:"tz,omitempty" jsonschema:"optional IANA timezone for the date window and the now-comparison (defaults to the configured user timezone)"`
-	PlanID *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
+	TZ          *string `json:"tz,omitempty" jsonschema:"optional IANA timezone for the date window and the now-comparison (defaults to the configured user timezone)"`
+	PlanID      *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
+	MissedLimit *int    `json:"missed_limit,omitempty" jsonschema:"optional cap on the missed_sessions list (1-200; default 50). missed_sessions_truncated flags a dropped tail."`
+	ZeroFill    *bool   `json:"zero_fill,omitempty" jsonschema:"optional: when true the weekly trend emits every week in span (zeroed empty weeks) for a continuous axis"`
 }
 
 type WorkoutComplianceArgs struct {
@@ -416,6 +418,12 @@ func workoutsSpecs() []Spec {
 				}
 				if a.PlanID != nil {
 					q.Set("plan_id", *a.PlanID)
+				}
+				if a.MissedLimit != nil {
+					q.Set("missed_limit", strconv.Itoa(*a.MissedLimit))
+				}
+				if a.ZeroFill != nil && *a.ZeroFill {
+					q.Set("zero_fill", "true")
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/adherence", Query: q}, nil
 			},

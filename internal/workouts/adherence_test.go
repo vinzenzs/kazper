@@ -251,6 +251,9 @@ func TestAdherenceEndpoint_Validation(t *testing.T) {
 		{"reversed window", "from=2026-06-16&to=2026-06-10", "window_invalid"},
 		{"bad tz", "from=2026-06-10&to=2026-06-16&tz=Mars/Phobos", "tz_invalid"},
 		{"bad plan_id", "from=2026-06-10&to=2026-06-16&plan_id=not-a-uuid", "plan_id_invalid"},
+		{"missed_limit zero", "from=2026-06-10&to=2026-06-16&missed_limit=0", "missed_limit_invalid"},
+		{"missed_limit over", "from=2026-06-10&to=2026-06-16&missed_limit=201", "missed_limit_invalid"},
+		{"missed_limit nan", "from=2026-06-10&to=2026-06-16&missed_limit=lots", "missed_limit_invalid"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -260,5 +263,30 @@ func TestAdherenceEndpoint_Validation(t *testing.T) {
 			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 			assert.Equal(t, tc.wantErr, body["error"])
 		})
+	}
+}
+
+// zero_fill=true yields a contiguous weekly axis; missed_limit=200 is accepted.
+// (The gap-filling logic itself is covered by the internal zeroFillWeekly tests.)
+func TestAdherenceEndpoint_ZeroFillAndRaisedLimit(t *testing.T) {
+	f := setup(t)
+	seedAdherenceWindow(t, f)
+
+	decode := func(q string) workouts.AdherenceSummary {
+		rec := doReq(t, f.r, http.MethodGet, "/workouts/adherence?"+q, "")
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var s workouts.AdherenceSummary
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &s))
+		return s
+	}
+
+	sparse := decode(adherenceWindowQuery())
+	filled := decode(adherenceWindowQuery() + "&zero_fill=true&missed_limit=200")
+
+	assert.GreaterOrEqual(t, len(filled.Weekly), len(sparse.Weekly), "zero-fill never drops weeks")
+	for i := 1; i < len(filled.Weekly); i++ {
+		prev, _ := time.Parse("2006-01-02", filled.Weekly[i-1].WeekStart)
+		cur, _ := time.Parse("2006-01-02", filled.Weekly[i].WeekStart)
+		assert.Equal(t, 7*24*time.Hour, cur.Sub(prev), "contiguous weekly axis")
 	}
 }

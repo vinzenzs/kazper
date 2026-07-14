@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -387,10 +388,21 @@ func (h *Handlers) adherence(c *gin.Context) {
 		}
 		planID = &u
 	}
+	missedLimit := missedSessionsCap
+	if raw := c.Query("missed_limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < missedLimitMin || v > missedLimitMax {
+			respondError(c, http.StatusBadRequest, "missed_limit_invalid")
+			return
+		}
+		missedLimit = v
+	}
+	zeroFill := c.Query("zero_fill") == "true"
+
 	// Inclusive local-date window → half-open [fromDay 00:00, (toDay+1) 00:00).
 	from := fromDay
 	to := toDay.AddDate(0, 0, 1)
-	sum, err := h.svc.Adherence(c.Request.Context(), from, to, planID, loc)
+	sum, err := h.svc.Adherence(c.Request.Context(), from, to, planID, loc, missedLimit, zeroFill)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "adherence_failed")
 		return

@@ -109,13 +109,23 @@ func TestComputeAdherence_MissedTruncationBoundary(t *testing.T) {
 		return rows
 	}
 
+	// computeAdherence no longer truncates — applyMissedLimit does, at the
+	// presentation boundary, so a raised missed_limit isn't clipped first.
 	exact := computeAdherence(mk(missedSessionsCap), adhNow, time.UTC)
+	applyMissedLimit(&exact, 0) // 0 → default cap
 	assert.Len(t, exact.MissedSessions, missedSessionsCap)
 	assert.False(t, exact.MissedSessionsTruncated, "exactly the cap → not truncated")
 
 	over := computeAdherence(mk(missedSessionsCap+1), adhNow, time.UTC)
-	assert.Len(t, over.MissedSessions, missedSessionsCap, "capped")
+	applyMissedLimit(&over, 0)
+	assert.Len(t, over.MissedSessions, missedSessionsCap, "capped at default")
 	assert.True(t, over.MissedSessionsTruncated, "cap+1 → truncated")
+
+	// A raised limit surfaces the full list (no longer pre-clipped at 50).
+	raised := computeAdherence(mk(missedSessionsCap+10), adhNow, time.UTC)
+	applyMissedLimit(&raised, 200)
+	assert.Len(t, raised.MissedSessions, missedSessionsCap+10, "raised limit keeps the tail")
+	assert.False(t, raised.MissedSessionsTruncated)
 }
 
 func TestComputeAdherence_CalendarWeekBuckets(t *testing.T) {
@@ -199,4 +209,44 @@ func TestComputeAdherence_NullTSSWhenNonePresent(t *testing.T) {
 	require.NotNil(t, s.CompletedDurationMin, "duration is present even when tss is absent")
 	assert.Nil(t, s.PlannedTSS, "sum over zero present tss → null")
 	assert.Nil(t, s.CompletedTSS)
+}
+
+func TestZeroFillWeekly_CalendarContinuity(t *testing.T) {
+	// Two present weeks two apart (06-01 and 06-15) → the gap week (06-08) fills.
+	weekly := []WeeklyBucket{
+		{WeekStart: "2026-06-01", Completed: 3, Missed: 1},
+		{WeekStart: "2026-06-15", Completed: 2, Missed: 0},
+	}
+	out := zeroFillWeekly(weekly)
+	require.Len(t, out, 3)
+	assert.Equal(t, "2026-06-01", out[0].WeekStart)
+	assert.Equal(t, "2026-06-08", out[1].WeekStart) // filled
+	assert.Equal(t, "2026-06-15", out[2].WeekStart)
+	// Filled week is zeroed with null rate/durations; present weeks are unchanged.
+	assert.Equal(t, 0, out[1].Completed)
+	assert.Equal(t, 0, out[1].Missed)
+	assert.Nil(t, out[1].AdherenceRate)
+	assert.Nil(t, out[1].PlannedDurationMin)
+	assert.Equal(t, 3, out[0].Completed)
+}
+
+func TestZeroFillWeekly_PlanOrdinalContinuity(t *testing.T) {
+	ord := func(n int) *int { return &n }
+	weekly := []WeeklyBucket{
+		{WeekStart: "2026-06-01", Ordinal: ord(1), Completed: 2},
+		{WeekStart: "2026-06-15", Ordinal: ord(3), Completed: 1},
+	}
+	out := zeroFillWeekly(weekly)
+	require.Len(t, out, 3)
+	require.NotNil(t, out[1].Ordinal)
+	assert.Equal(t, 2, *out[1].Ordinal, "the missing ordinal 2 is filled")
+	// week_start extrapolated at 7 days/ordinal from the anchor.
+	assert.Equal(t, "2026-06-08", out[1].WeekStart)
+	assert.Equal(t, 0, out[1].Completed)
+}
+
+func TestZeroFillWeekly_NoOpUnderTwoBuckets(t *testing.T) {
+	one := []WeeklyBucket{{WeekStart: "2026-06-01", Completed: 1}}
+	assert.Equal(t, one, zeroFillWeekly(one))
+	assert.Empty(t, zeroFillWeekly([]WeeklyBucket{}))
 }
