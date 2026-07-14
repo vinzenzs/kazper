@@ -9439,6 +9439,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/cp-model/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fits the 2-parameter critical-power model at each Monday anchor in ` + "`" + `[from, to]` + "`" + `, each over its trailing ` + "`" + `window_days` + "`" + ` (default 90, bounds [30, 365]) — the CP-over-time trend, the data-derived counterpart to the configured-FTP history. Per anchor: the fitted ` + "`" + `model` + "`" + ` (or ` + "`" + `null` + "`" + ` with the gate ` + "`" + `reason` + "`" + ` when the trailing window can't support a fit — the trend gaps, it doesn't zero). Advisory — this endpoint never reads or writes athlete-config. Compute-on-read; nothing persisted. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Critical-power (CP2) model fitted at weekly anchors over a range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Trailing fit window per anchor in days (default 90; 30–365)",
+                        "name": "window_days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.CPModelHistoryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | window_days_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/durability": {
             "get": {
                 "security": [
@@ -11900,6 +11960,20 @@ const docTemplate = `{
                 }
             }
         },
+        "effortanalytics.CPHistoryAnchor": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "model": {
+                    "$ref": "#/definitions/effortanalytics.CPModel"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "effortanalytics.CPModel": {
             "type": "object",
             "properties": {
@@ -11914,6 +11988,29 @@ const docTemplate = `{
                 },
                 "w_prime_kj": {
                     "type": "number"
+                }
+            }
+        },
+        "effortanalytics.CPModelHistoryResult": {
+            "type": "object",
+            "properties": {
+                "anchors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.CPHistoryAnchor"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                },
+                "window_days": {
+                    "type": "integer"
                 }
             }
         },

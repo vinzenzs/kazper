@@ -13,6 +13,8 @@ import type {
   TargetTrajectory,
   PowerCurve,
   CPModelResult,
+  CPModelHistoryResult,
+  ThresholdHistory,
   PowerProfileResult,
   DurabilityResult,
   IntervalsResult,
@@ -146,6 +148,30 @@ export function useCPModel(from: string, to: string) {
     queryKey: ["cp-model", from, to],
     queryFn: () => apiGet<CPModelResult>(`/workouts/cp-model?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The critical-power trend: the CP2 fit at weekly anchors over the range.
+export function useCPModelHistory(from: string, to: string, windowDays = 90) {
+  return useQuery({
+    queryKey: ["cp-model-history", from, to, windowDays],
+    queryFn: () =>
+      apiGet<CPModelHistoryResult>(
+        `/workouts/cp-model/history?from=${from}&to=${to}&window_days=${windowDays}`,
+      ),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// Configured-FTP history for the CP-trend overlay. A 404/empty just leaves the
+// overlay absent.
+export function useThresholdHistory(from: string, to: string) {
+  return useQuery({
+    queryKey: ["threshold-history", from, to],
+    queryFn: () =>
+      apiGet<ThresholdHistory>(`/athlete-config/history?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
   });
 }
 

@@ -43,6 +43,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	// effort-analytics keeps the read-side curve.
 	rg.GET("/workouts/power-curve", h.curve)
 	rg.GET("/workouts/cp-model", h.cpModel)
+	rg.GET("/workouts/cp-model/history", h.cpModelHistory)
 	rg.GET("/workouts/power-profile", h.powerProfile)
 	rg.GET("/workouts/durability", h.durability)
 }
@@ -196,6 +197,53 @@ func roundPowerProfile(res *PowerProfileResult) {
 		res.Anchors[i].WPerKg = numfmt.Round1(res.Anchors[i].WPerKg)
 		res.Anchors[i].Percentile = numfmt.Round1(res.Anchors[i].Percentile)
 	}
+}
+
+// cpModelHistory godoc
+// @Summary      Critical-power (CP2) model fitted at weekly anchors over a range
+// @Description  Fits the 2-parameter critical-power model at each Monday anchor in `[from, to]`, each over its trailing `window_days` (default 90, bounds [30, 365]) — the CP-over-time trend, the data-derived counterpart to the configured-FTP history. Per anchor: the fitted `model` (or `null` with the gate `reason` when the trailing window can't support a fit — the trend gaps, it doesn't zero). Advisory — this endpoint never reads or writes athlete-config. Compute-on-read; nothing persisted. Range capped at 400 days.
+// @Tags         workouts
+// @Produce      json
+// @Param        from         query  string  true   "Inclusive start date YYYY-MM-DD"
+// @Param        to           query  string  true   "Inclusive end date YYYY-MM-DD"
+// @Param        tz           query  string  false  "IANA timezone (defaults to DEFAULT_USER_TZ)"
+// @Param        window_days  query  int     false  "Trailing fit window per anchor in days (default 90; 30–365)"
+// @Success      200  {object}  CPModelHistoryResult
+// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | window_days_invalid"
+// @Security     BearerAuth
+// @Router       /workouts/cp-model/history [get]
+func (h *Handlers) cpModelHistory(c *gin.Context) {
+	from, to, loc, ok := h.parseWindow(c)
+	if !ok {
+		return
+	}
+	windowDays := cpHistoryWindowDefault
+	if raw := c.Query("window_days"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < cpHistoryWindowMin || v > cpHistoryWindowMax {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "window_days_invalid"})
+			return
+		}
+		windowDays = v
+	}
+	res, err := h.svc.CPModelHistoryFor(c.Request.Context(), CurveParams{From: from, To: to, Loc: loc}, windowDays)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cp_model_history_failed"})
+		return
+	}
+	res.From = from.Format("2006-01-02")
+	res.To = to.Format("2006-01-02")
+	res.TZ = loc.String()
+	for i := range res.Anchors {
+		if res.Anchors[i].Model != nil {
+			m := res.Anchors[i].Model
+			m.CPWatts = numfmt.Round1(m.CPWatts)
+			m.WPrimeKJ = numfmt.Round1(m.WPrimeKJ)
+			m.RSquared = numfmt.Round3(m.RSquared)
+			m.RMSEW = numfmt.Round1(m.RMSEW)
+		}
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // durability godoc

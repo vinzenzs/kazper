@@ -144,6 +144,26 @@ type DurabilityResult struct {
 	Reason    string               `json:"reason,omitempty"`
 }
 
+// CPHistoryAnchor is one weekly (Monday) CP fit over its trailing window: the
+// fitted model or null with the gate Reason (the anchor is kept even when the
+// window can't support a fit — the trend gaps, it doesn't zero).
+type CPHistoryAnchor struct {
+	Date   string   `json:"date"`
+	Model  *CPModel `json:"model"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// CPModelHistoryResult is the GET /workouts/cp-model/history response: the CP2
+// fit at weekly anchors across the range, each over its trailing WindowDays.
+// Compute-on-read; reads no athlete-config; persists nothing.
+type CPModelHistoryResult struct {
+	From       string            `json:"from"`
+	To         string            `json:"to"`
+	TZ         string            `json:"tz"`
+	WindowDays int               `json:"window_days"`
+	Anchors    []CPHistoryAnchor `json:"anchors"`
+}
+
 // Sex selects the Coggan reference table. Athlete-config has no sex field (the
 // advisory posture holds), so this is a query parameter, defaulting to male.
 const (

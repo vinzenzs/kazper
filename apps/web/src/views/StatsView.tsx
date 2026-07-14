@@ -6,11 +6,14 @@ import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PMCChart, PMCSummary, TargetReadout } from "../components/PMCChart";
 import { CPModelChart } from "../components/CPModelChart";
+import { CPTrendChart } from "../components/CPTrendChart";
 import { PowerProfilePanel } from "../components/PowerProfilePanel";
 import { DurabilityPanel } from "../components/DurabilityPanel";
 import { IntensityDistributionPanel } from "../components/IntensityDistribution";
 import {
   useCPModel,
+  useCPModelHistory,
+  useThresholdHistory,
   useIntensityDistribution,
   usePMC,
   usePowerCurve,
@@ -101,6 +104,10 @@ export function StatsView() {
   const targetSummary = pmcSport === "" ? trajectory.data?.summary : undefined;
   const cpRange = trailingDays(Number(cpWindow) - 1);
   const cp = useCPModel(cpRange.from, cpRange.to);
+  // CP trend over the same window (90-day trailing fit per anchor) + the
+  // configured-FTP overlay, composed client-side (backend stays uncoupled).
+  const cpHistory = useCPModelHistory(cpRange.from, cpRange.to);
+  const ftpHistory = useThresholdHistory(cpRange.from, cpRange.to);
   const [ppWindow, setPpWindow] = useState<PMCWindow>("90");
   const ppRange = trailingDays(Number(ppWindow) - 1);
   const pp = usePowerProfile(ppRange.from, ppRange.to);
@@ -218,6 +225,9 @@ export function StatsView() {
             <div className="py-6 text-center text-sm text-slate-500">
               Loading critical-power model…
             </div>
+          )}
+          {cpHistory.data && (
+            <CPTrendChart history={cpHistory.data} ftp={ftpHistory.data} />
           )}
         </div>
       </Panel>

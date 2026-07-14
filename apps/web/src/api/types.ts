@@ -240,6 +240,34 @@ export interface CPModelResult {
   points: CPPoint[];
 }
 
+// Mirrors internal/effortanalytics CP-model history: the CP2 fit at weekly
+// (Monday) anchors, each over a trailing window. `model` is null (with `reason`)
+// where the window couldn't support a fit — the trend gaps, not zeroes.
+export interface CPHistoryAnchor {
+  date: string;
+  model: CPModel | null;
+  reason?: string;
+}
+
+export interface CPModelHistoryResult {
+  from: string;
+  to: string;
+  tz: string;
+  window_days: number;
+  anchors: CPHistoryAnchor[];
+}
+
+// Mirrors internal/athleteconfig threshold history (subset): the configured FTP
+// as of each effective date, for the CP-trend overlay.
+export interface ThresholdSnapshot {
+  effective_from: string;
+  ftp_watts?: number | null;
+}
+
+export interface ThresholdHistory {
+  history: ThresholdSnapshot[];
+}
+
 // Mirrors internal/effortanalytics durability. Per duration (1m/5m/20m): the
 // fresh (tier-0) best power and each kJ-tier's best with `fade_pct`. `reason` is
 // "no_tiered_data" when the window holds only fresh rows (recompute backfill).

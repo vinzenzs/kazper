@@ -931,6 +931,15 @@ definitions:
       model:
         type: string
     type: object
+  effortanalytics.CPHistoryAnchor:
+    properties:
+      date:
+        type: string
+      model:
+        $ref: '#/definitions/effortanalytics.CPModel'
+      reason:
+        type: string
+    type: object
   effortanalytics.CPModel:
     properties:
       cp_watts:
@@ -941,6 +950,21 @@ definitions:
         type: number
       w_prime_kj:
         type: number
+    type: object
+  effortanalytics.CPModelHistoryResult:
+    properties:
+      anchors:
+        items:
+          $ref: '#/definitions/effortanalytics.CPHistoryAnchor'
+        type: array
+      from:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+      window_days:
+        type: integer
     type: object
   effortanalytics.CPModelResult:
     properties:
@@ -11122,6 +11146,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Critical-power (CP2) model over a window
+      tags:
+      - workouts
+  /workouts/cp-model/history:
+    get:
+      description: 'Fits the 2-parameter critical-power model at each Monday anchor
+        in `[from, to]`, each over its trailing `window_days` (default 90, bounds
+        [30, 365]) — the CP-over-time trend, the data-derived counterpart to the configured-FTP
+        history. Per anchor: the fitted `model` (or `null` with the gate `reason`
+        when the trailing window can''t support a fit — the trend gaps, it doesn''t
+        zero). Advisory — this endpoint never reads or writes athlete-config. Compute-on-read;
+        nothing persisted. Range capped at 400 days.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      - description: Trailing fit window per anchor in days (default 90; 30–365)
+        in: query
+        name: window_days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/effortanalytics.CPModelHistoryResult'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid | window_days_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Critical-power (CP2) model fitted at weekly anchors over a range
       tags:
       - workouts
   /workouts/durability:

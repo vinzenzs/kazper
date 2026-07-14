@@ -127,6 +127,50 @@ func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult
 	return res, nil
 }
 
+// Default + bounds for the CP-history trailing window (days).
+const (
+	cpHistoryWindowDefault = 90
+	cpHistoryWindowMin     = 30
+	cpHistoryWindowMax     = 365
+)
+
+// CPModelHistoryFor fits the CP2 model at each Monday anchor in [From, To], each
+// over its trailing windowDays, reusing the shipped fit + gates. A window that
+// can't support a fit yields a null model + the gate reason (the anchor is kept,
+// so the trend gaps rather than zeroes). Compute-on-read; the caller sets
+// From/To/TZ; windowDays is validated by the handler.
+func (s *Service) CPModelHistoryFor(ctx context.Context, p CurveParams, windowDays int) (*CPModelHistoryResult, error) {
+	res := &CPModelHistoryResult{WindowDays: windowDays, Anchors: []CPHistoryAnchor{}}
+
+	from := dateOnlyUTC(p.From)
+	to := dateOnlyUTC(p.To)
+	// First Monday on or after `from`.
+	anchor := from
+	for anchor.Weekday() != time.Monday {
+		anchor = anchor.AddDate(0, 0, 1)
+	}
+	for ; !anchor.After(to); anchor = anchor.AddDate(0, 0, 7) {
+		winFrom := anchor.AddDate(0, 0, -(windowDays - 1))
+		fit, err := s.CPModelFor(ctx, CurveParams{From: winFrom, To: anchor, Loc: p.Loc})
+		if err != nil {
+			return nil, err
+		}
+		res.Anchors = append(res.Anchors, CPHistoryAnchor{
+			Date:   anchor.Format("2006-01-02"),
+			Model:  fit.Model,
+			Reason: fit.Reason,
+		})
+	}
+	return res, nil
+}
+
+// dateOnlyUTC strips time-of-day, keeping the calendar date at UTC midnight for a
+// clean weekday/day-iteration sequence.
+func dateOnlyUTC(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
 // DurabilityFor assembles the fresh-vs-tier fade table over the window: for each
 // durability duration, the fresh (tier-0) best and each tier's best with
 // fade_pct = (fresh − tier)/fresh × 100. Tiers absent in the window are omitted;

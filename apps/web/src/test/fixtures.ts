@@ -11,6 +11,8 @@ import type {
   DurabilityResult,
   PowerCurve,
   CPModelResult,
+  CPModelHistoryResult,
+  ThresholdHistory,
   PowerProfileResult,
   Workout,
   WorkoutStats,
@@ -363,6 +365,26 @@ export const populatedPowerProfile: PowerProfileResult = {
   ],
   missing_anchors: [],
   phenotype: "sprinter",
+};
+
+export const populatedCPHistory: CPModelHistoryResult = {
+  from: "2026-04-01",
+  to: "2026-06-30",
+  tz: "Europe/Vienna",
+  window_days: 90,
+  anchors: [
+    { date: "2026-04-06", model: { cp_watts: 255, w_prime_kj: 20.1, r_squared: 0.98, rmse_w: 4.1 } },
+    { date: "2026-04-13", model: null, reason: "insufficient_points" }, // a gap
+    { date: "2026-04-20", model: { cp_watts: 262, w_prime_kj: 21.0, r_squared: 0.97, rmse_w: 4.4 } },
+    { date: "2026-04-27", model: { cp_watts: 268, w_prime_kj: 21.4, r_squared: 0.98, rmse_w: 3.9 } },
+  ],
+};
+
+export const populatedFtpHistory: ThresholdHistory = {
+  history: [
+    { effective_from: "2026-04-01", ftp_watts: 250 },
+    { effective_from: "2026-04-25", ftp_watts: 265 },
+  ],
 };
 
 export const nullCPModel: CPModelResult = {

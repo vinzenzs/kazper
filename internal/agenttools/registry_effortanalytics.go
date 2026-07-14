@@ -36,6 +36,14 @@ type DurabilityArgs struct {
 	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
+// CPModelHistoryArgs is the input to cp_model_history.
+type CPModelHistoryArgs struct {
+	From       string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To         string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	WindowDays int    `json:"window_days,omitempty" jsonschema:"trailing fit window per weekly anchor in days (default 90; 30-365)"`
+	TZ         string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
 // PowerProfileArgs is the input to power_profile. `weight_kg` overrides the W/kg
 // denominator; omitted, the endpoint uses the latest stored body weight.
 type PowerProfileArgs struct {
@@ -103,6 +111,34 @@ func effortAnalyticsSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/cp-model", Query: q}, nil
+			},
+		},
+		{
+			Name: "cp_model_history",
+			Description: "Critical-power TREND: fit the CP2 model at each weekly (Monday) anchor across a date range, " +
+				"each over its trailing `window_days` (default 90; 30-365) — how CP has MOVED over the season, the " +
+				"data-derived counterpart to the configured-FTP history (athlete_config_history_get). Per anchor: the " +
+				"fitted model (cp_watts, w_prime_kj, r_squared, rmse_w) or null with the gate `reason` when that " +
+				"trailing window can't support a fit (the trend gaps, it doesn't zero). Use it to see whether training " +
+				"is actually raising the ceiling, and to judge how stale the configured FTP runs. ADVISORY: does not " +
+				"read or change athlete-config. Read-only; no idempotency key. Range up to 400 days.",
+			SchemaType: CPModelHistoryArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a CPModelHistoryArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.WindowDays > 0 {
+					q.Set("window_days", strconv.Itoa(a.WindowDays))
+				}
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/cp-model/history", Query: q}, nil
 			},
 		},
 		{

@@ -8,6 +8,8 @@ import {
   emptyWorkoutStats,
   nullCPModel,
   populatedCPModel,
+  populatedCPHistory,
+  populatedFtpHistory,
   populatedDistribution,
   populatedPMC,
   populatedPowerCurve,
@@ -31,6 +33,8 @@ const h = vi.hoisted(() => ({
   curveData: undefined as unknown,
   pmcData: undefined as unknown,
   cpData: undefined as unknown,
+  cpHistData: undefined as unknown,
+  ftpHistData: undefined as unknown,
   ppData: undefined as unknown,
   ppError: false as boolean,
   trajData: undefined as unknown,
@@ -56,6 +60,8 @@ vi.mock("../../api/hooks", () => ({
     h.cpCalls.push({ from, to });
     return { data: h.cpData, isLoading: false, isError: false, error: null };
   },
+  useCPModelHistory: () => ({ data: h.cpHistData, isLoading: false, isError: false, error: null }),
+  useThresholdHistory: () => ({ data: h.ftpHistData, isLoading: false, isError: false, error: null }),
   usePowerProfile: (from: string, to: string) => {
     h.ppCalls.push({ from, to });
     return {
@@ -91,6 +97,8 @@ beforeEach(() => {
   h.curveData = populatedPowerCurve;
   h.pmcData = populatedPMC;
   h.cpData = populatedCPModel;
+  h.cpHistData = populatedCPHistory;
+  h.ftpHistData = populatedFtpHistory;
   h.ppData = populatedPowerProfile;
   h.ppError = false;
   h.trajData = populatedTargetTrajectory;
@@ -215,6 +223,20 @@ describe("StatsView", () => {
     expect(readout).toHaveTextContent("268 W"); // CP
     expect(readout).toHaveTextContent("21.3 kJ"); // W′
     expect(readout).toHaveTextContent("0.99"); // R²
+  });
+
+  it("renders the CP trend with the configured-FTP overlay", () => {
+    render(<StatsView />);
+    expect(screen.getByRole("img", { name: /critical power trend/i })).toBeInTheDocument();
+    expect(screen.getByTestId("ftp-overlay")).toBeInTheDocument();
+  });
+
+  it("omits the FTP overlay when no threshold history exists", () => {
+    h.ftpHistData = undefined;
+    render(<StatsView />);
+    // The CP trend still renders (fitted anchors present) but no FTP line.
+    expect(screen.getByRole("img", { name: /critical power trend/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("ftp-overlay")).not.toBeInTheDocument();
   });
 
   it("re-queries the CP model when its window selector changes", () => {
