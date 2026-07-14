@@ -95,11 +95,16 @@ additionally be consumed by the `workouts` capability's per-sport TSS
 derivation (rTSS, sTSS, hrTSS; see the `workouts` spec for the precedence and
 gates), with `ftp_watts` participating transitively through the derived
 `intensity_factor` in power-based TSS. All TSS-derivation consumption is
-fail-open: an unset threshold never fails a workout write. Beyond these
-consumptions, the config SHALL remain otherwise-unconsumed: it does NOT relate
-the workouts capability's stored `secs_in_zone_*` to these zone boundaries, and
-does NOT feed any value into the race-fueling/raceprep intensity or carb-load
-math. Those remaining consumptions are explicit follow-ups outside this change.
+fail-open: an unset threshold never fails a workout write. Its threshold fields
+`ftp_watts`, `threshold_pace_sec_per_km`, and `threshold_swim_pace_sec_per_100m`
+SHALL additionally be consumed by the `race-pacing-plan` capability's
+compute-on-read per-leg pacing targets (bike power band, run pace band, swim
+pace band); an unset threshold degrades the affected legs of that plan rather
+than erroring (see the `race-pacing-plan` spec). Beyond those consumptions, the
+config SHALL remain otherwise-unconsumed: it does NOT relate the workouts
+capability's stored `secs_in_zone_*` to these zone boundaries, and does NOT feed
+any value into the race-fueling/raceprep intensity or carb-load math. Those
+remaining consumptions are explicit follow-ups outside this change.
 
 #### Scenario: Zone boundaries feed workout target resolution
 
@@ -121,6 +126,16 @@ math. Those remaining consumptions are explicit follow-ups outside this change.
 - **AND** completed run/swim/HR-only workouts are created without a caller-supplied `tss`
 - **THEN** the `workouts` capability derives rTSS, sTSS, and hrTSS respectively against those thresholds (per the `workouts` spec precedence)
 - **AND** clearing a threshold makes the corresponding method fall through without failing any workout write
+
+#### Scenario: Thresholds feed the race pacing plan
+
+- **WHEN** `athlete_config.ftp_watts` is set
+- **AND** the client requests `GET /races/{id}/pacing-plan` for a race with a
+  bike leg carrying an expected duration
+- **THEN** that leg's target power band derives from the configured
+  `ftp_watts`
+- **AND** updating `ftp_watts` changes the band on the next pacing-plan read
+  (compute-on-read, nothing stored)
 
 #### Scenario: Config is not merged into summary totals
 
