@@ -34,6 +34,15 @@ type DetectIntervalsArgs struct {
 	WorkoutID string `json:"workout_id" jsonschema:"the workout id (must have a stored power stream) to detect work intervals in"`
 }
 
+// QuadrantAnalysisArgs is the input to quadrant_analysis. cp_watts comes from the
+// cp_model fit; cadence_rpm is the athlete's reference (self-selected) cadence.
+type QuadrantAnalysisArgs struct {
+	WorkoutID  string  `json:"workout_id" jsonschema:"the workout id (must have stored power AND cadence streams) to analyze"`
+	CPWatts    float64 `json:"cp_watts" jsonschema:"critical power / threshold in watts, from the cp_model fit (> 0)"`
+	CadenceRPM float64 `json:"cadence_rpm" jsonschema:"the athlete's reference self-selected cadence in rpm (> 0), e.g. 90"`
+	CrankMM    float64 `json:"crank_mm,omitempty" jsonschema:"optional crank length in mm (default 172.5; 100-220)"`
+}
+
 func activityStreamsSpecs() []Spec {
 	return []Spec{
 		{
@@ -111,6 +120,40 @@ func activityStreamsSpecs() []Spec {
 				return HTTPCall{
 					Method: "GET",
 					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/intervals",
+				}, nil
+			},
+		},
+		{
+			Name: "quadrant_analysis",
+			Description: "Force/velocity quadrant analysis of a ride — HOW power was produced (grinding at high " +
+				"force/low cadence vs spinning at low force/high cadence), not just how much. From the stored power " +
+				"AND cadence streams it classifies each pedaling second into a Coggan quadrant relative to a reference " +
+				"point: pass `cp_watts` (from the `cp_model` fit) and `cadence_rpm` (the athlete's self-selected " +
+				"cadence, e.g. 90); `crank_mm` defaults to 172.5. Returns the SUMMARY — the share of pedaling time in " +
+				"each quadrant (q1 high-force/high-velocity … q4 low-force/high-velocity), pedaling_s vs excluded_s " +
+				"(coasting/dropout), and the reference AEPF/CPV — for cadence prescription and race-position work. The " +
+				"raw scatter is chart data and is NOT returned here (summary only). Needs stored power + cadence: " +
+				"power_stream_missing / cadence_stream_missing (cadence exists only for rides synced after the bridge " +
+				"cadence update). Cycling only. Read-only.",
+			SchemaType: QuadrantAnalysisArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a QuadrantAnalysisArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("cp_watts", strconv.FormatFloat(a.CPWatts, 'f', -1, 64))
+				q.Set("cadence_rpm", strconv.FormatFloat(a.CadenceRPM, 'f', -1, 64))
+				if a.CrankMM > 0 {
+					q.Set("crank_mm", strconv.FormatFloat(a.CrankMM, 'f', -1, 64))
+				}
+				// The agent gets shares only — the scatter stays chart data.
+				q.Set("summary_only", "true")
+				return HTTPCall{
+					Method: "GET",
+					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/quadrant",
+					Query:  q,
 				}, nil
 			},
 		},

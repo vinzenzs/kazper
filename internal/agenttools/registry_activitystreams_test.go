@@ -40,6 +40,24 @@ func TestBuild_DetectIntervals(t *testing.T) {
 	assert.Empty(t, call.Body)
 }
 
+// quadrant_analysis → GET /workouts/{id}/quadrant with cp/cadence + hardcoded
+// summary_only=true (read tier; the scatter stays chart-only).
+func TestBuild_QuadrantAnalysis(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["quadrant_analysis"]
+	require.True(t, ok, "quadrant_analysis must be registered")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"workout_id":"w1","cp_watts":262,"cadence_rpm":90}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/w1/quadrant", call.Path)
+	assert.Equal(t, "262", call.Query.Get("cp_watts"))
+	assert.Equal(t, "90", call.Query.Get("cadence_rpm"))
+	assert.Equal(t, "true", call.Query.Get("summary_only"))
+	assert.Empty(t, call.Query.Get("crank_mm")) // omitted → default applied server-side
+}
+
 // recompute_workout_streams → POST /workouts/{id}/streams/recompute (write tier).
 func TestBuild_RecomputeWorkoutStreams(t *testing.T) {
 	specs := ByName(MCPRegistry())

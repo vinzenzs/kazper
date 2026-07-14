@@ -71,6 +71,7 @@ function mockHooks(over: Record<string, unknown>) {
     useCPModel: () => ok(null),
     useWPrimeBalance: () => ok(undefined),
     useDetectedIntervals: () => ok(undefined),
+    useQuadrant: () => ok(undefined),
     ...over,
   }));
 }
@@ -139,5 +140,36 @@ describe("workout-detail W′ balance strip", () => {
     await renderDetail();
     expect(screen.getByText("Threshold 4x8")).toBeInTheDocument();
     expect(screen.queryByText("Detected intervals")).not.toBeInTheDocument();
+  });
+
+  it("renders the quadrant scatter when power+cadence and a CP fit are present", async () => {
+    vi.resetModules();
+    mockHooks({
+      useQuadrant: () =>
+        ok({
+          workout_id: "w1",
+          params: { cp_watts: 262, cadence_rpm: 90, crank_mm: 172.5 },
+          summary: {
+            q1_pct: 10, q2_pct: 55, q3_pct: 20, q4_pct: 15,
+            pedaling_s: 3200, excluded_s: 400, aepf_ref_n: 168.4, cpv_ref_mps: 1.56,
+          },
+          scatter: [
+            { aepf_n: 200, cpv_mps: 1.2 },
+            { aepf_n: 150, cpv_mps: 1.8 },
+          ],
+        }),
+    });
+    await renderDetail();
+    expect(screen.getByText("Quadrant analysis")).toBeInTheDocument();
+    expect(screen.getByTestId("quadrant-shares")).toBeInTheDocument();
+    expect(screen.getByText("55.0%")).toBeInTheDocument(); // Q2 grinding share
+  });
+
+  it("omits the quadrant panel without a fit / cadence stream", async () => {
+    vi.resetModules();
+    mockHooks({ useQuadrant: () => ok(undefined) });
+    await renderDetail();
+    expect(screen.getByText("Threshold 4x8")).toBeInTheDocument();
+    expect(screen.queryByText("Quadrant analysis")).not.toBeInTheDocument();
   });
 });

@@ -31,6 +31,7 @@ vi.mock("../../api/hooks", () => ({
   useCPModel: () => ok(null),
   useWPrimeBalance: () => ok(undefined),
   useDetectedIntervals: () => ok(undefined),
+  useQuadrant: () => ok(undefined),
 }));
 
 function renderAt(path: string) {

@@ -10,8 +10,9 @@ def _detail_with_power(
     power: list[float],
     speed: list[float] | None = None,
     heart_rate: list[float] | None = None,
+    cadence: list[float] | None = None,
 ) -> dict:
-    """Build a get_activity_details-shaped dict with power (+ optional speed/HR)."""
+    """Build a get_activity_details-shaped dict with power (+ optional speed/HR/cadence)."""
     descriptors = [{"key": "directPower", "metricsIndex": 0}]
     cols: list[list[float]] = [power]
     if speed is not None:
@@ -20,6 +21,9 @@ def _detail_with_power(
     if heart_rate is not None:
         descriptors.append({"key": "directHeartRate", "metricsIndex": len(cols)})
         cols.append(heart_rate)
+    if cadence is not None:
+        descriptors.append({"key": "directBikeCadence", "metricsIndex": len(cols)})
+        cols.append(cadence)
     rows = [{"metrics": [c[i] for c in cols]} for i in range(len(power))]
     return {"metricDescriptors": descriptors, "activityDetailMetrics": rows}
 
@@ -86,6 +90,44 @@ def test_extract_streams_drops_flat_zero_series():
     # A run with no power meter → power column all zero → dropped.
     detail = _detail_with_power([0, 0, 0])
     assert mapping._extract_streams(detail) == {}
+
+
+def test_extract_streams_pulls_cadence_column():
+    detail = _detail_with_power([100, 200, 300], cadence=[85, 90, 95])
+    out = mapping._extract_streams(detail)
+    assert out["power"] == [100.0, 200.0, 300.0]
+    assert out["cadence"] == [85.0, 90.0, 95.0]
+
+
+def test_extract_streams_no_cadence_column_unchanged():
+    # Power only, no cadence descriptor → cadence absent, others intact.
+    detail = _detail_with_power([100, 200])
+    out = mapping._extract_streams(detail)
+    assert "cadence" not in out
+    assert set(out) == {"power"}
+
+
+def test_extract_streams_drops_flat_zero_cadence():
+    # A cadence column present but all zero (no sensor) → dropped.
+    detail = _detail_with_power([100, 200, 300], cadence=[0, 0, 0])
+    out = mapping._extract_streams(detail)
+    assert "cadence" not in out
+    assert set(out) == {"power"}
+
+
+def test_extract_streams_malformed_cadence_shape_ignored():
+    # A cadence descriptor whose column index is out of range for the rows →
+    # gap-zeros (defensive), so the all-zero series is dropped; sync unaffected.
+    detail = {
+        "metricDescriptors": [
+            {"key": "directPower", "metricsIndex": 0},
+            {"key": "directBikeCadence", "metricsIndex": 7},  # beyond the row width
+        ],
+        "activityDetailMetrics": [{"metrics": [100]}, {"metrics": [200]}],
+    }
+    out = mapping._extract_streams(detail)
+    assert out["power"] == [100.0, 200.0]
+    assert "cadence" not in out
 
 
 def test_extract_streams_drops_flat_zero_heart_rate():

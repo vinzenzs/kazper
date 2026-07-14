@@ -18,6 +18,7 @@ const (
 	StreamPower     StreamType = "power"
 	StreamSpeed     StreamType = "speed"
 	StreamHeartRate StreamType = "heart_rate"
+	StreamCadence   StreamType = "cadence"
 )
 
 // StreamPayload is the POST /workouts/{id}/streams body: contiguous 1 Hz sample
@@ -28,10 +29,11 @@ type StreamPayload struct {
 	Power     []float64 `json:"power,omitempty"`
 	Speed     []float64 `json:"speed,omitempty"`
 	HeartRate []float64 `json:"heart_rate,omitempty"`
+	Cadence   []float64 `json:"cadence,omitempty"`
 }
 
 func (p StreamPayload) empty() bool {
-	return len(p.Power) == 0 && len(p.Speed) == 0 && len(p.HeartRate) == 0
+	return len(p.Power) == 0 && len(p.Speed) == 0 && len(p.HeartRate) == 0 && len(p.Cadence) == 0
 }
 
 // series returns the non-empty streams keyed by type, in a stable order.
@@ -45,6 +47,9 @@ func (p StreamPayload) series() map[StreamType][]float64 {
 	}
 	if len(p.HeartRate) > 0 {
 		m[StreamHeartRate] = p.HeartRate
+	}
+	if len(p.Cadence) > 0 {
+		m[StreamCadence] = p.Cadence
 	}
 	return m
 }
@@ -105,6 +110,44 @@ type WPrimeBalanceResult struct {
 	Summary    WPrimeSummary `json:"summary"`
 	Downsample *int          `json:"downsample,omitempty"`
 	Series     []float64     `json:"series,omitempty"`
+}
+
+// QuadrantParams echoes the (caller-supplied) reference-point parameters the
+// quadrant classification used — reproducibility, the W′bal convention.
+type QuadrantParams struct {
+	CPWatts    float64 `json:"cp_watts"`
+	CadenceRPM float64 `json:"cadence_rpm"`
+	CrankMM    float64 `json:"crank_mm"`
+}
+
+// QuadrantSummary is the force/velocity breakdown: the share of pedaling time in
+// each Coggan quadrant (I high-force/high-velocity … IV low-force/high-velocity),
+// the pedaling vs excluded (coasting/dropout) seconds, and the reference point.
+type QuadrantSummary struct {
+	Q1Pct     float64 `json:"q1_pct"`
+	Q2Pct     float64 `json:"q2_pct"`
+	Q3Pct     float64 `json:"q3_pct"`
+	Q4Pct     float64 `json:"q4_pct"`
+	PedalingS int     `json:"pedaling_s"`
+	ExcludedS int     `json:"excluded_s"`
+	AEPFRefN  float64 `json:"aepf_ref_n"`
+	CPVRefMps float64 `json:"cpv_ref_mps"`
+}
+
+// QuadrantPoint is one pedaling sample's force/velocity coordinate.
+type QuadrantPoint struct {
+	AEPFN  float64 `json:"aepf_n"`
+	CPVMps float64 `json:"cpv_mps"`
+}
+
+// QuadrantResult is the GET /workouts/{id}/quadrant body. Scatter is the (always
+// downsampled) paired points, omitted under summary_only. Compute-on-read;
+// reads no athlete-config (params explicit); persists nothing.
+type QuadrantResult struct {
+	WorkoutID string          `json:"workout_id"`
+	Params    QuadrantParams  `json:"params"`
+	Summary   QuadrantSummary `json:"summary"`
+	Scatter   []QuadrantPoint `json:"scatter,omitempty"`
 }
 
 // Interval is one detected work effort: its ordinal, span (seconds from ride

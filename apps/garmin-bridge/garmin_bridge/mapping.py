@@ -427,14 +427,14 @@ def map_workout_streams(raw: dict[str, Any]) -> dict[str, dict[str, list[float]]
 
 
 def _extract_streams(detail: Any) -> dict[str, list[float]]:
-    """get_activity_details → contiguous power (W) / speed (m/s) / heart_rate (bpm) arrays.
+    """get_activity_details → contiguous power (W) / speed (m/s) / heart_rate (bpm) / cadence (rpm) arrays.
 
-    Reads ``metricDescriptors`` to locate the power/speed/heart-rate columns, then
-    pulls those columns out of ``activityDetailMetrics`` (treated as ~1 Hz samples).
-    Missing samples become 0 so coasting counts toward mean-maximal power, the
-    way Strava/intervals compute it, and HR gaps read as dropouts (excluded from
-    HR means server-side). Defensive: any unexpected shape → ``{}``. A series that
-    is entirely non-positive (no sensor present) is dropped.
+    Reads ``metricDescriptors`` to locate the power/speed/heart-rate/cadence
+    columns, then pulls those columns out of ``activityDetailMetrics`` (treated as
+    ~1 Hz samples). Missing samples become 0 so coasting counts toward mean-maximal
+    power, the way Strava/intervals compute it, and HR/cadence gaps read as
+    dropouts (excluded from means server-side). Defensive: any unexpected shape →
+    ``{}``. A series that is entirely non-positive (no sensor present) is dropped.
     """
     if not isinstance(detail, dict):
         return {}
@@ -475,6 +475,9 @@ def _extract_streams(detail: Any) -> dict[str, list[float]]:
     heart_rate = column(index_of.get("directHeartRate"))
     if heart_rate and any(v > 0 for v in heart_rate):
         out["heart_rate"] = heart_rate
+    cadence = column(index_of.get("directBikeCadence"))
+    if cadence and any(v > 0 for v in cadence):
+        out["cadence"] = cadence
     return out
 
 

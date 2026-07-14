@@ -27,6 +27,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/workouts/:id/streams/recompute", h.recompute)
 	rg.GET("/workouts/:id/w-prime-balance", h.wPrimeBalance)
 	rg.GET("/workouts/:id/intervals", h.intervals)
+	rg.GET("/workouts/:id/quadrant", h.quadrant)
 }
 
 // ingest godoc
@@ -213,6 +214,70 @@ func roundIntervals(res *IntervalsResult) {
 	res.Summary.MeanEffortW = math.Round(res.Summary.MeanEffortW)
 }
 
+// quadrant godoc
+// @Summary      Force/velocity quadrant analysis from power + cadence streams
+// @Description  Classifies each pedaling sample of the workout's stored power + cadence streams into a Coggan force/velocity quadrant. Per sample: `CPV = cadence × crank × 2π/60` (m/s) and `AEPF = power / CPV` (N), split at the reference point implied by `cp_watts` at `cadence_rpm` (crank default 172.5 mm). Returns the share of pedaling time in each quadrant (I high-force/high-velocity … IV low-force/high-velocity), pedaling vs excluded (coasting/dropout) seconds, the reference point, and a downsampled scatter (≤1000 points; omitted under `summary_only=true`). `cp_watts` and `cadence_rpm` are explicit params (compose with `cp_model` + the athlete's cadence — no config coupling). Cycling power+cadence only. Compute-on-read; nothing persisted.
+// @Tags         workouts
+// @Produce      json
+// @Param        id           path   string   true   "Workout UUID"
+// @Param        cp_watts     query  number   true   "Critical power / threshold in watts (> 0)"
+// @Param        cadence_rpm  query  number   true   "Reference (self-selected) cadence in rpm (> 0)"
+// @Param        crank_mm     query  number   false  "Crank length in mm (default 172.5; 100–220)"
+// @Param        summary_only query  boolean  false  "Omit the scatter, return shares only"
+// @Success      200  {object}  QuadrantResult
+// @Failure      400  {object}  map[string]string  "cp_invalid | cadence_invalid | crank_invalid"
+// @Failure      404  {object}  map[string]string  "workout_not_found | streams_not_found | power_stream_missing | cadence_stream_missing"
+// @Security     BearerAuth
+// @Router       /workouts/{id}/quadrant [get]
+func (h *Handlers) quadrant(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
+		return
+	}
+	cp, ok := positiveFloatParam(c, "cp_watts", "cp_invalid")
+	if !ok {
+		return
+	}
+	cadence, ok := positiveFloatParam(c, "cadence_rpm", "cadence_invalid")
+	if !ok {
+		return
+	}
+	crank := defaultCrankMM
+	if raw := c.Query("crank_mm"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < crankMinMM || v > crankMaxMM {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "crank_invalid"})
+			return
+		}
+		crank = v
+	}
+	summaryOnly := c.Query("summary_only") == "true"
+
+	res, err := h.svc.Quadrant(c.Request.Context(), id, cp, cadence, crank, summaryOnly)
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	roundQuadrant(res)
+	c.JSON(http.StatusOK, res)
+}
+
+// roundQuadrant rounds at the boundary: shares 1dp, refs + scatter 2dp. Params
+// echoed as given.
+func roundQuadrant(res *QuadrantResult) {
+	res.Summary.Q1Pct = numfmt.Round1(res.Summary.Q1Pct)
+	res.Summary.Q2Pct = numfmt.Round1(res.Summary.Q2Pct)
+	res.Summary.Q3Pct = numfmt.Round1(res.Summary.Q3Pct)
+	res.Summary.Q4Pct = numfmt.Round1(res.Summary.Q4Pct)
+	res.Summary.AEPFRefN = numfmt.Round2(res.Summary.AEPFRefN)
+	res.Summary.CPVRefMps = numfmt.Round2(res.Summary.CPVRefMps)
+	for i := range res.Scatter {
+		res.Scatter[i].AEPFN = numfmt.Round2(res.Scatter[i].AEPFN)
+		res.Scatter[i].CPVMps = numfmt.Round2(res.Scatter[i].CPVMps)
+	}
+}
+
 // positiveFloatParam parses a required, strictly-positive, finite float query
 // param, writing the 400 (with `code`) and returning ok=false on any failure.
 func positiveFloatParam(c *gin.Context, name, code string) (float64, bool) {
@@ -243,6 +308,8 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "streams_not_found"})
 	case errors.Is(err, ErrPowerStreamMissing):
 		c.JSON(http.StatusNotFound, gin.H{"error": "power_stream_missing"})
+	case errors.Is(err, ErrCadenceStreamMissing):
+		c.JSON(http.StatusNotFound, gin.H{"error": "cadence_stream_missing"})
 	case errors.Is(err, ErrDownsampleInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "downsample_invalid"})
 	default:

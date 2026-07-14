@@ -30,7 +30,7 @@ func (r *Repo) Replace(ctx context.Context, workoutID uuid.UUID, series map[Stre
 		if _, err := tx.Exec(ctx, `DELETE FROM workout_streams WHERE workout_id = $1`, workoutID); err != nil {
 			return err
 		}
-		for _, st := range []StreamType{StreamPower, StreamSpeed, StreamHeartRate} {
+		for _, st := range []StreamType{StreamPower, StreamSpeed, StreamHeartRate, StreamCadence} {
 			samples := series[st]
 			if len(samples) == 0 {
 				continue

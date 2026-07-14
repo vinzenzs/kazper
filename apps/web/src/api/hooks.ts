@@ -16,6 +16,7 @@ import type {
   PowerProfileResult,
   DurabilityResult,
   IntervalsResult,
+  QuadrantResult,
   WPrimeBalanceResult,
   Workout,
   WorkoutStats,
@@ -166,6 +167,28 @@ export function useDetectedIntervals(workoutId: string | undefined) {
     queryKey: ["detected-intervals", workoutId],
     enabled: !!workoutId,
     queryFn: () => apiGet<IntervalsResult>(`/workouts/${workoutId}/intervals`),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
+  });
+}
+
+// Per-workout force/velocity quadrant analysis. Disabled until the CP param is
+// known (from the cp-model fit); pivot cadence is the UI constant 90 rpm. The
+// full scatter is fetched for the chart. A 404 (no cadence stream on pre-bridge
+// rides) leaves the detail-page scatter absent.
+export function useQuadrant(
+  workoutId: string | undefined,
+  cpWatts: number | undefined,
+  cadenceRpm = 90,
+) {
+  const enabled = !!workoutId && !!cpWatts && cpWatts > 0;
+  return useQuery({
+    queryKey: ["quadrant", workoutId, cpWatts, cadenceRpm],
+    enabled,
+    queryFn: () =>
+      apiGet<QuadrantResult>(
+        `/workouts/${workoutId}/quadrant?cp_watts=${cpWatts}&cadence_rpm=${cadenceRpm}`,
+      ),
     refetchInterval: SLOW_INTERVAL_MS,
     retry: false,
   });

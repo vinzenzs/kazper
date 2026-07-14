@@ -16,7 +16,8 @@ var (
 	ErrWorkoutNotFound   = errors.New("workout not found")    // workout_not_found
 	ErrStreamsNotFound   = errors.New("streams not found")    // streams_not_found
 	ErrDownsampleInvalid = errors.New("downsample invalid")   // downsample_invalid
-	ErrPowerStreamMissing = errors.New("power stream missing") // power_stream_missing
+	ErrPowerStreamMissing   = errors.New("power stream missing")   // power_stream_missing
+	ErrCadenceStreamMissing = errors.New("cadence stream missing") // cadence_stream_missing
 )
 
 const (
@@ -225,6 +226,39 @@ func (s *Service) DetectIntervals(ctx context.Context, id uuid.UUID) (*Intervals
 		return nil, ErrPowerStreamMissing
 	}
 	res := detectIntervals(id.String(), power)
+	return &res, nil
+}
+
+// Quadrant computes the force/velocity quadrant breakdown over the workout's
+// stored power + cadence streams given the explicit reference params. Compute-on-
+// read; reads no athlete-config and persists nothing. summaryOnly omits the
+// scatter. Sentinels: ErrWorkoutNotFound / ErrStreamsNotFound /
+// ErrPowerStreamMissing / ErrCadenceStreamMissing.
+func (s *Service) Quadrant(ctx context.Context, id uuid.UUID, cpWatts, cadenceRPM, crankMM float64, summaryOnly bool) (*QuadrantResult, error) {
+	if _, err := s.resolve(ctx, id); err != nil {
+		return nil, err
+	}
+	series, _, err := s.streams.LoadForWorkout(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, ErrStreamsNotFound
+	}
+	power := series[StreamPower]
+	if len(power) == 0 {
+		return nil, ErrPowerStreamMissing
+	}
+	cadence := series[StreamCadence]
+	if len(cadence) == 0 {
+		return nil, ErrCadenceStreamMissing
+	}
+
+	res := quadrantAnalysis(power, cadence, cpWatts, cadenceRPM, crankMM)
+	res.WorkoutID = id.String()
+	if summaryOnly {
+		res.Scatter = nil
+	}
 	return &res, nil
 }
 

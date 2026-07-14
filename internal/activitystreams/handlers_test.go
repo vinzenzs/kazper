@@ -133,6 +133,35 @@ func TestIngest_PersistsStreamsBestEffortsAndMetrics(t *testing.T) {
 	assert.InDelta(t, 200.0, curve.Points[0].Value, 0.001)
 }
 
+// Cadence is stored and retrieved like any other stream (migration 062), but
+// feeds no best-effort ladder record and no execution metric.
+func TestIngest_CadenceStoredButFeedsNoDerivation(t *testing.T) {
+	f := setup(t)
+	id := seedWorkout(t, f.repo)
+
+	body := fmt.Sprintf(`{"power":%s,"cadence":%s}`, arr(1800, 220), arr(1800, 90))
+	rec := post(t, f.r, "/workouts/"+id.String()+"/streams", body)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out activitystreams.IngestResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 2, out.StreamsStored, "power + cadence")
+
+	grec := get(t, f.r, "/workouts/"+id.String()+"/streams")
+	require.Equal(t, http.StatusOK, grec.Code)
+	var sr activitystreams.StreamsResponse
+	require.NoError(t, json.Unmarshal(grec.Body.Bytes(), &sr))
+	require.Len(t, sr.Streams[activitystreams.StreamCadence], 1800)
+	assert.InDelta(t, 90.0, sr.Streams[activitystreams.StreamCadence][0], 0.001)
+
+	// The power curve reflects only power; cadence never became a best effort.
+	crec := get(t, f.r, "/workouts/power-curve?from=2026-03-10&to=2026-03-10&sport=bike&tz=UTC")
+	var curve effortanalytics.Curve
+	require.NoError(t, json.Unmarshal(crec.Body.Bytes(), &curve))
+	for _, p := range curve.Points {
+		assert.InDelta(t, 220.0, p.Value, 0.001, "curve is power, not cadence")
+	}
+}
+
 func TestIngest_RepostReplacesStreams(t *testing.T) {
 	f := setup(t)
 	id := seedWorkout(t, f.repo)

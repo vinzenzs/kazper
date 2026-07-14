@@ -320,6 +320,32 @@ export interface WPrimeBalanceResult {
   series?: number[];
 }
 
+// Mirrors internal/activitystreams quadrant analysis. Force/velocity quadrant
+// shares over a ride's paired power+cadence samples. `scatter` is the (down-
+// sampled) paired points; absent under summary_only.
+export interface QuadrantSummary {
+  q1_pct: number;
+  q2_pct: number;
+  q3_pct: number;
+  q4_pct: number;
+  pedaling_s: number;
+  excluded_s: number;
+  aepf_ref_n: number;
+  cpv_ref_mps: number;
+}
+
+export interface QuadrantPoint {
+  aepf_n: number;
+  cpv_mps: number;
+}
+
+export interface QuadrantResult {
+  workout_id: string;
+  params: { cp_watts: number; cadence_rpm: number; crank_mm: number };
+  summary: QuadrantSummary;
+  scatter?: QuadrantPoint[];
+}
+
 // Mirrors internal/activitystreams interval detection. `threshold_w` is the
 // Otsu-derived work/rest split (null with reason "no_distinct_efforts" when the
 // ride isn't meaningfully bimodal). Advisory — a compute-on-read read.

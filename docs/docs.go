@@ -10160,6 +10160,84 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/{id}/quadrant": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Classifies each pedaling sample of the workout's stored power + cadence streams into a Coggan force/velocity quadrant. Per sample: ` + "`" + `CPV = cadence × crank × 2π/60` + "`" + ` (m/s) and ` + "`" + `AEPF = power / CPV` + "`" + ` (N), split at the reference point implied by ` + "`" + `cp_watts` + "`" + ` at ` + "`" + `cadence_rpm` + "`" + ` (crank default 172.5 mm). Returns the share of pedaling time in each quadrant (I high-force/high-velocity … IV low-force/high-velocity), pedaling vs excluded (coasting/dropout) seconds, the reference point, and a downsampled scatter (≤1000 points; omitted under ` + "`" + `summary_only=true` + "`" + `). ` + "`" + `cp_watts` + "`" + ` and ` + "`" + `cadence_rpm` + "`" + ` are explicit params (compose with ` + "`" + `cp_model` + "`" + ` + the athlete's cadence — no config coupling). Cycling power+cadence only. Compute-on-read; nothing persisted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Force/velocity quadrant analysis from power + cadence streams",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Critical power / threshold in watts (\u003e 0)",
+                        "name": "cp_watts",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Reference (self-selected) cadence in rpm (\u003e 0)",
+                        "name": "cadence_rpm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Crank length in mm (default 172.5; 100–220)",
+                        "name": "crank_mm",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Omit the scatter, return shares only",
+                        "name": "summary_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.QuadrantResult"
+                        }
+                    },
+                    "400": {
+                        "description": "cp_invalid | cadence_invalid | crank_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found | power_stream_missing | cadence_stream_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/streams": {
             "get": {
                 "security": [
@@ -10598,6 +10676,80 @@ const docTemplate = `{
                 }
             }
         },
+        "activitystreams.QuadrantParams": {
+            "type": "object",
+            "properties": {
+                "cadence_rpm": {
+                    "type": "number"
+                },
+                "cp_watts": {
+                    "type": "number"
+                },
+                "crank_mm": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.QuadrantPoint": {
+            "type": "object",
+            "properties": {
+                "aepf_n": {
+                    "type": "number"
+                },
+                "cpv_mps": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.QuadrantResult": {
+            "type": "object",
+            "properties": {
+                "params": {
+                    "$ref": "#/definitions/activitystreams.QuadrantParams"
+                },
+                "scatter": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/activitystreams.QuadrantPoint"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/activitystreams.QuadrantSummary"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "activitystreams.QuadrantSummary": {
+            "type": "object",
+            "properties": {
+                "aepf_ref_n": {
+                    "type": "number"
+                },
+                "cpv_ref_mps": {
+                    "type": "number"
+                },
+                "excluded_s": {
+                    "type": "integer"
+                },
+                "pedaling_s": {
+                    "type": "integer"
+                },
+                "q1_pct": {
+                    "type": "number"
+                },
+                "q2_pct": {
+                    "type": "number"
+                },
+                "q3_pct": {
+                    "type": "number"
+                },
+                "q4_pct": {
+                    "type": "number"
+                }
+            }
+        },
         "activitystreams.RecomputeResult": {
             "type": "object",
             "properties": {
@@ -10626,6 +10778,12 @@ const docTemplate = `{
         "activitystreams.StreamPayload": {
             "type": "object",
             "properties": {
+                "cadence": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
                 "heart_rate": {
                     "type": "array",
                     "items": {

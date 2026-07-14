@@ -6,11 +6,13 @@ import { SplitsTable } from "../components/SplitsTable";
 import { ZoneTimeStrip } from "../components/ZoneTimeStrip";
 import { WPrimeBalanceStrip } from "../components/WPrimeBalanceStrip";
 import { DetectedIntervalsTable } from "../components/DetectedIntervalsTable";
+import { QuadrantScatter } from "../components/QuadrantScatter";
 import {
   useWorkout,
   useCPModel,
   useWPrimeBalance,
   useDetectedIntervals,
+  useQuadrant,
 } from "../api/hooks";
 import { ApiError } from "../api/client";
 import type { Workout } from "../api/types";
@@ -43,6 +45,9 @@ export function WorkoutDetailView() {
   // no_distinct_efforts result, a workout with no power, or a fetch error all
   // render nothing (absence, not an error state).
   const intervals = useDetectedIntervals(id);
+  // Force/velocity quadrant scatter — needs power+cadence streams and a CP fit;
+  // pivot cadence is the UI constant 90 rpm. Absent (404 / no fit) renders nothing.
+  const quadrant = useQuadrant(id, cp.data?.model?.cp_watts);
 
   const notFound =
     isError && error instanceof ApiError && error.status === 404;
@@ -90,6 +95,12 @@ export function WorkoutDetailView() {
       {intervals.data && intervals.data.intervals.length > 0 && (
         <Panel title="Detected intervals">
           <DetectedIntervalsTable result={intervals.data} />
+        </Panel>
+      )}
+
+      {quadrant.data && quadrant.data.summary.pedaling_s > 0 && (
+        <Panel title="Quadrant analysis">
+          <QuadrantScatter result={quadrant.data} />
         </Panel>
       )}
 
