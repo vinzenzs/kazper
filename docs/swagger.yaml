@@ -1505,6 +1505,55 @@ definitions:
       value:
         type: number
     type: object
+  pmc.Day:
+    properties:
+      atl:
+        type: number
+      ctl:
+        type: number
+      date:
+        type: string
+      missing_tss_count:
+        type: integer
+      ramp_rate:
+        type: number
+      tsb:
+        type: number
+      tss_total:
+        type: number
+    type: object
+  pmc.RampAlert:
+    properties:
+      ctl_delta:
+        type: number
+      ctl_end:
+        type: number
+      ctl_start:
+        type: number
+      week_start:
+        type: string
+    type: object
+  pmc.Series:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/pmc.Day'
+        type: array
+      from:
+        type: string
+      missing_tss_workouts:
+        type: integer
+      ramp_alerts:
+        items:
+          $ref: '#/definitions/pmc.RampAlert'
+        type: array
+      seed_date:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+    type: object
   products.Nutriments:
     properties:
       calcium_mg:
@@ -6672,6 +6721,51 @@ paths:
       summary: Get a multisport workout template by id
       tags:
       - multisport-templates
+  /performance/pmc:
+    get:
+      description: 'Compute-on-read Coggan PMC over stored completed-workout TSS:
+        one entry per calendar day in [from, to] with `tss_total`, `ctl` (42-day EWMA
+        fitness), `atl` (7-day EWMA fatigue), `tsb` (yesterday''s ctl−atl form), and
+        `ramp_rate` (ctl change over 7 days). The EWMA warms up from the earliest
+        completed workout so values are window-independent (`seed_date` reports the
+        warm-up start). `ramp_alerts` flags Monday-start weeks whose CTL rose more
+        than 8/week. Only completed workouts contribute; a completed workout with
+        NULL tss counts 0 but is surfaced via per-day `missing_tss_count` + window
+        `missing_tss_workouts`. Distinct from Garmin''s stored acute/chronic load.
+        Range capped at 400 days; read-only.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pmc.Series'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Performance Management Chart (CTL/ATL/TSB) daily series
+      tags:
+      - performance
   /personal-records:
     get:
       parameters:

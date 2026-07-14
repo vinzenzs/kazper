@@ -213,6 +213,36 @@ export interface PowerCurve {
   points: CurvePoint[];
 }
 
+// Mirrors internal/pmc/types.go. The Coggan Performance Management Chart: one
+// entry per calendar day with fitness (ctl), fatigue (atl), form (tsb), and the
+// 7-day ramp rate, plus weekly overreaching flags.
+export interface PMCDay {
+  date: string;
+  tss_total: number;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  ramp_rate: number;
+  missing_tss_count?: number;
+}
+
+export interface PMCRampAlert {
+  week_start: string;
+  ctl_start: number;
+  ctl_end: number;
+  ctl_delta: number;
+}
+
+export interface PMCSeries {
+  from: string;
+  to: string;
+  tz: string;
+  seed_date?: string;
+  days: PMCDay[];
+  ramp_alerts: PMCRampAlert[];
+  missing_tss_workouts: number;
+}
+
 // Mirrors a workout_splits row (internal/workouts/types.go). One per lap; all
 // metrics nullable. avg_speed_mps is stored sport-agnostically (pace derivable).
 export interface Split {

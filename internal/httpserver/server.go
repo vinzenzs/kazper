@@ -43,6 +43,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/multisport"
 	"github.com/vinzenzs/kazper/internal/off"
 	"github.com/vinzenzs/kazper/internal/personalrecords"
+	"github.com/vinzenzs/kazper/internal/pmc"
 	"github.com/vinzenzs/kazper/internal/products"
 	"github.com/vinzenzs/kazper/internal/publicfeed"
 	"github.com/vinzenzs/kazper/internal/push"
@@ -378,6 +379,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutstats.NewHandlers(workoutStatsSvc, cfg.DefaultUserTZ, logger).Register(api)
 	effortanalytics.NewHandlers(effortAnalyticsSvc, cfg.DefaultUserTZ, logger).Register(api)
+	// Performance Management Chart (add-performance-management): compute-on-read
+	// CTL/ATL/TSB over completed-workout TSS. Read-only; own read repo.
+	pmc.NewHandlers(pmc.NewService(pmc.NewRepo(pool)), cfg.DefaultUserTZ, logger).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
 	multisportRepo := multisport.NewRepo(pool)

@@ -4,7 +4,16 @@ import { Panel } from "../components/Panel";
 import { StatsTotals } from "../components/StatsTotals";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
-import { usePowerCurve, useWorkoutStats } from "../api/hooks";
+import { PMCChart, PMCSummary } from "../components/PMCChart";
+import { usePMC, usePowerCurve, useWorkoutStats } from "../api/hooks";
+
+type PMCWindow = "90" | "180" | "365";
+
+const PMC_WINDOWS: { key: PMCWindow; label: string }[] = [
+  { key: "90", label: "90d" },
+  { key: "180", label: "180d" },
+  { key: "365", label: "365d" },
+];
 
 type Period = "week" | "month" | "ytd";
 
@@ -55,13 +64,19 @@ function Toggle<T extends string>({
 export function StatsView() {
   const [period, setPeriod] = useState<Period>("week");
   const [sport, setSport] = useState<string>("bike");
+  const [pmcWindow, setPmcWindow] = useState<PMCWindow>("90");
   const { from, to } = rangeFor(period);
   const { data, isLoading, isError, error } = useWorkoutStats(from, to);
   const curve = usePowerCurve(from, to, sport);
+  const pmcRange = trailingDays(Number(pmcWindow) - 1);
+  const pmc = usePMC(pmcRange.from, pmcRange.to);
 
   const total = data?.total;
   const isEmpty = !!total && total.count === 0;
   const curveEmpty = !!curve.data && curve.data.points.length === 0;
+  // All-zero form/fitness ⇒ no training history to chart.
+  const pmcEmpty =
+    !!pmc.data && pmc.data.days.every((d) => d.ctl === 0 && d.atl === 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,6 +102,27 @@ export function StatsView() {
         emptyHint="No activity in this period"
       >
         {data && <ActivityHeatmap days={data.days} />}
+      </Panel>
+
+      <Panel
+        title="Performance (CTL / ATL / TSB)"
+        isLoading={pmc.isLoading}
+        isError={pmc.isError}
+        error={pmc.error}
+      >
+        <div className="flex flex-col gap-3">
+          <Toggle options={PMC_WINDOWS} value={pmcWindow} onChange={setPmcWindow} />
+          {pmc.data && !pmcEmpty ? (
+            <>
+              <PMCSummary series={pmc.data} />
+              <PMCChart series={pmc.data} />
+            </>
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-500">
+              No training history to chart yet
+            </div>
+          )}
+        </div>
       </Panel>
 
       <Panel
@@ -124,6 +160,14 @@ function rangeFor(period: Period): { from: string; to: string } {
   const start = new Date(now);
   start.setDate(start.getDate() - days);
   return { from: ymd(start), to };
+}
+
+// trailingDays returns [today − n days, today] as local YYYY-MM-DD bounds.
+function trailingDays(n: number): { from: string; to: string } {
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - n);
+  return { from: ymd(start), to: ymd(now) };
 }
 
 function ymd(d: Date): string {

@@ -5,6 +5,7 @@ import type {
   PersonalRecord,
   RecoveryContext,
   TrainingContext,
+  PMCSeries,
   PowerCurve,
   Workout,
   WorkoutStats,
@@ -346,3 +347,33 @@ export const populatedTrend: FitnessSnapshot[] = [
 ];
 
 export const emptyTrend: FitnessSnapshot[] = [];
+
+export const populatedPMC: PMCSeries = {
+  from: "2026-06-22",
+  to: "2026-06-25",
+  tz: "Europe/Vienna",
+  seed_date: "2026-05-31",
+  days: [
+    { date: "2026-06-22", tss_total: 90, ctl: 44.1, atl: 58.2, tsb: -12.3, ramp_rate: 4.2 },
+    { date: "2026-06-23", tss_total: 0, ctl: 43.1, atl: 49.9, tsb: -14.1, ramp_rate: 3.9 },
+    { date: "2026-06-24", tss_total: 120, ctl: 44.9, atl: 59.9, tsb: -6.8, ramp_rate: 5.1, missing_tss_count: 1 },
+    { date: "2026-06-25", tss_total: 60, ctl: 45.3, atl: 59.9, tsb: -15.0, ramp_rate: 5.4 },
+  ],
+  ramp_alerts: [
+    { week_start: "2026-06-22", ctl_start: 35.0, ctl_end: 45.3, ctl_delta: 10.3 },
+  ],
+  missing_tss_workouts: 1,
+};
+
+export const emptyPMC: PMCSeries = {
+  from: "2026-06-22",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  days: [
+    { date: "2026-06-22", tss_total: 0, ctl: 0, atl: 0, tsb: 0, ramp_rate: 0 },
+    { date: "2026-06-23", tss_total: 0, ctl: 0, atl: 0, tsb: 0, ramp_rate: 0 },
+    { date: "2026-06-24", tss_total: 0, ctl: 0, atl: 0, tsb: 0, ramp_rate: 0 },
+  ],
+  ramp_alerts: [],
+  missing_tss_workouts: 0,
+};

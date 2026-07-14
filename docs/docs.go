@@ -4988,6 +4988,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/performance/pmc": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Compute-on-read Coggan PMC over stored completed-workout TSS: one entry per calendar day in [from, to] with ` + "`" + `tss_total` + "`" + `, ` + "`" + `ctl` + "`" + ` (42-day EWMA fitness), ` + "`" + `atl` + "`" + ` (7-day EWMA fatigue), ` + "`" + `tsb` + "`" + ` (yesterday's ctl−atl form), and ` + "`" + `ramp_rate` + "`" + ` (ctl change over 7 days). The EWMA warms up from the earliest completed workout so values are window-independent (` + "`" + `seed_date` + "`" + ` reports the warm-up start). ` + "`" + `ramp_alerts` + "`" + ` flags Monday-start weeks whose CTL rose more than 8/week. Only completed workouts contribute; a completed workout with NULL tss counts 0 but is surfaced via per-day ` + "`" + `missing_tss_count` + "`" + ` + window ` + "`" + `missing_tss_workouts` + "`" + `. Distinct from Garmin's stored acute/chronic load. Range capped at 400 days; read-only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "performance"
+                ],
+                "summary": "Performance Management Chart (CTL/ATL/TSB) daily series",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pmc.Series"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/personal-records": {
             "get": {
                 "security": [
@@ -11621,6 +11675,81 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "number"
+                }
+            }
+        },
+        "pmc.Day": {
+            "type": "object",
+            "properties": {
+                "atl": {
+                    "type": "number"
+                },
+                "ctl": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "missing_tss_count": {
+                    "type": "integer"
+                },
+                "ramp_rate": {
+                    "type": "number"
+                },
+                "tsb": {
+                    "type": "number"
+                },
+                "tss_total": {
+                    "type": "number"
+                }
+            }
+        },
+        "pmc.RampAlert": {
+            "type": "object",
+            "properties": {
+                "ctl_delta": {
+                    "type": "number"
+                },
+                "ctl_end": {
+                    "type": "number"
+                },
+                "ctl_start": {
+                    "type": "number"
+                },
+                "week_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "pmc.Series": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pmc.Day"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "missing_tss_workouts": {
+                    "type": "integer"
+                },
+                "ramp_alerts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pmc.RampAlert"
+                    }
+                },
+                "seed_date": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
                 }
             }
         },

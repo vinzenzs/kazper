@@ -8,6 +8,7 @@ import type {
   PersonalRecordsList,
   RecoveryContext,
   TrainingContext,
+  PMCSeries,
   PowerCurve,
   Workout,
   WorkoutStats,
@@ -103,6 +104,14 @@ export function usePowerCurve(from: string, to: string, sport: string) {
       apiGet<PowerCurve>(
         `/workouts/power-curve?from=${from}&to=${to}&sport=${sport}`,
       ),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+export function usePMC(from: string, to: string) {
+  return useQuery({
+    queryKey: ["pmc", from, to],
+    queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }
