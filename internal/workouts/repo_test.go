@@ -29,6 +29,7 @@ func sample(extID *string, kcal float64) *workouts.Workout {
 		KcalBurned: ptrF(kcal),
 		AvgHR:      ptrI(135),
 		TSS:        ptrF(78),
+		TSSSource:  ptrStr("manual"), // paired with TSS (DB CHECK); source is manual
 		Notes:      ptrStr("felt easy"),
 	}
 }

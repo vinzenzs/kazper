@@ -31,6 +31,7 @@ func NewHandlers(svc *Service) *Handlers {
 func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.POST("/workouts", h.create)
 	rg.POST("/workouts/bulk", h.bulkCreate)
+	rg.POST("/workouts/recompute-tss", h.recomputeTSS)
 	rg.GET("/workouts", h.list)
 	rg.GET("/workouts/adherence", h.adherence)
 	rg.GET("/workouts/:id", h.get)
@@ -501,7 +502,7 @@ func (h *Handlers) patch(c *gin.Context) {
 		Notes           *string         `json:"notes,omitempty"`
 		KcalBurned      *float64        `json:"kcal_burned,omitempty"`
 		AvgHR           *int            `json:"avg_hr,omitempty"`
-		TSS             *float64        `json:"tss,omitempty"`
+		TSS             json.RawMessage `json:"tss,omitempty"`
 		RPE             json.RawMessage `json:"rpe,omitempty"`
 		GIDistressScore json.RawMessage `json:"gi_distress_score,omitempty"`
 		TrainingFocus   json.RawMessage `json:"training_focus,omitempty"`
@@ -523,8 +524,21 @@ func (h *Handlers) patch(c *gin.Context) {
 		Notes:      body.Notes,
 		KcalBurned: body.KcalBurned,
 		AvgHR:      body.AvgHR,
-		TSS:        body.TSS,
 		Status:     body.Status,
+	}
+	// tss tri-state: absent → leave unchanged; JSON null → clear both tss and
+	// tss_source; a number → set (service marks tss_source='manual').
+	if body.TSS != nil {
+		if string(body.TSS) == "null" {
+			in.ClearTSS = true
+		} else {
+			var v float64
+			if err := json.Unmarshal(body.TSS, &v); err != nil {
+				respondError(c, http.StatusBadRequest, "tss_invalid")
+				return
+			}
+			in.TSS = &v
+		}
 	}
 	// Tri-state decode for rpe: raw == nil → absent (leave unchanged);
 	// raw == "null" → ClearRPE=true; otherwise unmarshal to *int.
@@ -898,6 +912,9 @@ func roundWorkoutDetail(w *Workout) {
 	if w == nil {
 		return
 	}
+	// tss is stored at 2dp (computed values via numfmt.Round2); round to 1dp at
+	// the response boundary like every other measurement float (add-per-sport-tss).
+	w.TSS = numfmt.Round1Ptr(w.TSS)
 	w.ElevationGainM = numfmt.Round1Ptr(w.ElevationGainM)
 	w.ElevationLossM = numfmt.Round1Ptr(w.ElevationLossM)
 	w.AerobicTE = numfmt.Round1Ptr(w.AerobicTE)
@@ -912,6 +929,23 @@ func roundWorkoutDetail(w *Workout) {
 	for i := range w.Sets {
 		w.Sets[i].DurationS = numfmt.Round1Ptr(w.Sets[i].DurationS)
 	}
+}
+
+// recomputeTSS godoc
+// @Summary      Recompute derived TSS across completed workouts
+// @Description  Re-runs the ingest-time per-sport TSS derivation over every completed workout whose `tss` is NULL or whose `tss_source` is a computed value (`power`, `pace`, `hr`), against the CURRENT athlete-config thresholds. Measured rows (`tss_source` `garmin`/`manual`) are never touched. A candidate may gain, change, or lose (cleared to NULL) its computed value. Idempotent for a fixed data + threshold state. Returns per-provenance counts of the rows updated (`none` = cleared to NULL).
+// @Tags         workouts
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "{\"examined\": n, \"updated\": n, \"by_source\": {\"power\": n, \"pace\": n, \"hr\": n, \"none\": n}}"
+// @Security     BearerAuth
+// @Router       /workouts/recompute-tss [post]
+func (h *Handlers) recomputeTSS(c *gin.Context) {
+	res, err := h.svc.RecomputeTSS(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "recompute_failed")
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 func respondError(c *gin.Context, status int, code string) {

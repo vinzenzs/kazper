@@ -44,10 +44,16 @@ func adhPlan(t *testing.T, f *fixture) (planID uuid.UUID, mkSlot func(weekday in
 func adhWorkout(t *testing.T, f *fixture, sport, status string, slot *uuid.UUID, start time.Time, durMin int, tss *float64) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
+	// tss + tss_source are paired (DB CHECK); a caller-supplied tss is 'manual'.
+	var source *string
+	if tss != nil {
+		s := "manual"
+		source = &s
+	}
 	_, err := f.pool.Exec(context.Background(),
-		`INSERT INTO workouts (id, source, sport, status, started_at, ended_at, plan_slot_id, tss)
-		 VALUES ($1, 'manual', $2, $3, $4, $5, $6, $7)`,
-		id, sport, status, start, start.Add(time.Duration(durMin)*time.Minute), slot, tss)
+		`INSERT INTO workouts (id, source, sport, status, started_at, ended_at, plan_slot_id, tss, tss_source)
+		 VALUES ($1, 'manual', $2, $3, $4, $5, $6, $7, $8)`,
+		id, sport, status, start, start.Add(time.Duration(durMin)*time.Minute), slot, tss, source)
 	require.NoError(t, err)
 	return id
 }

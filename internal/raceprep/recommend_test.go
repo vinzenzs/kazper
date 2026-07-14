@@ -185,12 +185,19 @@ func TestRecommend_Explicit_SwimUnder2hIntraNotApplicable(t *testing.T) {
 
 func seedWorkout(t *testing.T, repo *workouts.Repo, sport workouts.Sport, started, ended time.Time, tss *float64) workouts.Workout {
 	t.Helper()
+	// tss + tss_source are paired (DB CHECK); a caller-supplied tss is 'manual'.
+	var tssSource *string
+	if tss != nil {
+		s := "manual"
+		tssSource = &s
+	}
 	w := &workouts.Workout{
 		Source:     workouts.SourceManual,
 		Sport:      sport,
 		StartedAt:  started,
 		EndedAt:    ended,
 		TSS:        tss,
+		TSSSource:  tssSource,
 	}
 	_, err := repo.Upsert(context.Background(), w)
 	require.NoError(t, err)

@@ -131,6 +131,10 @@ type Workout struct {
 	KcalBurned *float64 `json:"kcal_burned,omitempty"`
 	AvgHR      *int     `json:"avg_hr,omitempty"`
 	TSS        *float64 `json:"tss,omitempty"`
+	// TSSSource records how TSS was obtained: garmin|manual (caller-supplied) or
+	// power|pace|hr (server-derived). Server-managed, response-only (never bound
+	// from a request), and paired with TSS by a DB CHECK. Per add-per-sport-tss.
+	TSSSource *string `json:"tss_source,omitempty"`
 
 	// Per-session rehearsal-outcome signals — both nullable, set by the user
 	// after a fueling-rehearsal workout. Validated 1..10 (Borg CR-10) and 1..5

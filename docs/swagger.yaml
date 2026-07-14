@@ -3151,6 +3151,12 @@ definitions:
           intent, set by the user/coach; never derived from the secs_in_zone_* actuals.
       tss:
         type: number
+      tss_source:
+        description: |-
+          TSSSource records how TSS was obtained: garmin|manual (caller-supplied) or
+          power|pace|hr (server-derived). Server-managed, response-only (never bound
+          from a request), and paired with TSS by a DB CHECK. Per add-per-sport-tss.
+        type: string
       updated_at:
         type: string
       wind_speed_mps:
@@ -9679,6 +9685,29 @@ paths:
       security:
       - BearerAuth: []
       summary: Mean-maximal power/pace curve over a window
+      tags:
+      - workouts
+  /workouts/recompute-tss:
+    post:
+      description: Re-runs the ingest-time per-sport TSS derivation over every completed
+        workout whose `tss` is NULL or whose `tss_source` is a computed value (`power`,
+        `pace`, `hr`), against the CURRENT athlete-config thresholds. Measured rows
+        (`tss_source` `garmin`/`manual`) are never touched. A candidate may gain,
+        change, or lose (cleared to NULL) its computed value. Idempotent for a fixed
+        data + threshold state. Returns per-provenance counts of the rows updated
+        (`none` = cleared to NULL).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"examined\": n, \"updated\": n, \"by_source\": {\"power\":
+            n, \"pace\": n, \"hr\": n, \"none\": n}}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Recompute derived TSS across completed workouts
       tags:
       - workouts
   /workouts/summary:

@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus, tss_source`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -62,7 +62,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor,
             avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te,
             secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5,
-            humidity_pct, wind_speed_mps, training_focus
+            humidity_pct, wind_speed_mps, training_focus, tss_source
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7,
@@ -74,7 +74,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             $23, $24, $25, $26,
             $27, $28, $29, $30, $31,
             $32, $33, $34, $35, $36,
-            $37, $38, $39
+            $37, $38, $39, $40
         )
         ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET
             source             = EXCLUDED.source,
@@ -111,7 +111,8 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             secs_in_zone_5     = EXCLUDED.secs_in_zone_5,
             humidity_pct       = EXCLUDED.humidity_pct,
             wind_speed_mps     = EXCLUDED.wind_speed_mps,
-            training_focus     = EXCLUDED.training_focus
+            training_focus     = EXCLUDED.training_focus,
+            tss_source         = EXCLUDED.tss_source
         RETURNING id, created_at = $20 AS inserted
     `
 	row := r.q.QueryRow(ctx, q,
@@ -127,6 +128,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 		w.AvgCadence, w.AvgStrideM, w.MaxHR, w.AerobicTE, w.AnaerobicTE,
 		w.SecsInZone1, w.SecsInZone2, w.SecsInZone3, w.SecsInZone4, w.SecsInZone5,
 		w.HumidityPct, w.WindSpeedMPS, trainingFocusArg(w.TrainingFocus),
+		w.TSSSource,
 	)
 	var (
 		returnedID uuid.UUID
@@ -419,6 +421,7 @@ func (r *Repo) Merge(ctx context.Context, plannedID uuid.UUID, a *Workout) (*Wor
             secs_in_zone_5     = $29,
             humidity_pct       = $30,
             wind_speed_mps     = $31,
+            tss_source         = $32,
             needs_link         = false,
             updated_at         = now()
         WHERE id = $1
@@ -433,6 +436,7 @@ func (r *Repo) Merge(ctx context.Context, plannedID uuid.UUID, a *Workout) (*Wor
 		a.AvgCadence, a.AvgStrideM, a.MaxHR, a.AerobicTE, a.AnaerobicTE,
 		a.SecsInZone1, a.SecsInZone2, a.SecsInZone3, a.SecsInZone4, a.SecsInZone5,
 		a.HumidityPct, a.WindSpeedMPS,
+		a.TSSSource,
 	)
 	return scanWorkout(row)
 }
@@ -449,6 +453,7 @@ func (r *Repo) RestorePlanned(ctx context.Context, id uuid.UUID) (*Workout, erro
             kcal_burned        = NULL,
             avg_hr             = NULL,
             tss                = NULL,
+            tss_source         = NULL,
             distance_m         = NULL,
             avg_power_w        = NULL,
             temperature_c      = NULL,
@@ -488,7 +493,11 @@ type PatchParams struct {
 	Notes      *string
 	KcalBurned *float64
 	AvgHR      *int
-	TSS        *float64
+	// TSS tri-state: non-nil sets tss (and tss_source='manual'); ClearTSS clears
+	// both tss and tss_source to NULL; nil + false leaves unchanged. PATCH never
+	// derives (design D3).
+	TSS      *float64
+	ClearTSS bool
 
 	RPE                  *int
 	ClearRPE             bool
@@ -520,7 +529,7 @@ type PatchParams struct {
 
 // HasUpdates reports whether at least one mutable field is being changed.
 func (p PatchParams) HasUpdates() bool {
-	return p.Name != nil || p.Notes != nil || p.KcalBurned != nil || p.AvgHR != nil || p.TSS != nil ||
+	return p.Name != nil || p.Notes != nil || p.KcalBurned != nil || p.AvgHR != nil || p.TSS != nil || p.ClearTSS ||
 		p.RPE != nil || p.ClearRPE ||
 		p.GIDistressScore != nil || p.ClearGIDistressScore ||
 		p.TrainingFocus != nil || p.ClearTrainingFocus ||
@@ -558,10 +567,15 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 		args = append(args, *p.AvgHR)
 		next++
 	}
-	if p.TSS != nil {
+	// tss/tss_source are paired (DB CHECK). A value sets provenance to 'manual'
+	// (PATCH is a manual edit, never a derivation); a clear nulls both.
+	if p.ClearTSS {
+		sets = append(sets, "tss = NULL", "tss_source = NULL")
+	} else if p.TSS != nil {
 		sets = append(sets, fmt.Sprintf("tss = $%d", next))
 		args = append(args, *p.TSS)
 		next++
+		sets = append(sets, "tss_source = 'manual'")
 	}
 	if p.ClearRPE {
 		sets = append(sets, "rpe = NULL")
@@ -665,6 +679,46 @@ func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.q.Exec(ctx, `DELETE FROM workouts WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete workout: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecomputeCandidates returns the completed workouts whose TSS is recomputable:
+// tss IS NULL, or tss_source is a server-computed value (power|pace|hr). Measured
+// rows (garmin|manual) are excluded and never touched by recompute. Full rows so
+// the service can re-derive from sport/window/distance/avg_hr/intensity_factor.
+func (r *Repo) RecomputeCandidates(ctx context.Context) ([]*Workout, error) {
+	const q = `SELECT ` + selectCols + ` FROM workouts
+        WHERE status = 'completed'
+          AND (tss IS NULL OR tss_source IN ('power', 'pace', 'hr'))
+        ORDER BY started_at`
+	rows, err := r.q.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("recompute candidates: %w", err)
+	}
+	defer rows.Close()
+	var out []*Workout
+	for rows.Next() {
+		w, err := scanWorkout(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// SetTSS sets tss + tss_source (both nullable, paired) on a workout by id. Used
+// by recompute to fill, refresh, or clear a computed value.
+func (r *Repo) SetTSS(ctx context.Context, id uuid.UUID, tss *float64, source *string) error {
+	tag, err := r.q.Exec(ctx,
+		`UPDATE workouts SET tss = $2, tss_source = $3, updated_at = now() WHERE id = $1`,
+		id, tss, source)
+	if err != nil {
+		return fmt.Errorf("set tss: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -914,6 +968,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&w.HumidityPct, &w.WindSpeedMPS,
 		&w.MultisportTemplateID,
 		&trainingFocus,
+		&w.TSSSource,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

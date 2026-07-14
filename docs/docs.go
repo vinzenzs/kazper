@@ -8910,6 +8910,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/recompute-tss": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Re-runs the ingest-time per-sport TSS derivation over every completed workout whose ` + "`" + `tss` + "`" + ` is NULL or whose ` + "`" + `tss_source` + "`" + ` is a computed value (` + "`" + `power` + "`" + `, ` + "`" + `pace` + "`" + `, ` + "`" + `hr` + "`" + `), against the CURRENT athlete-config thresholds. Measured rows (` + "`" + `tss_source` + "`" + ` ` + "`" + `garmin` + "`" + `/` + "`" + `manual` + "`" + `) are never touched. A candidate may gain, change, or lose (cleared to NULL) its computed value. Idempotent for a fixed data + threshold state. Returns per-provenance counts of the rows updated (` + "`" + `none` + "`" + ` = cleared to NULL).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Recompute derived TSS across completed workouts",
+                "responses": {
+                    "200": {
+                        "description": "{\\\"examined\\\": n, \\\"updated\\\": n, \\\"by_source\\\": {\\\"power\\\": n, \\\"pace\\\": n, \\\"hr\\\": n, \\\"none\\\": n}}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/summary": {
             "get": {
                 "security": [
@@ -13890,6 +13916,10 @@ const docTemplate = `{
                 },
                 "tss": {
                     "type": "number"
+                },
+                "tss_source": {
+                    "description": "TSSSource records how TSS was obtained: garmin|manual (caller-supplied) or\npower|pace|hr (server-derived). Server-managed, response-only (never bound\nfrom a request), and paired with TSS by a DB CHECK. Per add-per-sport-tss.",
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"

@@ -333,7 +333,11 @@ type PatchInput struct {
 	Notes                *string
 	KcalBurned           *float64
 	AvgHR                *int
+	// TSS tri-state: non-nil pointer sets tss (→ tss_source='manual'), nil +
+	// ClearTSS=true clears both tss and tss_source, nil + false leaves unchanged.
+	// PATCH never derives. The handler decodes JSON null into ClearTSS.
 	TSS                  *float64
+	ClearTSS             bool
 	RPE                  *int
 	ClearRPE             bool
 	GIDistressScore      *int
@@ -400,6 +404,7 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 		KcalBurned:           in.KcalBurned,
 		AvgHR:                in.AvgHR,
 		TSS:                  in.TSS,
+		ClearTSS:             in.ClearTSS,
 		RPE:                  in.RPE,
 		ClearRPE:             in.ClearRPE,
 		GIDistressScore:      in.GIDistressScore,
@@ -427,6 +432,59 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 // Delete removes a workout.
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
+}
+
+// RecomputeResult reports the outcome of RecomputeTSS.
+type RecomputeResult struct {
+	Examined int            `json:"examined"`
+	Updated  int            `json:"updated"`
+	BySource map[string]int `json:"by_source"`
+}
+
+// RecomputeTSS re-runs the ingest-time TSS derivation over every completed
+// workout whose tss is NULL or whose provenance is server-computed, against the
+// CURRENT athlete-config thresholds. Measured rows (garmin|manual) are never
+// touched. A candidate may gain, change, or lose (→ NULL) its computed value;
+// unchanged rows are skipped. Updated rows are counted by their NEW provenance
+// (`none` = cleared to NULL).
+func (s *Service) RecomputeTSS(ctx context.Context) (RecomputeResult, error) {
+	cands, err := s.repo.RecomputeCandidates(ctx)
+	if err != nil {
+		return RecomputeResult{}, err
+	}
+	cfg := s.athleteConfig(ctx) // the singleton thresholds apply to every candidate
+	res := RecomputeResult{BySource: map[string]int{"power": 0, "pace": 0, "hr": 0, "none": 0}}
+	for _, w := range cands {
+		res.Examined++
+		newTSS, newSource := deriveTSS(w.Sport, w.StartedAt, w.EndedAt, w.DistanceM, w.AvgHR, w.IntensityFactor, cfg)
+		if float64PtrEqual(w.TSS, newTSS) && stringPtrEqual(w.TSSSource, newSource) {
+			continue
+		}
+		if err := s.repo.SetTSS(ctx, w.ID, newTSS, newSource); err != nil {
+			return res, err
+		}
+		res.Updated++
+		if newSource != nil {
+			res.BySource[*newSource]++
+		} else {
+			res.BySource["none"]++
+		}
+	}
+	return res, nil
+}
+
+func float64PtrEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func stringPtrEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // ListWindow returns workouts whose started_at falls within [from, to]. When
@@ -529,6 +587,10 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 	if err := validateSets(in.Sets); err != nil {
 		return nil, err
 	}
+	// intensity_factor is derived first (power TSS consumes it), then TSS +
+	// provenance. Both snapshot the thresholds in effect at write time.
+	intensityFactor := s.deriveIntensityFactor(ctx, Sport(in.Sport), in.NormalizedPowerW, in.IntensityFactor)
+	tss, tssSource := s.resolveTSS(ctx, in, Status(status), intensityFactor)
 	return &Workout{
 		ExternalID:       in.ExternalID,
 		Source:           Source(in.Source),
@@ -539,7 +601,8 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 		EndedAt:          in.EndedAt,
 		KcalBurned:       in.KcalBurned,
 		AvgHR:            in.AvgHR,
-		TSS:              in.TSS,
+		TSS:              tss,
+		TSSSource:        tssSource,
 		RPE:              in.RPE,
 		GIDistressScore:  in.GIDistressScore,
 		TrainingFocus:    tf,
@@ -552,7 +615,7 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 		ElevationGainM:   in.ElevationGainM,
 		ElevationLossM:   in.ElevationLossM,
 		NormalizedPowerW: in.NormalizedPowerW,
-		IntensityFactor:  s.deriveIntensityFactor(ctx, Sport(in.Sport), in.NormalizedPowerW, in.IntensityFactor),
+		IntensityFactor:  intensityFactor,
 		AvgCadence:       in.AvgCadence,
 		AvgStrideM:       in.AvgStrideM,
 		MaxHR:            in.MaxHR,
@@ -593,6 +656,111 @@ func (s *Service) deriveIntensityFactor(ctx context.Context, sport Sport, np *in
 	}
 	v := numfmt.Round2(float64(*np) / float64(*cfg.FtpWatts))
 	return &v
+}
+
+// resolveTSS returns the TSS value and its provenance to store. A caller-supplied
+// tss always wins (source 'garmin' when the workout is garmin-sourced, else
+// 'manual') — this covers planned targets too. Otherwise, only for a completed
+// workout, it derives per the fixed precedence (deriveTSS). No caller tss on a
+// planned/other-status workout leaves both NULL.
+func (s *Service) resolveTSS(ctx context.Context, in CreateInput, status Status, intensityFactor *float64) (*float64, *string) {
+	if in.TSS != nil {
+		src := tssSourceManual
+		if Source(in.Source) == SourceGarmin {
+			src = tssSourceGarmin
+		}
+		return in.TSS, &src
+	}
+	if status != StatusCompleted {
+		return nil, nil
+	}
+	return deriveTSS(Sport(in.Sport), in.StartedAt, in.EndedAt, in.DistanceM, in.AvgHR, intensityFactor, s.athleteConfig(ctx))
+}
+
+// tss_source provenance values (server-managed).
+const (
+	tssSourceGarmin = "garmin"
+	tssSourceManual = "manual"
+	tssSourcePower  = "power"
+	tssSourcePace   = "pace"
+	tssSourceHR     = "hr"
+)
+
+// deriveTSS computes a TrainingStress Score for a completed workout by the fixed
+// precedence power > pace > hr > none (each failed gate falls through). It fails
+// open: an unwired/empty athlete-config disables threshold methods and yields
+// (nil, nil) with no error. A method whose computed IF exceeds 2.5 is skipped
+// (implausible input) rather than stored.
+func deriveTSS(sport Sport, startedAt, endedAt time.Time, distanceM *float64, avgHR *int, intensityFactor *float64, cfg *athleteconfig.AthleteConfig) (*float64, *string) {
+	durHr := endedAt.Sub(startedAt).Hours()
+	if durHr <= 0 {
+		return nil, nil
+	}
+
+	// 1. Power (bike): TSS = duration_hr × IF² × 100, IF from the write's effective
+	//    intensity_factor (caller-supplied or FTP-derived above).
+	if sport == SportBike && intensityFactor != nil && *intensityFactor > 0 {
+		return tssFrom(durHr, *intensityFactor, false, tssSourcePower)
+	}
+
+	// 2. Pace: rTSS (run, square) / sTSS (swim, cubic) from threshold pace / CSS.
+	if cfg != nil && (sport == SportRun || sport == SportSwim) && distanceM != nil && *distanceM > 0 {
+		durS := durHr * 3600
+		if sport == SportRun && cfg.ThresholdPaceSecPerKm != nil && *cfg.ThresholdPaceSecPerKm > 0 {
+			paceSecPerKm := durS / (*distanceM / 1000)
+			if paceSecPerKm > 0 {
+				return tssFrom(durHr, *cfg.ThresholdPaceSecPerKm/paceSecPerKm, false, tssSourcePace)
+			}
+		}
+		if sport == SportSwim && cfg.ThresholdSwimPaceSecPer100m != nil && *cfg.ThresholdSwimPaceSecPer100m > 0 {
+			paceSecPer100m := durS / (*distanceM / 100)
+			if paceSecPer100m > 0 {
+				return tssFrom(durHr, *cfg.ThresholdSwimPaceSecPer100m/paceSecPer100m, true, tssSourcePace)
+			}
+		}
+	}
+
+	// 3. HR (any sport): IF = avg_hr / LTHR (lactate_threshold_hr preferred).
+	if cfg != nil && avgHR != nil && *avgHR > 0 {
+		lthr := cfg.LactateThresholdHR
+		if lthr == nil {
+			lthr = cfg.ThresholdHR
+		}
+		if lthr != nil && *lthr > 0 {
+			return tssFrom(durHr, float64(*avgHR)/float64(*lthr), false, tssSourceHR)
+		}
+	}
+
+	return nil, nil
+}
+
+// tssFrom computes duration_hr × IF^exp × 100 (exp = 3 when cubic, else 2),
+// stored at 2dp. A computed IF > 2.5 is implausible (stale threshold, corrupt
+// distance, mis-tagged sport) and skips the derivation entirely (nil, nil).
+func tssFrom(durHr, intensityFactor float64, cubic bool, source string) (*float64, *string) {
+	if intensityFactor > 2.5 {
+		return nil, nil
+	}
+	factor := intensityFactor * intensityFactor
+	if cubic {
+		factor *= intensityFactor
+	}
+	v := numfmt.Round2(durHr * factor * 100)
+	src := source
+	return &v, &src
+}
+
+// athleteConfig fetches the athlete-config singleton, returning nil when the repo
+// is unwired or the read fails (fail-open — derivation never errors a write).
+func (s *Service) athleteConfig(ctx context.Context) *athleteconfig.AthleteConfig {
+	if s.athleteConfigRepo == nil {
+		return nil
+	}
+	cfg, err := s.athleteConfigRepo.Get(ctx)
+	if err != nil {
+		return nil
+	}
+	return cfg
 }
 
 // validateSplits checks each split has a non-negative index and non-negative

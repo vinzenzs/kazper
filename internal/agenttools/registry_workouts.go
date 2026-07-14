@@ -114,6 +114,10 @@ type UnfulfillWorkoutArgs struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args"`
 }
 
+// RecomputeWorkoutTSSArgs has no inputs — the recompute spans all recomputable
+// completed workouts.
+type RecomputeWorkoutTSSArgs struct{}
+
 func workoutsSpecs() []Spec {
 	return []Spec{
 		{
@@ -410,6 +414,19 @@ func workoutsSpecs() []Spec {
 					q.Set("plan_id", *a.PlanID)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/adherence", Query: q}, nil
+			},
+		},
+		{
+			Name: "recompute_workout_tss",
+			Description: "Recompute derived Training Stress Score across completed workouts against the CURRENT " +
+				"athlete-config thresholds (FTP, threshold pace/CSS, LTHR). Fills previously-missing TSS on runs/" +
+				"swims/HR-only sessions and refreshes rows computed against old thresholds; measured values " +
+				"(tss_source garmin/manual) are never touched. Run once after configuring thresholds, or after " +
+				"changing FTP/paces. Returns {examined, updated, by_source:{power,pace,hr,none}}.",
+			SchemaType: RecomputeWorkoutTSSArgs{},
+			Tier:       TierWriteAuto,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				return HTTPCall{Method: "POST", Path: "/workouts/recompute-tss"}, nil
 			},
 		},
 	}
