@@ -53,6 +53,7 @@ type createRequest struct {
 	RaceType *string      `json:"race_type,omitempty"`
 	Location *string      `json:"location,omitempty"`
 	Notes    *string      `json:"notes,omitempty"`
+	Priority *string      `json:"priority,omitempty"`
 	Legs     []legRequest `json:"legs,omitempty"`
 }
 
@@ -65,7 +66,7 @@ type createRequest struct {
 // @Param        Idempotency-Key  header  string         false  "Optional client-supplied idempotency key"
 // @Param        body             body    createRequest  true   "Race + legs"
 // @Success      201  {object}  Race
-// @Failure      400  {object}  map[string]string  "race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid"
+// @Failure      400  {object}  map[string]string  "race_name_required | race_date_invalid | notes_too_long | race_priority_invalid | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid"
 // @Security     BearerAuth
 // @Router       /races [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -80,6 +81,7 @@ func (h *Handlers) create(c *gin.Context) {
 		RaceType: req.RaceType,
 		Location: req.Location,
 		Notes:    req.Notes,
+		Priority: req.Priority,
 		Legs:     toLegInputs(req.Legs),
 	}
 	race, err := h.svc.Create(c.Request.Context(), in)
@@ -94,12 +96,22 @@ func (h *Handlers) create(c *gin.Context) {
 // @Summary      List races
 // @Tags         races
 // @Produce      json
+// @Param        priority  query  string  false  "Filter to races with this A/B/C priority"
 // @Success      200  {object}  map[string]interface{}  "{ races: [...] }"
+// @Failure      400  {object}  map[string]string  "race_priority_invalid"
 // @Security     BearerAuth
 // @Router       /races [get]
 func (h *Handlers) list(c *gin.Context) {
-	out, err := h.svc.List(c.Request.Context())
+	var priority *string
+	if p, ok := c.GetQuery("priority"); ok {
+		priority = &p
+	}
+	out, err := h.svc.List(c.Request.Context(), priority)
 	if err != nil {
+		if errors.Is(err, ErrPriorityInvalid) {
+			respondError(c, http.StatusBadRequest, "race_priority_invalid")
+			return
+		}
 		respondError(c, http.StatusInternalServerError, "list_failed")
 		return
 	}
@@ -138,19 +150,20 @@ type patchRequest struct {
 	RaceType *string       `json:"race_type,omitempty"`
 	Location *string       `json:"location,omitempty"`
 	Notes    *string       `json:"notes,omitempty"`
+	Priority *string       `json:"priority,omitempty"`
 	Legs     *[]legRequest `json:"legs,omitempty"`
 }
 
 // patch godoc
 // @Summary      Update a race (and optionally replace its legs)
-// @Description  Updates the supplied scalar fields. If a `legs` array is present, it REPLACES all existing legs wholesale (an empty array clears them); omit `legs` to leave them unchanged.
+// @Description  Updates the supplied scalar fields. If a `legs` array is present, it REPLACES all existing legs wholesale (an empty array clears them); omit `legs` to leave them unchanged. `priority` is tri-state: `"A"|"B"|"C"` sets it, `""` clears it to null, and omitting the key leaves it unchanged.
 // @Tags         races
 // @Accept       json
 // @Produce      json
 // @Param        id    path  string        true  "Race UUID"
 // @Param        body  body  patchRequest  true  "Fields to update"
 // @Success      200  {object}  Race
-// @Failure      400  {object}  map[string]string  "race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid"
+// @Failure      400  {object}  map[string]string  "race_name_required | race_date_invalid | notes_too_long | race_priority_invalid | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid"
 // @Failure      404  {object}  map[string]string  "race_not_found"
 // @Security     BearerAuth
 // @Router       /races/{id} [patch]
@@ -171,6 +184,15 @@ func (h *Handlers) patch(c *gin.Context) {
 		RaceType: req.RaceType,
 		Location: req.Location,
 		Notes:    req.Notes,
+	}
+	// Tri-state priority: empty string clears, a value sets, absence leaves
+	// unchanged (the workouts training_focus handler pattern).
+	if req.Priority != nil {
+		if *req.Priority == "" {
+			in.ClearPriority = true
+		} else {
+			in.Priority = req.Priority
+		}
 	}
 	if req.Legs != nil {
 		legs := toLegInputs(*req.Legs)
@@ -294,6 +316,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "race_date_invalid")
 	case errors.Is(err, ErrNotesTooLong):
 		respondError(c, http.StatusBadRequest, "notes_too_long")
+	case errors.Is(err, ErrPriorityInvalid):
+		respondError(c, http.StatusBadRequest, "race_priority_invalid")
 	case errors.Is(err, ErrLegOrdinalDuplicate):
 		respondError(c, http.StatusBadRequest, "leg_ordinal_duplicate")
 	case errors.Is(err, ErrLegDisciplineInvalid):

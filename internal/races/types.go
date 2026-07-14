@@ -32,6 +32,27 @@ func (d Discipline) valid() bool {
 	}
 }
 
+// Priority is the TrainingPeaks-style A/B/C race triage: A = full taper + peak,
+// B = mini-taper, C = train through. Nullable on a race — an absent priority
+// means "not yet triaged". Advisory metadata for the coach agent; never coupled
+// to the macrocycle A-race anchor.
+type Priority string
+
+const (
+	PriorityA Priority = "A"
+	PriorityB Priority = "B"
+	PriorityC Priority = "C"
+)
+
+func (p Priority) valid() bool {
+	switch p {
+	case PriorityA, PriorityB, PriorityC:
+		return true
+	default:
+		return false
+	}
+}
+
 // Race mirrors a races row plus its ordered legs.
 type Race struct {
 	ID        uuid.UUID  `json:"id"`
@@ -40,6 +61,7 @@ type Race struct {
 	RaceType  *string    `json:"race_type,omitempty"`
 	Location  *string    `json:"location,omitempty"`
 	Notes     *string    `json:"notes,omitempty"`
+	Priority  *Priority  `json:"priority,omitempty"`
 	Legs      []*RaceLeg `json:"legs"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`

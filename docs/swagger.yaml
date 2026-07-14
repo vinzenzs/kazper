@@ -2232,6 +2232,16 @@ definitions:
       sodium_mg_total:
         type: number
     type: object
+  races.Priority:
+    enum:
+    - A
+    - B
+    - C
+    type: string
+    x-enum-varnames:
+    - PriorityA
+    - PriorityB
+    - PriorityC
   races.Race:
     properties:
       created_at:
@@ -2248,6 +2258,8 @@ definitions:
         type: string
       notes:
         type: string
+      priority:
+        $ref: '#/definitions/races.Priority'
       race_date:
         description: YYYY-MM-DD
         type: string
@@ -2283,6 +2295,8 @@ definitions:
         type: string
       notes:
         type: string
+      priority:
+        type: string
       race_date:
         type: string
       race_type:
@@ -2312,6 +2326,8 @@ definitions:
       name:
         type: string
       notes:
+        type: string
+      priority:
         type: string
       race_date:
         type: string
@@ -8216,6 +8232,11 @@ paths:
       - race-prep
   /races:
     get:
+      parameters:
+      - description: Filter to races with this A/B/C priority
+        in: query
+        name: priority
+        type: string
       produces:
       - application/json
       responses:
@@ -8223,6 +8244,12 @@ paths:
           description: '{ races: [...] }'
           schema:
             additionalProperties: true
+            type: object
+        "400":
+          description: race_priority_invalid
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -8256,8 +8283,9 @@ paths:
           schema:
             $ref: '#/definitions/races.Race'
         "400":
-          description: race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate
-            | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid
+          description: race_name_required | race_date_invalid | notes_too_long | race_priority_invalid
+            | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid
+            | leg_distance_m_invalid
           schema:
             additionalProperties:
               type: string
@@ -8317,9 +8345,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Updates the supplied scalar fields. If a `legs` array is present,
+      description: 'Updates the supplied scalar fields. If a `legs` array is present,
         it REPLACES all existing legs wholesale (an empty array clears them); omit
-        `legs` to leave them unchanged.
+        `legs` to leave them unchanged. `priority` is tri-state: `"A"|"B"|"C"` sets
+        it, `""` clears it to null, and omitting the key leaves it unchanged.'
       parameters:
       - description: Race UUID
         in: path
@@ -8340,8 +8369,9 @@ paths:
           schema:
             $ref: '#/definitions/races.Race'
         "400":
-          description: race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate
-            | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid
+          description: race_name_required | race_date_invalid | notes_too_long | race_priority_invalid
+            | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid
+            | leg_distance_m_invalid
           schema:
             additionalProperties:
               type: string

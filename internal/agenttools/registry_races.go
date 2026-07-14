@@ -33,6 +33,7 @@ type CreateRaceArgs struct {
 	RaceType       *string      `json:"race_type,omitempty" jsonschema:"optional free annotation: sprint|olympic|70.3|ironman|…"`
 	Location       *string      `json:"location,omitempty" jsonschema:"optional location"`
 	Notes          *string      `json:"notes,omitempty" jsonschema:"optional free-text notes"`
+	Priority       *string      `json:"priority,omitempty" jsonschema:"optional A|B|C race priority (A = full taper + peak, B = mini-taper, C = train through); omit for untriaged"`
 	Legs           []RaceLegArg `json:"legs,omitempty" jsonschema:"ordered legs of the race"`
 	IdempotencyKey string       `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted a stable key is derived from the other args"`
 }
@@ -42,7 +43,9 @@ type GetRaceArgs struct {
 	ID string `json:"id" jsonschema:"race UUID"`
 }
 
-type ListRacesArgs struct{}
+type ListRacesArgs struct {
+	Priority *string `json:"priority,omitempty" jsonschema:"optional filter: only races with this A|B|C priority"`
+}
 
 type DeleteRaceArgs struct {
 	ID             string `json:"id" jsonschema:"race UUID"`
@@ -58,6 +61,7 @@ type UpdateRaceArgs struct {
 	RaceType       *string       `json:"race_type,omitempty" jsonschema:"new race type annotation"`
 	Location       *string       `json:"location,omitempty" jsonschema:"new location"`
 	Notes          *string       `json:"notes,omitempty" jsonschema:"new notes"`
+	Priority       *string       `json:"priority,omitempty" jsonschema:"A|B|C sets the race priority; empty string \"\" clears it to untriaged; omit to leave unchanged"`
 	Legs           *[]RaceLegArg `json:"legs,omitempty" jsonschema:"if present, REPLACES all legs (empty array clears them); omit to leave unchanged"`
 	IdempotencyKey string        `json:"idempotency_key,omitempty" jsonschema:"optional retry key"`
 }
@@ -91,8 +95,9 @@ func racesSpecs() []Spec {
 					RaceType *string      `json:"race_type,omitempty"`
 					Location *string      `json:"location,omitempty"`
 					Notes    *string      `json:"notes,omitempty"`
+					Priority *string      `json:"priority,omitempty"`
 					Legs     []RaceLegArg `json:"legs,omitempty"`
-				}{a.Name, a.RaceDate, a.RaceType, a.Location, a.Notes, a.Legs})
+				}{a.Name, a.RaceDate, a.RaceType, a.Location, a.Notes, a.Priority, a.Legs})
 				if err != nil {
 					return HTTPCall{}, err
 				}
@@ -100,12 +105,21 @@ func racesSpecs() []Spec {
 			},
 		},
 		{
-			Name:        "list_races",
-			Description: "List all stored races with their legs, ordered by race date. Read-only.",
-			SchemaType:  ListRacesArgs{},
-			Tier:        TierRead,
+			Name: "list_races",
+			Description: "List stored races with their legs, ordered by race date. Pass `priority` (A|B|C) to " +
+				"return only races with that triage priority — e.g. 'what are my A-races'. Read-only.",
+			SchemaType: ListRacesArgs{},
+			Tier:       TierRead,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
-				return HTTPCall{Method: "GET", Path: "/races"}, nil
+				var a ListRacesArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				if a.Priority != nil {
+					q.Set("priority", *a.Priority)
+				}
+				return HTTPCall{Method: "GET", Path: "/races", Query: q}, nil
 			},
 		},
 		{
@@ -145,8 +159,9 @@ func racesSpecs() []Spec {
 					RaceType *string       `json:"race_type,omitempty"`
 					Location *string       `json:"location,omitempty"`
 					Notes    *string       `json:"notes,omitempty"`
+					Priority *string       `json:"priority,omitempty"`
 					Legs     *[]RaceLegArg `json:"legs,omitempty"`
-				}{a.Name, a.RaceDate, a.RaceType, a.Location, a.Notes, a.Legs})
+				}{a.Name, a.RaceDate, a.RaceType, a.Location, a.Notes, a.Priority, a.Legs})
 				if err != nil {
 					return HTTPCall{}, err
 				}

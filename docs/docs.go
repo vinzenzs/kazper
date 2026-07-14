@@ -6682,12 +6682,29 @@ const docTemplate = `{
                     "races"
                 ],
                 "summary": "List races",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter to races with this A/B/C priority",
+                        "name": "priority",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "{ races: [...] }",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "race_priority_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -6734,7 +6751,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid",
+                        "description": "race_name_required | race_date_invalid | notes_too_long | race_priority_invalid | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -6826,7 +6843,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates the supplied scalar fields. If a ` + "`" + `legs` + "`" + ` array is present, it REPLACES all existing legs wholesale (an empty array clears them); omit ` + "`" + `legs` + "`" + ` to leave them unchanged.",
+                "description": "Updates the supplied scalar fields. If a ` + "`" + `legs` + "`" + ` array is present, it REPLACES all existing legs wholesale (an empty array clears them); omit ` + "`" + `legs` + "`" + ` to leave them unchanged. ` + "`" + `priority` + "`" + ` is tri-state: ` + "`" + `\"A\"|\"B\"|\"C\"` + "`" + ` sets it, ` + "`" + `\"\"` + "`" + ` clears it to null, and omitting the key leaves it unchanged.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6863,7 +6880,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "race_name_required | race_date_invalid | notes_too_long | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid",
+                        "description": "race_name_required | race_date_invalid | notes_too_long | race_priority_invalid | leg_ordinal_duplicate | leg_discipline_invalid | leg_expected_duration_min_invalid | leg_distance_m_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -13067,6 +13084,19 @@ const docTemplate = `{
                 }
             }
         },
+        "races.Priority": {
+            "type": "string",
+            "enum": [
+                "A",
+                "B",
+                "C"
+            ],
+            "x-enum-varnames": [
+                "PriorityA",
+                "PriorityB",
+                "PriorityC"
+            ]
+        },
         "races.Race": {
             "type": "object",
             "properties": {
@@ -13090,6 +13120,9 @@ const docTemplate = `{
                 },
                 "notes": {
                     "type": "string"
+                },
+                "priority": {
+                    "$ref": "#/definitions/races.Priority"
                 },
                 "race_date": {
                     "description": "YYYY-MM-DD",
@@ -13144,6 +13177,9 @@ const docTemplate = `{
                 "notes": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "race_date": {
                     "type": "string"
                 },
@@ -13188,6 +13224,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "notes": {
+                    "type": "string"
+                },
+                "priority": {
                     "type": "string"
                 },
                 "race_date": {

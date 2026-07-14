@@ -23,6 +23,7 @@ var (
 	ErrLegDurationInvalid   = errors.New("leg_expected_duration_min_invalid")
 	ErrLegDistanceInvalid   = errors.New("leg_distance_m_invalid")
 	ErrNotesTooLong         = errors.New("notes_too_long")
+	ErrPriorityInvalid      = errors.New("race_priority_invalid")
 
 	ErrBodyWeightRequired = errors.New("body_weight_kg_required")
 	ErrBodyWeightRange    = errors.New("body_weight_kg_out_of_range")
@@ -64,6 +65,7 @@ type CreateInput struct {
 	RaceType *string
 	Location *string
 	Notes    *string
+	Priority *string
 	Legs     []LegInput
 }
 
@@ -73,6 +75,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Race, error) {
 		return nil, err
 	}
 	if err := validateNotes(in.Notes); err != nil {
+		return nil, err
+	}
+	if err := validatePriority(in.Priority); err != nil {
 		return nil, err
 	}
 	date, err := parseRaceDate(in.RaceDate)
@@ -88,6 +93,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Race, error) {
 		RaceType: in.RaceType,
 		Location: in.Location,
 		Notes:    in.Notes,
+		Priority: priorityEnumPtr(in.Priority),
 	}
 	err = store.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		r := NewRepo(tx)
@@ -107,9 +113,13 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Race, error) {
 	return s.repo.GetRace(ctx, id)
 }
 
-// List returns all races with legs.
-func (s *Service) List(ctx context.Context) ([]*Race, error) {
-	return s.repo.ListRaces(ctx)
+// List returns races with legs, optionally filtered to a single priority. A
+// non-nil, invalid priority is rejected before touching the DB.
+func (s *Service) List(ctx context.Context, priority *string) ([]*Race, error) {
+	if err := validatePriority(priority); err != nil {
+		return nil, err
+	}
+	return s.repo.ListRaces(ctx, priority)
 }
 
 // UpdateInput is the editable subset on PATCH /races/{id}. Nil scalar pointers
@@ -120,7 +130,12 @@ type UpdateInput struct {
 	RaceType *string
 	Location *string
 	Notes    *string
-	Legs     *[]LegInput
+	// Priority is tri-state: a non-nil value sets it; ClearPriority writes NULL;
+	// neither leaves it unchanged. The handler converts the empty-string sentinel
+	// into ClearPriority.
+	Priority      *string
+	ClearPriority bool
+	Legs          *[]LegInput
 }
 
 // Update validates and applies a partial update, optionally replacing legs.
@@ -132,6 +147,9 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Ra
 		return nil, ErrNameRequired
 	}
 	if err := validateNotes(in.Notes); err != nil {
+		return nil, err
+	}
+	if err := validatePriority(in.Priority); err != nil {
 		return nil, err
 	}
 	var datePtr *time.Time
@@ -151,11 +169,13 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Ra
 	err := store.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		r := NewRepo(tx)
 		if err := r.UpdateRace(ctx, id, UpdateRaceParams{
-			Name:     trimPtr(in.Name),
-			RaceDate: datePtr,
-			RaceType: in.RaceType,
-			Location: in.Location,
-			Notes:    in.Notes,
+			Name:          trimPtr(in.Name),
+			RaceDate:      datePtr,
+			RaceType:      in.RaceType,
+			Location:      in.Location,
+			Notes:         in.Notes,
+			Priority:      in.Priority,
+			ClearPriority: in.ClearPriority,
 		}); err != nil {
 			return err
 		}
@@ -207,6 +227,25 @@ func validateNotes(notes *string) error {
 		return ErrNotesTooLong
 	}
 	return nil
+}
+
+// validatePriority rejects a non-nil priority outside the closed A|B|C set. A
+// nil pointer (absent / clear-handled-elsewhere) is valid.
+func validatePriority(p *string) error {
+	if p != nil && !Priority(*p).valid() {
+		return ErrPriorityInvalid
+	}
+	return nil
+}
+
+// priorityEnumPtr converts a validated *string into the typed *Priority stored
+// on Race (nil passthrough).
+func priorityEnumPtr(p *string) *Priority {
+	if p == nil {
+		return nil
+	}
+	v := Priority(*p)
+	return &v
 }
 
 func parseRaceDate(s string) (time.Time, error) {

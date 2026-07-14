@@ -24,7 +24,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const raceCols = `id, name, race_date, race_type, location, notes, created_at, updated_at`
+const raceCols = `id, name, race_date, race_type, location, notes, priority, created_at, updated_at`
 const legCols = `id, ordinal, discipline, distance_m, expected_duration_min, intensity`
 
 // InsertRace inserts the race row (legs are inserted separately, in the same tx).
@@ -35,10 +35,10 @@ func (r *Repo) InsertRace(ctx context.Context, race *Race, raceDate time.Time) e
 	}
 	now := time.Now().UTC()
 	const q = `
-        INSERT INTO races (id, name, race_date, race_type, location, notes, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`
+        INSERT INTO races (id, name, race_date, race_type, location, notes, priority, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`
 	if _, err := r.q.Exec(ctx, q,
-		race.ID, race.Name, raceDate, race.RaceType, race.Location, race.Notes, now,
+		race.ID, race.Name, raceDate, race.RaceType, race.Location, race.Notes, priorityArg(race.Priority), now,
 	); err != nil {
 		return fmt.Errorf("insert race: %w", err)
 	}
@@ -80,9 +80,16 @@ func (r *Repo) GetRace(ctx context.Context, id uuid.UUID) (*Race, error) {
 	return race, nil
 }
 
-// ListRaces returns all races (each with its legs) ordered by race_date ASC.
-func (r *Repo) ListRaces(ctx context.Context) ([]*Race, error) {
-	rows, err := r.q.Query(ctx, `SELECT `+raceCols+` FROM races ORDER BY race_date ASC, created_at ASC`)
+// ListRaces returns races (each with its legs) ordered by race_date ASC. A
+// non-nil priority filters to races with that stored priority; nil returns all.
+func (r *Repo) ListRaces(ctx context.Context, priority *string) ([]*Race, error) {
+	var rows pgx.Rows
+	var err error
+	if priority != nil {
+		rows, err = r.q.Query(ctx, `SELECT `+raceCols+` FROM races WHERE priority = $1 ORDER BY race_date ASC, created_at ASC`, *priority)
+	} else {
+		rows, err = r.q.Query(ctx, `SELECT `+raceCols+` FROM races ORDER BY race_date ASC, created_at ASC`)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list races: %w", err)
 	}
@@ -136,6 +143,10 @@ type UpdateRaceParams struct {
 	RaceType *string
 	Location *string
 	Notes    *string
+	// Priority is tri-state: a non-nil value sets it, ClearPriority writes NULL,
+	// and neither (nil + false) leaves the column unchanged.
+	Priority      *string
+	ClearPriority bool
 }
 
 // UpdateRace updates the scalar fields. ErrNotFound if no row matches.
@@ -147,6 +158,7 @@ func (r *Repo) UpdateRace(ctx context.Context, id uuid.UUID, p UpdateRaceParams)
             race_type = CASE WHEN $4::boolean THEN $5 ELSE race_type END,
             location  = CASE WHEN $6::boolean THEN $7 ELSE location END,
             notes     = CASE WHEN $8::boolean THEN $9 ELSE notes END,
+            priority  = CASE WHEN $10::boolean THEN $11 ELSE priority END,
             updated_at = now()
         WHERE id = $1`
 	tag, err := r.q.Exec(ctx, q, id,
@@ -154,6 +166,7 @@ func (r *Repo) UpdateRace(ctx context.Context, id uuid.UUID, p UpdateRaceParams)
 		p.RaceType != nil, p.RaceType,
 		p.Location != nil, p.Location,
 		p.Notes != nil, p.Notes,
+		p.Priority != nil || p.ClearPriority, p.Priority,
 	)
 	if err != nil {
 		return fmt.Errorf("update race: %w", err)
@@ -187,14 +200,29 @@ func (r *Repo) DeleteRace(ctx context.Context, id uuid.UUID) error {
 func scanRace(s interface{ Scan(...any) error }) (*Race, error) {
 	var race Race
 	var raceDate time.Time
-	err := s.Scan(&race.ID, &race.Name, &raceDate, &race.RaceType, &race.Location, &race.Notes, &race.CreatedAt, &race.UpdatedAt)
+	var priority *string
+	err := s.Scan(&race.ID, &race.Name, &raceDate, &race.RaceType, &race.Location, &race.Notes, &priority, &race.CreatedAt, &race.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("scan race: %w", err)
 	}
+	if priority != nil {
+		p := Priority(*priority)
+		race.Priority = &p
+	}
 	race.RaceDate = raceDate.Format(dateLayout)
 	race.Legs = []*RaceLeg{}
 	return &race, nil
+}
+
+// priorityArg converts the typed nullable enum pointer into the *string the
+// driver binds as TEXT (nil → SQL NULL), keeping the typed field on Race.
+func priorityArg(p *Priority) *string {
+	if p == nil {
+		return nil
+	}
+	s := string(*p)
+	return &s
 }
