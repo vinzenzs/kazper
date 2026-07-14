@@ -28,6 +28,18 @@ func estimatedDurationSec(segments []Segment) *int {
 	return &total
 }
 
+// segmentEstimatedDurationSec derives one SPORT segment's time: the sum of its
+// time-bound step durations, or nil when any step is not time-bounded — the same
+// rule the template-level total applies per segment. Transitions carry their
+// explicit Duration and get no estimate.
+func segmentEstimatedDurationSec(seg Segment) *int {
+	if seg.IsTransition() || !allStepsTimed(seg.Steps) {
+		return nil
+	}
+	total := workouttemplates.SumTimedDurationSec(seg.Steps)
+	return &total
+}
+
 // allStepsTimed reports whether every leaf step (recursing into repeat groups)
 // is bounded by a positive time duration.
 func allStepsTimed(steps []workouttemplates.Step) bool {

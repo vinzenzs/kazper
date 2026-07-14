@@ -68,6 +68,9 @@ func (s *Service) List(ctx context.Context) ([]*Template, error) {
 func stampDuration(t *Template) *Template {
 	if t != nil {
 		t.EstimatedDurationSec = estimatedDurationSec(t.Segments)
+		for i := range t.Segments {
+			t.Segments[i].EstimatedDurationSec = segmentEstimatedDurationSec(t.Segments[i])
+		}
 	}
 	return t
 }

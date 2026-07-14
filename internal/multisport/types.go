@@ -40,9 +40,13 @@ type Template struct {
 // model. A transition segment has Sport == SportTransition, a single Duration,
 // and no steps.
 type Segment struct {
-	Sport    string                     `json:"sport"`
-	Steps    []workouttemplates.Step    `json:"steps,omitempty"`
-	Duration *workouttemplates.Duration `json:"duration,omitempty"`
+	Sport string                  `json:"sport"`
+	Steps []workouttemplates.Step `json:"steps,omitempty"`
+	// EstimatedDurationSec is derived on read for SPORT segments (the sum of the
+	// segment's time-bound step durations, null when not fully time-bounded);
+	// transitions carry their explicit Duration instead. Never persisted.
+	EstimatedDurationSec *int                       `json:"estimated_duration_sec,omitempty"`
+	Duration             *workouttemplates.Duration `json:"duration,omitempty"`
 }
 
 // IsTransition reports whether the segment is a T1/T2 transition.

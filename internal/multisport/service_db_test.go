@@ -63,3 +63,54 @@ func TestService_OmitsEstimatedDuration_WhenNotTimeBounded(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got.EstimatedDurationSec)
 }
+
+func TestService_DerivesPerSegmentEstimatedDuration(t *testing.T) {
+	svc := newSvc(t)
+	ctx := context.Background()
+	tmpl := &multisport.Template{Name: "tri", Segments: []multisport.Segment{
+		timeSeg(wt.SportSwim, 2100), // 35 min
+		{Sport: multisport.SportTransition, Duration: &wt.Duration{Kind: wt.DurationTime, Seconds: i(120)}},
+		timeSeg(wt.SportBike, 7800), // 2:10
+		{Sport: multisport.SportTransition, Duration: &wt.Duration{Kind: wt.DurationTime, Seconds: i(90)}},
+		timeSeg(wt.SportRun, 3300), // 55 min
+	}}
+	created, err := svc.Create(ctx, tmpl)
+	require.NoError(t, err)
+
+	got, err := svc.Get(ctx, created.ID)
+	require.NoError(t, err)
+	// Each SPORT segment carries its own derived total; transitions do not.
+	require.Len(t, got.Segments, 5)
+	require.NotNil(t, got.Segments[0].EstimatedDurationSec)
+	assert.Equal(t, 2100, *got.Segments[0].EstimatedDurationSec)
+	assert.Nil(t, got.Segments[1].EstimatedDurationSec, "transition carries its explicit Duration, not an estimate")
+	require.NotNil(t, got.Segments[2].EstimatedDurationSec)
+	assert.Equal(t, 7800, *got.Segments[2].EstimatedDurationSec)
+	require.NotNil(t, got.Segments[4].EstimatedDurationSec)
+	assert.Equal(t, 3300, *got.Segments[4].EstimatedDurationSec)
+	// Per-segment sport sums + transition durations reconcile with the total.
+	require.NotNil(t, got.EstimatedDurationSec)
+	assert.Equal(t, 2100+120+7800+90+3300, *got.EstimatedDurationSec)
+}
+
+func TestService_PerSegmentNullIsolatedToUnboundedSegment(t *testing.T) {
+	svc := newSvc(t)
+	ctx := context.Background()
+	tmpl := &multisport.Template{Name: "mixed", Segments: []multisport.Segment{
+		// Swim is distance-bounded (null); bike is time-bounded (has an estimate).
+		{Sport: wt.SportSwim, Steps: []wt.Step{
+			{Type: wt.NodeStep, Intent: wt.IntentActive, Duration: &wt.Duration{Kind: wt.DurationDistance, Meters: i(750)}, Target: &wt.Target{Kind: wt.TargetSwimPace, LowSecPer100m: i(100), HighSecPer100m: i(110)}},
+		}},
+		timeSeg(wt.SportBike, 1200),
+	}}
+	created, err := svc.Create(ctx, tmpl)
+	require.NoError(t, err)
+	got, err := svc.Get(ctx, created.ID)
+	require.NoError(t, err)
+
+	assert.Nil(t, got.Segments[0].EstimatedDurationSec, "the unbounded swim segment is null")
+	require.NotNil(t, got.Segments[1].EstimatedDurationSec, "the time-bounded bike segment still has its estimate")
+	assert.Equal(t, 1200, *got.Segments[1].EstimatedDurationSec)
+	// Template-level total is null because one segment is unbounded.
+	assert.Nil(t, got.EstimatedDurationSec)
+}

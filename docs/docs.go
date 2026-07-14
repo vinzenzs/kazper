@@ -13268,6 +13268,10 @@ const docTemplate = `{
                 "duration": {
                     "$ref": "#/definitions/workouttemplates.Duration"
                 },
+                "estimated_duration_sec": {
+                    "description": "EstimatedDurationSec is derived on read for SPORT segments (the sum of the\nsegment's time-bound step durations, null when not fully time-bounded);\ntransitions carry their explicit Duration instead. Never persisted.",
+                    "type": "integer"
+                },
                 "sport": {
                     "type": "string"
                 },
