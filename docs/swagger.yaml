@@ -1938,6 +1938,87 @@ definitions:
       token:
         type: string
     type: object
+  racepacing.LegPacingPlan:
+    properties:
+      discipline:
+        type: string
+      estimated_tss:
+        type: number
+      expected_duration_min:
+        type: integer
+      intensity_factor:
+        type: number
+      missing_thresholds:
+        description: MissingThresholds names the unset athlete-config field(s) this
+          leg needed.
+        items:
+          type: string
+        type: array
+      ordinal:
+        type: integer
+      rationale:
+        type: string
+      source:
+        type: string
+      target_pace_high_sec_per_100m:
+        type: number
+      target_pace_high_sec_per_km:
+        type: number
+      target_pace_low_sec_per_100m:
+        description: Swim (pace) — seconds per 100 m.
+        type: number
+      target_pace_low_sec_per_km:
+        description: Run (pace) — seconds per km.
+        type: number
+      target_power_high_w:
+        type: integer
+      target_power_low_w:
+        description: Bike (power) — watts.
+        type: integer
+    type: object
+  racepacing.OverrideInput:
+    properties:
+      note:
+        type: string
+      target_pace_high_sec_per_100m:
+        type: number
+      target_pace_high_sec_per_km:
+        type: number
+      target_pace_low_sec_per_100m:
+        type: number
+      target_pace_low_sec_per_km:
+        type: number
+      target_power_high_w:
+        type: integer
+      target_power_low_w:
+        type: integer
+    type: object
+  racepacing.PacingPlan:
+    properties:
+      estimated_tss_total:
+        type: number
+      legs:
+        items:
+          $ref: '#/definitions/racepacing.LegPacingPlan'
+        type: array
+      missing_thresholds:
+        description: |-
+          MissingThresholds is the union of the legs' missing thresholds (empty slice
+          serialized, never null, so a client can iterate unconditionally).
+        items:
+          type: string
+        type: array
+      race_date:
+        type: string
+      race_id:
+        type: string
+      race_name:
+        type: string
+      total_duration_min:
+        type: integer
+      tss_complete:
+        type: boolean
+    type: object
   raceprep.AppliedEntry:
     properties:
       carbs_g_min:
@@ -8323,6 +8404,122 @@ paths:
       security:
       - BearerAuth: []
       summary: Compute the per-leg fuelling plan for a race
+      tags:
+      - races
+  /races/{id}/pacing-plan:
+    get:
+      description: 'Computes, per race leg, a duration-banded intensity target from
+        the athlete-config thresholds: bike legs a power band as a % of `ftp_watts`,
+        run legs a pace band vs `threshold_pace_sec_per_km`, swim legs a pace band
+        per 100 m vs `threshold_swim_pace_sec_per_100m` (CSS). Each leg carries a
+        `source` (computed/override/none), per-leg `intensity_factor` and `estimated_tss`,
+        and a `rationale`; the race carries `estimated_tss_total`, `tss_complete`,
+        and a `missing_thresholds` union. Unset thresholds degrade the affected legs
+        only (still 200). Compute-on-read; nothing computed is persisted. Power lives
+        only in `_w` fields, run pace in `_sec_per_km`, swim pace in `_sec_per_100m`
+        (unit isolation).'
+      parameters:
+      - description: Race id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/racepacing.PacingPlan'
+        "404":
+          description: race_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Per-leg race pacing plan
+      tags:
+      - races
+  /races/{id}/pacing-plan/overrides/{ordinal}:
+    delete:
+      description: Removes the leg's stored override; the leg reverts to the computed
+        band on the next read.
+      parameters:
+      - description: Race id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Leg ordinal
+        in: path
+        name: ordinal
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: race_not_found | override_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Clear a race leg's manual pacing override
+      tags:
+      - races
+    put:
+      consumes:
+      - application/json
+      description: 'Full-replaces the pacing override for one leg, keyed by the leg''s
+        ordinal so it survives the wholesale leg-replacement of `PATCH /races/{id}`.
+        Exactly one unit family (both low and high) must be populated and must match
+        the leg''s discipline: `target_power_*_w` for a bike leg, `target_pace_*_sec_per_km`
+        for a run leg, `target_pace_*_sec_per_100m` for a swim leg. An `Idempotency-Key`
+        header is rejected (PUT is full-replace).'
+      parameters:
+      - description: Race id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Leg ordinal
+        in: path
+        name: ordinal
+        required: true
+        type: integer
+      - description: One unit-family band matching the leg's discipline
+        in: body
+        name: override
+        required: true
+        schema:
+          $ref: '#/definitions/racepacing.OverrideInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: override_discipline_mismatch | override_target_required | override_unit_conflict
+            | override_band_invalid | idempotency_unsupported_for_put
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: race_not_found | leg_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set a race leg's manual pacing override
       tags:
       - races
   /recovery-metrics:

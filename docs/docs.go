@@ -6948,6 +6948,162 @@ const docTemplate = `{
                 }
             }
         },
+        "/races/{id}/pacing-plan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Computes, per race leg, a duration-banded intensity target from the athlete-config thresholds: bike legs a power band as a % of ` + "`" + `ftp_watts` + "`" + `, run legs a pace band vs ` + "`" + `threshold_pace_sec_per_km` + "`" + `, swim legs a pace band per 100 m vs ` + "`" + `threshold_swim_pace_sec_per_100m` + "`" + ` (CSS). Each leg carries a ` + "`" + `source` + "`" + ` (computed/override/none), per-leg ` + "`" + `intensity_factor` + "`" + ` and ` + "`" + `estimated_tss` + "`" + `, and a ` + "`" + `rationale` + "`" + `; the race carries ` + "`" + `estimated_tss_total` + "`" + `, ` + "`" + `tss_complete` + "`" + `, and a ` + "`" + `missing_thresholds` + "`" + ` union. Unset thresholds degrade the affected legs only (still 200). Compute-on-read; nothing computed is persisted. Power lives only in ` + "`" + `_w` + "`" + ` fields, run pace in ` + "`" + `_sec_per_km` + "`" + `, swim pace in ` + "`" + `_sec_per_100m` + "`" + ` (unit isolation).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "races"
+                ],
+                "summary": "Per-leg race pacing plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Race id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/racepacing.PacingPlan"
+                        }
+                    },
+                    "404": {
+                        "description": "race_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/races/{id}/pacing-plan/overrides/{ordinal}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full-replaces the pacing override for one leg, keyed by the leg's ordinal so it survives the wholesale leg-replacement of ` + "`" + `PATCH /races/{id}` + "`" + `. Exactly one unit family (both low and high) must be populated and must match the leg's discipline: ` + "`" + `target_power_*_w` + "`" + ` for a bike leg, ` + "`" + `target_pace_*_sec_per_km` + "`" + ` for a run leg, ` + "`" + `target_pace_*_sec_per_100m` + "`" + ` for a swim leg. An ` + "`" + `Idempotency-Key` + "`" + ` header is rejected (PUT is full-replace).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "races"
+                ],
+                "summary": "Set a race leg's manual pacing override",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Race id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Leg ordinal",
+                        "name": "ordinal",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "One unit-family band matching the leg's discipline",
+                        "name": "override",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/racepacing.OverrideInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "override_discipline_mismatch | override_target_required | override_unit_conflict | override_band_invalid | idempotency_unsupported_for_put",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "race_not_found | leg_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the leg's stored override; the leg reverts to the computed band on the next read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "races"
+                ],
+                "summary": "Clear a race leg's manual pacing override",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Race id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Leg ordinal",
+                        "name": "ordinal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "race_not_found | override_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/recovery-metrics": {
             "get": {
                 "security": [
@@ -12471,6 +12627,122 @@ const docTemplate = `{
                 },
                 "token": {
                     "type": "string"
+                }
+            }
+        },
+        "racepacing.LegPacingPlan": {
+            "type": "object",
+            "properties": {
+                "discipline": {
+                    "type": "string"
+                },
+                "estimated_tss": {
+                    "type": "number"
+                },
+                "expected_duration_min": {
+                    "type": "integer"
+                },
+                "intensity_factor": {
+                    "type": "number"
+                },
+                "missing_thresholds": {
+                    "description": "MissingThresholds names the unset athlete-config field(s) this leg needed.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target_pace_high_sec_per_100m": {
+                    "type": "number"
+                },
+                "target_pace_high_sec_per_km": {
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_100m": {
+                    "description": "Swim (pace) — seconds per 100 m.",
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_km": {
+                    "description": "Run (pace) — seconds per km.",
+                    "type": "number"
+                },
+                "target_power_high_w": {
+                    "type": "integer"
+                },
+                "target_power_low_w": {
+                    "description": "Bike (power) — watts.",
+                    "type": "integer"
+                }
+            }
+        },
+        "racepacing.OverrideInput": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string"
+                },
+                "target_pace_high_sec_per_100m": {
+                    "type": "number"
+                },
+                "target_pace_high_sec_per_km": {
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_100m": {
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_km": {
+                    "type": "number"
+                },
+                "target_power_high_w": {
+                    "type": "integer"
+                },
+                "target_power_low_w": {
+                    "type": "integer"
+                }
+            }
+        },
+        "racepacing.PacingPlan": {
+            "type": "object",
+            "properties": {
+                "estimated_tss_total": {
+                    "type": "number"
+                },
+                "legs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/racepacing.LegPacingPlan"
+                    }
+                },
+                "missing_thresholds": {
+                    "description": "MissingThresholds is the union of the legs' missing thresholds (empty slice\nserialized, never null, so a client can iterate unconditionally).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "total_duration_min": {
+                    "type": "integer"
+                },
+                "tss_complete": {
+                    "type": "boolean"
                 }
             }
         },

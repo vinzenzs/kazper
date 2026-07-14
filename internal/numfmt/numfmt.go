@@ -29,6 +29,16 @@ func Round2(f float64) float64 {
 	return math.Round(f*100) / 100
 }
 
+// Round2Ptr is the nil-passthrough form for *float64 fields. Returns nil when p
+// is nil; otherwise returns a fresh pointer to the 2dp-rounded value.
+func Round2Ptr(p *float64) *float64 {
+	if p == nil {
+		return nil
+	}
+	r := Round2(*p)
+	return &r
+}
+
 // Round3 rounds f to three decimal places (e.g. a workout's efficiency_factor,
 // a NUMERIC(6,3) column).
 func Round3(f float64) float64 {

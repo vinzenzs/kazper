@@ -48,6 +48,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/products"
 	"github.com/vinzenzs/kazper/internal/publicfeed"
 	"github.com/vinzenzs/kazper/internal/push"
+	"github.com/vinzenzs/kazper/internal/racepacing"
 	"github.com/vinzenzs/kazper/internal/raceprep"
 	"github.com/vinzenzs/kazper/internal/races"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
@@ -376,6 +377,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	racePrepHandlers.SetLogger(logger)
 	racePrepHandlers.Register(api)
 	races.NewHandlers(racesSvc).Register(api)
+	// Per-leg race pacing plan (add-race-pacing-plan): compute-on-read power/pace
+	// bands from athlete-config thresholds over the race/leg tables, plus
+	// persisted per-leg overrides. Multi-repo aggregator (races + athlete-config).
+	racepacing.NewHandlers(
+		racepacing.NewService(racesRepo, athleteConfigRepo, racepacing.NewRepo(pool)),
+	).Register(api)
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)

@@ -510,6 +510,43 @@ curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
 The numbers are a deterministic baseline — the agent layers weather, gut
 tolerance and course profile on top.
 
+### Plan per-leg race pacing
+
+The pacing sibling of the fueling plan: per-leg intensity targets (bike watts,
+run/swim pace) banded by leg duration, computed from the athlete-config
+thresholds. Set the thresholds once, then read the plan for any race.
+
+```bash
+# 1. Store the thresholds the pacing math reads (FTP, run threshold pace, CSS).
+curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"ftp_watts":265,"threshold_pace_sec_per_km":270,"threshold_swim_pace_sec_per_100m":105}' \
+    http://localhost:8080/api/v1/athlete-config | jq '.ftp_watts, .threshold_pace_sec_per_km'
+
+# 2. Read the pacing plan for the race created above (reuses $RACE_ID).
+curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/api/v1/races/$RACE_ID/pacing-plan" | \
+    jq '.legs[] | {discipline, source, target_power_low_w, target_power_high_w, target_pace_low_sec_per_km, intensity_factor, estimated_tss}'
+# Bike 90 min → 75–83% FTP → ~199–220 W. A full-distance (≥180 min) bike would
+# band 68–78% instead. Unset a threshold and only that discipline's legs degrade
+# (a machine-readable missing_thresholds names the field).
+
+# 3. Pin a manual override (e.g. you hold 195–205 W, not the computed band),
+#    keyed by the bike leg's ordinal, then re-read.
+curl -s -X PUT -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"target_power_low_w":195,"target_power_high_w":205,"note":"holding 200"}' \
+    http://localhost:8080/api/v1/races/$RACE_ID/pacing-plan/overrides/2
+curl -s -H "Authorization: Bearer $MOBILE_API_TOKEN" \
+    "http://localhost:8080/api/v1/races/$RACE_ID/pacing-plan" | \
+    jq '.legs[] | select(.ordinal==2) | {source, target_power_low_w, target_power_high_w}'
+# → {"source":"override","target_power_low_w":195,"target_power_high_w":205}
+# DELETE the same path to revert the leg to the computed band.
+```
+
+Like fueling, the bands are a duration-generic baseline (not course/gradient
+modelling) — the agent adjusts for the course; overrides are the escape hatch.
+
 ### Set up a training phase with a goal template
 
 The phase + template pattern is the "I'm in build block 2, weeks 5-8 of my

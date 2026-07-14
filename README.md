@@ -1283,6 +1283,9 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `update_race`                 | `PATCH /races/{id}`                     | Update race fields; a `legs` array replaces all legs wholesale (omit to leave unchanged). |
 | `delete_race`                 | `DELETE /races/{id}`                    | Delete a race; its legs cascade. |
 | `plan_race_fueling`           | `GET /races/{id}/fueling-plan?body_weight_kg=…&sweat_rate_ml_per_hr=…` | Deterministic per-leg in-event fueling baseline: carbs/sodium/fluid per hour + total per leg. Carbs band by total duration × discipline; fluid/sodium from sweat rate (flagged default otherwise). A baseline to adjust for weather/gut/course. |
+| `plan_race_pacing`            | `GET /races/{id}/pacing-plan`          | Deterministic per-leg pacing baseline from athlete-config thresholds: bike power band (%FTP), run pace band (vs threshold pace), swim pace band per 100 m (vs CSS), each duration-banded, with per-leg IF/estimated TSS + a race TSS total. Unset thresholds degrade only the affected legs. A duration-generic baseline, not course-specific. |
+| `set_race_leg_pacing_override` | `PUT /races/{id}/pacing-plan/overrides/{ordinal}` | Pin a manual pacing band on one leg (one unit family matching the leg's discipline); survives leg edits. Write-confirm. |
+| `clear_race_leg_pacing_override` | `DELETE /races/{id}/pacing-plan/overrides/{ordinal}` | Remove a leg's pacing override; it reverts to the computed band. Write-confirm. |
 | `log_workout`                 | `POST /workouts`                       | Record a workout (manual entries, sweat-rate windows). Garmin sessions come via `garmin.py`, not this tool. |
 | `list_workouts`               | `GET /workouts?from=…&to=…`            | List workouts in a 92-day window.                             |
 | `get_workout`                 | `GET /workouts/{id}`                   | Fetch a workout by id.                                        |
