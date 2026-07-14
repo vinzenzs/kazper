@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import {
+  emptyDistribution,
   emptyPMC,
   emptyPowerCurve,
   emptyWorkoutStats,
+  populatedDistribution,
   populatedPMC,
   populatedPowerCurve,
   populatedWorkoutStats,
@@ -15,9 +17,11 @@ const h = vi.hoisted(() => ({
   statsCalls: [] as { from: string; to: string }[],
   curveCalls: [] as { from: string; to: string; sport: string }[],
   pmcCalls: [] as { from: string; to: string }[],
+  intensityCalls: [] as { from: string; to: string }[],
   statsData: undefined as unknown,
   curveData: undefined as unknown,
   pmcData: undefined as unknown,
+  intensityData: undefined as unknown,
 }));
 
 vi.mock("../../api/hooks", () => ({
@@ -33,6 +37,10 @@ vi.mock("../../api/hooks", () => ({
     h.pmcCalls.push({ from, to });
     return { data: h.pmcData, isLoading: false, isError: false, error: null };
   },
+  useIntensityDistribution: (from: string, to: string) => {
+    h.intensityCalls.push({ from, to });
+    return { data: h.intensityData, isLoading: false, isError: false, error: null };
+  },
 }));
 
 import { StatsView } from "../StatsView";
@@ -41,9 +49,11 @@ beforeEach(() => {
   h.statsCalls.length = 0;
   h.curveCalls.length = 0;
   h.pmcCalls.length = 0;
+  h.intensityCalls.length = 0;
   h.statsData = populatedWorkoutStats;
   h.curveData = populatedPowerCurve;
   h.pmcData = populatedPMC;
+  h.intensityData = populatedDistribution;
 });
 afterEach(() => cleanup());
 
@@ -110,5 +120,26 @@ describe("StatsView", () => {
     h.pmcData = emptyPMC;
     render(<StatsView />);
     expect(screen.getByText(/no training history to chart yet/i)).toBeInTheDocument();
+  });
+
+  it("renders the intensity distribution with classification badge and missing note", () => {
+    render(<StatsView />);
+    expect(screen.getByTestId("intensity-class")).toHaveTextContent("Polarized");
+    expect(screen.getByTestId("intensity-missing")).toHaveTextContent(/without HR zones/i);
+    // A window bar plus one weekly bar.
+    expect(screen.getAllByTestId("zone-share-bar").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("re-queries the intensity distribution when the period changes", () => {
+    render(<StatsView />);
+    const first = h.intensityCalls[h.intensityCalls.length - 1].from;
+    fireEvent.click(screen.getByRole("button", { name: "YTD" }));
+    expect(h.intensityCalls[h.intensityCalls.length - 1].from).not.toEqual(first);
+  });
+
+  it("shows an intensity empty-state when the window has no HR-zone data", () => {
+    h.intensityData = emptyDistribution;
+    render(<StatsView />);
+    expect(screen.getByText(/no hr-zone data in this period/i)).toBeInTheDocument();
   });
 });

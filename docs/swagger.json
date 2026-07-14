@@ -8897,6 +8897,60 @@
                 }
             }
         },
+        "/workouts/intensity-distribution": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregates completed workouts' stored HR-zone seconds (secs_in_zone_1..5) in `[from, to]` into per-zone shares: a window total with band collapse (low=Z1+Z2, moderate=Z3, high=Z4+Z5) and a classification label (polarized | pyramidal | threshold | mixed | null), a by-sport breakdown, and a Monday-start weekly trend (buckets only for weeks with a completed workout; edge weeks clipped to the window). Also returns a by_training_focus session-count axis + unclassified_focus_count. A completed workout with all-null zones is excluded from sums but counted (missing_zone_data_count, per-week + window). Zone shares are computed over total_zone_secs (zoned time, not elapsed); share_pct is omitted when a group has no zone time. Planned excluded. Range capped at 400 days. Read-only. Distinct from and never merged into the volume summary or any nutrition total.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Time-in-zone intensity distribution across a date range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/workoutstats.Distribution"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/power-curve": {
             "get": {
                 "security": [
@@ -14065,6 +14119,20 @@
                 }
             }
         },
+        "workoutstats.Bands": {
+            "type": "object",
+            "properties": {
+                "high_pct": {
+                    "type": "number"
+                },
+                "low_pct": {
+                    "type": "number"
+                },
+                "moderate_pct": {
+                    "type": "number"
+                }
+            }
+        },
         "workoutstats.Bucket": {
             "type": "object",
             "properties": {
@@ -14094,6 +14162,47 @@
                 }
             }
         },
+        "workoutstats.Distribution": {
+            "type": "object",
+            "properties": {
+                "by_sport": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/workoutstats.ZoneAggregate"
+                    }
+                },
+                "by_training_focus": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "missing_zone_data_count": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "total": {
+                    "$ref": "#/definitions/workoutstats.TotalAggregate"
+                },
+                "tz": {
+                    "type": "string"
+                },
+                "unclassified_focus_count": {
+                    "type": "integer"
+                },
+                "weekly": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workoutstats.WeekBucket"
+                    }
+                }
+            }
+        },
         "workoutstats.Summary": {
             "type": "object",
             "properties": {
@@ -14114,6 +14223,83 @@
                 },
                 "tz": {
                     "type": "string"
+                }
+            }
+        },
+        "workoutstats.TotalAggregate": {
+            "type": "object",
+            "properties": {
+                "bands": {
+                    "$ref": "#/definitions/workoutstats.Bands"
+                },
+                "classification": {
+                    "type": "string"
+                },
+                "total_zone_secs": {
+                    "type": "integer"
+                },
+                "workouts_counted": {
+                    "type": "integer"
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workoutstats.ZoneShare"
+                    }
+                }
+            }
+        },
+        "workoutstats.WeekBucket": {
+            "type": "object",
+            "properties": {
+                "missing_zone_data_count": {
+                    "type": "integer"
+                },
+                "total_zone_secs": {
+                    "type": "integer"
+                },
+                "week_start": {
+                    "type": "string"
+                },
+                "workouts_counted": {
+                    "type": "integer"
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workoutstats.ZoneShare"
+                    }
+                }
+            }
+        },
+        "workoutstats.ZoneAggregate": {
+            "type": "object",
+            "properties": {
+                "total_zone_secs": {
+                    "type": "integer"
+                },
+                "workouts_counted": {
+                    "type": "integer"
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workoutstats.ZoneShare"
+                    }
+                }
+            }
+        },
+        "workoutstats.ZoneShare": {
+            "type": "object",
+            "properties": {
+                "secs": {
+                    "type": "integer"
+                },
+                "share_pct": {
+                    "type": "number"
+                },
+                "zone": {
+                    "type": "integer"
                 }
             }
         },

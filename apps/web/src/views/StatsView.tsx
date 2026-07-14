@@ -5,7 +5,13 @@ import { StatsTotals } from "../components/StatsTotals";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PMCChart, PMCSummary } from "../components/PMCChart";
-import { usePMC, usePowerCurve, useWorkoutStats } from "../api/hooks";
+import { IntensityDistributionPanel } from "../components/IntensityDistribution";
+import {
+  useIntensityDistribution,
+  usePMC,
+  usePowerCurve,
+  useWorkoutStats,
+} from "../api/hooks";
 
 type PMCWindow = "90" | "180" | "365";
 
@@ -70,6 +76,7 @@ export function StatsView() {
   const curve = usePowerCurve(from, to, sport);
   const pmcRange = trailingDays(Number(pmcWindow) - 1);
   const pmc = usePMC(pmcRange.from, pmcRange.to);
+  const intensity = useIntensityDistribution(from, to);
 
   const total = data?.total;
   const isEmpty = !!total && total.count === 0;
@@ -77,6 +84,8 @@ export function StatsView() {
   // All-zero form/fitness ⇒ no training history to chart.
   const pmcEmpty =
     !!pmc.data && pmc.data.days.every((d) => d.ctl === 0 && d.atl === 0);
+  const intensityEmpty =
+    !!intensity.data && intensity.data.total.total_zone_secs === 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -123,6 +132,21 @@ export function StatsView() {
             </div>
           )}
         </div>
+      </Panel>
+
+      <Panel
+        title="Intensity distribution"
+        isLoading={intensity.isLoading}
+        isError={intensity.isError}
+        error={intensity.error}
+      >
+        {intensity.data && !intensityEmpty ? (
+          <IntensityDistributionPanel dist={intensity.data} />
+        ) : (
+          <div className="py-6 text-center text-sm text-slate-500">
+            No HR-zone data in this period
+          </div>
+        )}
       </Panel>
 
       <Panel

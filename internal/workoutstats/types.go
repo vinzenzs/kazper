@@ -41,3 +41,69 @@ type Params struct {
 	To   time.Time
 	Loc  *time.Location
 }
+
+// --- Intensity distribution (time-in-zone) — add-intensity-distribution ---
+
+// Classification band constants: the 80/20 rule with tolerance. thresholdBandPct
+// flags a big-Z3 middle; lowBaseBandPct is the aerobic-base floor for a
+// polarized/pyramidal call. Fixed, documented, auditable — the bands are the
+// data, the label is advisory.
+const (
+	thresholdBandPct = 20.0
+	lowBaseBandPct   = 75.0
+)
+
+// ZoneShare is one HR zone's summed seconds and its share of zoned time.
+// share_pct is omitted when the group accrued no zone time (a 0% share would be
+// a lie, not a measurement).
+type ZoneShare struct {
+	Zone     int      `json:"zone"`
+	Secs     int      `json:"secs"`
+	SharePct *float64 `json:"share_pct,omitempty"`
+}
+
+// Bands collapses the five zones into low (Z1+Z2), moderate (Z3), high (Z4+Z5).
+type Bands struct {
+	LowPct      float64 `json:"low_pct"`
+	ModeratePct float64 `json:"moderate_pct"`
+	HighPct     float64 `json:"high_pct"`
+}
+
+// ZoneAggregate is the per-sport / per-week zone breakdown: the count of
+// zone-carrying completed workouts, the total zoned seconds, and the five-entry
+// (zone 1→5) share array.
+type ZoneAggregate struct {
+	WorkoutsCounted int          `json:"workouts_counted"`
+	TotalZoneSecs   int          `json:"total_zone_secs"`
+	Zones           [5]ZoneShare `json:"zones"`
+}
+
+// TotalAggregate is the window-level distribution: a ZoneAggregate plus the
+// band collapse and the (nullable) classification label. bands is always present
+// so the label can be audited; classification is null when there is no zone time.
+type TotalAggregate struct {
+	ZoneAggregate
+	Bands          Bands   `json:"bands"`
+	Classification *string `json:"classification"`
+}
+
+// WeekBucket is one Monday-start week's zone aggregate. missing_zone_data_count
+// (omitempty) counts the week's completed workouts that carried no HR zones.
+type WeekBucket struct {
+	WeekStart string `json:"week_start"`
+	ZoneAggregate
+	MissingZoneDataCount int `json:"missing_zone_data_count,omitempty"`
+}
+
+// Distribution is the GET /workouts/intensity-distribution response.
+type Distribution struct {
+	From                   string                   `json:"from"`
+	To                     string                   `json:"to"`
+	TZ                     string                   `json:"tz"`
+	Total                  TotalAggregate           `json:"total"`
+	BySport                map[string]ZoneAggregate `json:"by_sport"`
+	Weekly                 []WeekBucket             `json:"weekly"`
+	ByTrainingFocus        map[string]int           `json:"by_training_focus"`
+	UnclassifiedFocusCount int                      `json:"unclassified_focus_count"`
+	MissingZoneDataCount   int                      `json:"missing_zone_data_count"`
+}

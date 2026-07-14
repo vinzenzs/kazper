@@ -243,6 +243,48 @@ export interface PMCSeries {
   missing_tss_workouts: number;
 }
 
+// Mirrors internal/workoutstats intensity distribution. Zone shares of zoned
+// time (not elapsed), with a band collapse + advisory classification label.
+export interface ZoneShare {
+  zone: number;
+  secs: number;
+  share_pct?: number;
+}
+
+export interface IntensityBands {
+  low_pct: number;
+  moderate_pct: number;
+  high_pct: number;
+}
+
+export interface ZoneAggregate {
+  workouts_counted: number;
+  total_zone_secs: number;
+  zones: ZoneShare[];
+}
+
+export interface IntensityTotal extends ZoneAggregate {
+  bands: IntensityBands;
+  classification: string | null;
+}
+
+export interface IntensityWeek extends ZoneAggregate {
+  week_start: string;
+  missing_zone_data_count?: number;
+}
+
+export interface IntensityDistribution {
+  from: string;
+  to: string;
+  tz: string;
+  total: IntensityTotal;
+  by_sport: Record<string, ZoneAggregate>;
+  weekly: IntensityWeek[];
+  by_training_focus: Record<string, number>;
+  unclassified_focus_count: number;
+  missing_zone_data_count: number;
+}
+
 // Mirrors a workout_splits row (internal/workouts/types.go). One per lap; all
 // metrics nullable. avg_speed_mps is stored sport-agnostically (pace derivable).
 export interface Split {

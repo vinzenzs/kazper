@@ -6,6 +6,7 @@ import type {
   FitnessMetricsList,
   GearList,
   PersonalRecordsList,
+  IntensityDistribution,
   RecoveryContext,
   TrainingContext,
   PMCSeries,
@@ -112,6 +113,17 @@ export function usePMC(from: string, to: string) {
   return useQuery({
     queryKey: ["pmc", from, to],
     queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+export function useIntensityDistribution(from: string, to: string) {
+  return useQuery({
+    queryKey: ["intensity-distribution", from, to],
+    queryFn: () =>
+      apiGet<IntensityDistribution>(
+        `/workouts/intensity-distribution?from=${from}&to=${to}`,
+      ),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

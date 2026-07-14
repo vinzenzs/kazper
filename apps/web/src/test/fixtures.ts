@@ -3,6 +3,7 @@ import type {
   FitnessSnapshot,
   Gear,
   PersonalRecord,
+  IntensityDistribution,
   RecoveryContext,
   TrainingContext,
   PMCSeries,
@@ -376,4 +377,65 @@ export const emptyPMC: PMCSeries = {
   ],
   ramp_alerts: [],
   missing_tss_workouts: 0,
+};
+
+const polarizedZones = [
+  { zone: 1, secs: 3000, share_pct: 50.0 },
+  { zone: 2, secs: 1800, share_pct: 30.0 },
+  { zone: 3, secs: 600, share_pct: 10.0 },
+  { zone: 4, secs: 400, share_pct: 6.7 },
+  { zone: 5, secs: 200, share_pct: 3.3 },
+];
+
+export const populatedDistribution: IntensityDistribution = {
+  from: "2026-06-22",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  total: {
+    workouts_counted: 2,
+    total_zone_secs: 6000,
+    zones: polarizedZones,
+    bands: { low_pct: 80.0, moderate_pct: 10.0, high_pct: 10.0 },
+    classification: "polarized",
+  },
+  by_sport: {
+    bike: { workouts_counted: 1, total_zone_secs: 4000, zones: polarizedZones },
+    run: { workouts_counted: 1, total_zone_secs: 2000, zones: polarizedZones },
+  },
+  weekly: [
+    {
+      week_start: "2026-06-22",
+      workouts_counted: 2,
+      total_zone_secs: 6000,
+      zones: polarizedZones,
+      missing_zone_data_count: 1,
+    },
+  ],
+  by_training_focus: { basic_endurance_1: 1 },
+  unclassified_focus_count: 1,
+  missing_zone_data_count: 1,
+};
+
+export const emptyDistribution: IntensityDistribution = {
+  from: "2026-06-22",
+  to: "2026-06-24",
+  tz: "Europe/Vienna",
+  total: {
+    workouts_counted: 0,
+    total_zone_secs: 0,
+    zones: [
+      { zone: 1, secs: 0 },
+      { zone: 2, secs: 0 },
+      { zone: 3, secs: 0 },
+      { zone: 4, secs: 0 },
+      { zone: 5, secs: 0 },
+    ],
+    bands: { low_pct: 0, moderate_pct: 0, high_pct: 0 },
+    classification: null,
+  },
+  by_sport: {},
+  weekly: [],
+  by_training_focus: {},
+  unclassified_focus_count: 0,
+  missing_zone_data_count: 0,
 };

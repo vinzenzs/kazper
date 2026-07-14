@@ -3220,6 +3220,15 @@ definitions:
       completed_id:
         type: string
     type: object
+  workoutstats.Bands:
+    properties:
+      high_pct:
+        type: number
+      low_pct:
+        type: number
+      moderate_pct:
+        type: number
+    type: object
   workoutstats.Bucket:
     properties:
       by_sport:
@@ -3239,6 +3248,33 @@ definitions:
       total_kcal:
         type: number
     type: object
+  workoutstats.Distribution:
+    properties:
+      by_sport:
+        additionalProperties:
+          $ref: '#/definitions/workoutstats.ZoneAggregate'
+        type: object
+      by_training_focus:
+        additionalProperties:
+          type: integer
+        type: object
+      from:
+        type: string
+      missing_zone_data_count:
+        type: integer
+      to:
+        type: string
+      total:
+        $ref: '#/definitions/workoutstats.TotalAggregate'
+      tz:
+        type: string
+      unclassified_focus_count:
+        type: integer
+      weekly:
+        items:
+          $ref: '#/definitions/workoutstats.WeekBucket'
+        type: array
+    type: object
   workoutstats.Summary:
     properties:
       days:
@@ -3253,6 +3289,56 @@ definitions:
         $ref: '#/definitions/workoutstats.Bucket'
       tz:
         type: string
+    type: object
+  workoutstats.TotalAggregate:
+    properties:
+      bands:
+        $ref: '#/definitions/workoutstats.Bands'
+      classification:
+        type: string
+      total_zone_secs:
+        type: integer
+      workouts_counted:
+        type: integer
+      zones:
+        items:
+          $ref: '#/definitions/workoutstats.ZoneShare'
+        type: array
+    type: object
+  workoutstats.WeekBucket:
+    properties:
+      missing_zone_data_count:
+        type: integer
+      total_zone_secs:
+        type: integer
+      week_start:
+        type: string
+      workouts_counted:
+        type: integer
+      zones:
+        items:
+          $ref: '#/definitions/workoutstats.ZoneShare'
+        type: array
+    type: object
+  workoutstats.ZoneAggregate:
+    properties:
+      total_zone_secs:
+        type: integer
+      workouts_counted:
+        type: integer
+      zones:
+        items:
+          $ref: '#/definitions/workoutstats.ZoneShare'
+        type: array
+    type: object
+  workoutstats.ZoneShare:
+    properties:
+      secs:
+        type: integer
+      share_pct:
+        type: number
+      zone:
+        type: integer
     type: object
   workouttemplates.Duration:
     properties:
@@ -9735,6 +9821,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Upsert a batch of workouts (max 100 per request)
+      tags:
+      - workouts
+  /workouts/intensity-distribution:
+    get:
+      description: 'Aggregates completed workouts'' stored HR-zone seconds (secs_in_zone_1..5)
+        in `[from, to]` into per-zone shares: a window total with band collapse (low=Z1+Z2,
+        moderate=Z3, high=Z4+Z5) and a classification label (polarized | pyramidal
+        | threshold | mixed | null), a by-sport breakdown, and a Monday-start weekly
+        trend (buckets only for weeks with a completed workout; edge weeks clipped
+        to the window). Also returns a by_training_focus session-count axis + unclassified_focus_count.
+        A completed workout with all-null zones is excluded from sums but counted
+        (missing_zone_data_count, per-week + window). Zone shares are computed over
+        total_zone_secs (zoned time, not elapsed); share_pct is omitted when a group
+        has no zone time. Planned excluded. Range capped at 400 days. Read-only. Distinct
+        from and never merged into the volume summary or any nutrition total.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workoutstats.Distribution'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Time-in-zone intensity distribution across a date range
       tags:
       - workouts
   /workouts/power-curve:

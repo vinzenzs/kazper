@@ -20,6 +20,13 @@ type TrainingTotalsArgs struct {
 	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
+// IntensityDistributionArgs is the input to intensity_distribution.
+type IntensityDistributionArgs struct {
+	From string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
 func workoutStatsSpecs() []Spec {
 	return []Spec{
 		{
@@ -45,6 +52,33 @@ func workoutStatsSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/summary", Query: q}, nil
+			},
+		},
+		{
+			Name: "intensity_distribution",
+			Description: "Time-in-zone intensity distribution over a date window: how COMPLETED workouts' HR-zone " +
+				"seconds split across zones 1–5, with band shares (low=Z1+Z2, moderate=Z3, high=Z4+Z5) and a " +
+				"classification label (polarized | pyramidal | threshold | mixed | null). Answers 'am I training " +
+				"polarized / is my base actually easy'. Returns a window total (with bands + label), a by-sport " +
+				"breakdown, a Monday-start weekly trend, and a by_training_focus session-count axis. Shares are of " +
+				"ZONED time (total_zone_secs), not elapsed time — for volume (distance/duration/kcal) use " +
+				"training_totals instead. A completed workout with no HR zones (many strength/pool sessions) is " +
+				"excluded from the shares but counted in missing_zone_data_count so the split isn't silently " +
+				"biased. Range up to 400 days. Read-only; no idempotency key is sent.",
+			SchemaType: IntensityDistributionArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a IntensityDistributionArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/intensity-distribution", Query: q}, nil
 			},
 		},
 	}
