@@ -4,7 +4,7 @@ import { Panel } from "../components/Panel";
 import { StatsTotals } from "../components/StatsTotals";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
-import { PMCChart, PMCSummary } from "../components/PMCChart";
+import { PMCChart, PMCSummary, TargetReadout } from "../components/PMCChart";
 import { CPModelChart } from "../components/CPModelChart";
 import { PowerProfilePanel } from "../components/PowerProfilePanel";
 import { IntensityDistributionPanel } from "../components/IntensityDistribution";
@@ -14,6 +14,7 @@ import {
   usePMC,
   usePowerCurve,
   usePowerProfile,
+  useTargetTrajectory,
   useWorkoutStats,
 } from "../api/hooks";
 
@@ -81,6 +82,11 @@ export function StatsView() {
   const curve = usePowerCurve(from, to, sport);
   const pmcRange = trailingDays(Number(pmcWindow) - 1);
   const pmc = usePMC(pmcRange.from, pmcRange.to);
+  const trajectory = useTargetTrajectory();
+  // Overlay only when the active macrocycle declares targets; a 404 / targets_missing
+  // / fetch error leaves the measured PMC panel exactly as it was.
+  const target = trajectory.data?.trajectory ?? undefined;
+  const targetSummary = trajectory.data?.summary;
   const cpRange = trailingDays(Number(cpWindow) - 1);
   const cp = useCPModel(cpRange.from, cpRange.to);
   const [ppWindow, setPpWindow] = useState<PMCWindow>("90");
@@ -134,7 +140,8 @@ export function StatsView() {
           {pmc.data && !pmcEmpty ? (
             <>
               <PMCSummary series={pmc.data} />
-              <PMCChart series={pmc.data} />
+              {targetSummary && <TargetReadout summary={targetSummary} />}
+              <PMCChart series={pmc.data} target={target} />
             </>
           ) : (
             <div className="py-6 text-center text-sm text-slate-500">

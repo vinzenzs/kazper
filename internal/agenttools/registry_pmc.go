@@ -18,6 +18,12 @@ type PMCSeriesArgs struct {
 	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
+// PMCTargetTrajectoryArgs is the input to pmc_target_trajectory.
+type PMCTargetTrajectoryArgs struct {
+	MacrocycleID string `json:"macrocycle_id,omitempty" jsonschema:"macrocycle UUID; if omitted, the active macrocycle (containing today) is used"`
+	TZ           string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
 func pmcSpecs() []Spec {
 	return []Spec{
 		{
@@ -46,6 +52,36 @@ func pmcSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/performance/pmc", Query: q}, nil
+			},
+		},
+		{
+			Name: "pmc_target_trajectory",
+			Description: "Planned-vs-actual CTL for a macrocycle: simulates the TARGET fitness (CTL) curve implied " +
+				"by the macrocycle's declared per-phase target_weekly_tss (daily = weekly/7 through the same " +
+				"42-day EWMA, seeded from the actual CTL on the macrocycle start date) and returns it beside the " +
+				"MEASURED CTL to date. Unlike pmc_series (measured load only), this answers 'am I building toward " +
+				"the A-race as planned, or behind the ramp'. Per day: target_ctl + target_declared (false for " +
+				"gaps / phases with no target, which decay), plus actual_ctl/delta up to today. The summary gives " +
+				"current_delta (positive = ahead of plan), delta_trend_14d, and the projected CTL at macrocycle " +
+				"end on plan (projected_end_ctl_planned) vs from the current trajectory (projected_end_ctl_current). " +
+				"macrocycle_id is optional — omitted uses the ACTIVE macrocycle (the one containing today). No " +
+				"active/unknown macrocycle returns 404 macrocycle_not_found; a macrocycle whose phases declare no " +
+				"target returns trajectory: null with reason 'targets_missing'. Read-only; no idempotency key.",
+			SchemaType: PMCTargetTrajectoryArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a PMCTargetTrajectoryArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				if a.MacrocycleID != "" {
+					q.Set("macrocycle_id", a.MacrocycleID)
+				}
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/performance/pmc/target-trajectory", Query: q}, nil
 			},
 		},
 	}

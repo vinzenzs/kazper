@@ -5,7 +5,7 @@ import { AxisBottom, AxisLeft } from "@visx/axis";
 import { GridRows } from "@visx/grid";
 import { curveMonotoneX } from "@visx/curve";
 
-import type { PMCDay, PMCSeries } from "../api/types";
+import type { PMCDay, PMCSeries, TargetDay, TargetSummary } from "../api/types";
 import { num } from "../lib/format";
 
 const W = 560;
@@ -16,7 +16,13 @@ const MARGIN = { top: 12, right: 44, bottom: 30, left: 44 };
 // the left load axis, TSB (form) as bars around a zero baseline on the right
 // axis (positive = fresh, negative = fatigued), and unsafe-ramp weeks shaded on
 // the CTL trace. Matches the LoadTrend / PowerCurve visx idiom.
-export function PMCChart({ series }: { series: PMCSeries }) {
+export function PMCChart({
+  series,
+  target,
+}: {
+  series: PMCSeries;
+  target?: TargetDay[];
+}) {
   const days = series.days;
   const innerW = W - MARGIN.left - MARGIN.right;
   const innerH = H - MARGIN.top - MARGIN.bottom;
@@ -27,7 +33,21 @@ export function PMCChart({ series }: { series: PMCSeries }) {
     range: [0, innerW],
   });
 
-  const loadMax = Math.max(1, ...days.map((d) => Math.max(d.ctl, d.atl)));
+  // Target CTL points that fall inside this PMC window, positioned on the same
+  // x-index as their measured day. Only the overlap is drawn.
+  const targetByDate = new Map((target ?? []).map((t) => [t.date, t]));
+  const targetPoints = days
+    .map((d, i) => {
+      const t = targetByDate.get(d.date);
+      return t ? { i, ctl: t.target_ctl, declared: t.target_declared } : null;
+    })
+    .filter((p): p is { i: number; ctl: number; declared: boolean } => p !== null);
+
+  const loadMax = Math.max(
+    1,
+    ...days.map((d) => Math.max(d.ctl, d.atl)),
+    ...targetPoints.map((p) => p.ctl),
+  );
   const loadScale = scaleLinear<number>({
     domain: [0, loadMax * 1.1],
     range: [innerH, 0],
@@ -105,6 +125,33 @@ export function PMCChart({ series }: { series: PMCSeries }) {
         <LinePath data={line((d) => d.atl)} x={(p) => p.x} y={(p) => p.y} stroke="#f472b6" strokeWidth={1.5} curve={curveMonotoneX} />
         <LinePath data={line((d) => d.ctl)} x={(p) => p.x} y={(p) => p.y} stroke="#38bdf8" strokeWidth={2} curve={curveMonotoneX} />
 
+        {/* Target CTL: a dashed amber line over the measured CTL; undeclared
+            (gap / no-target) days marked with muted dots. */}
+        {targetPoints.length > 1 && (
+          <LinePath
+            data={targetPoints.map((p) => ({ x: xScale(p.i), y: loadScale(p.ctl) }))}
+            x={(p) => p.x}
+            y={(p) => p.y}
+            stroke="#fbbf24"
+            strokeWidth={1.5}
+            strokeDasharray="4,3"
+            curve={curveMonotoneX}
+            data-testid="target-line"
+          />
+        )}
+        {targetPoints
+          .filter((p) => !p.declared)
+          .map((p) => (
+            <circle
+              key={p.i}
+              cx={xScale(p.i)}
+              cy={loadScale(p.ctl)}
+              r={1.6}
+              fill="#fbbf24"
+              opacity={0.35}
+            />
+          ))}
+
         <AxisLeft
           scale={loadScale}
           numTicks={4}
@@ -128,9 +175,40 @@ export function PMCChart({ series }: { series: PMCSeries }) {
         <text x={0} y={0}>
           <tspan fill="#38bdf8">— CTL</tspan> <tspan fill="#f472b6">— ATL</tspan>{" "}
           <tspan fill="#4ade80">▮ TSB</tspan>
+          {targetPoints.length > 1 && <tspan fill="#fbbf24"> ┄ Target</tspan>}
         </text>
       </g>
     </svg>
+  );
+}
+
+// A compact plan-vs-actual readout: how far off the declared CTL ramp today,
+// which way it's trending, and where the current trajectory lands at macrocycle
+// end vs the plan. `current_delta` > 0 means ahead of plan.
+export function TargetReadout({ summary }: { summary: TargetSummary }) {
+  const d = summary.current_delta;
+  const onPlan = Math.abs(d) < 1;
+  const label = onPlan
+    ? "On plan"
+    : d > 0
+      ? `+${num(d, 1)} ahead of plan`
+      : `${num(d, 1)} behind plan`;
+  const trend = summary.delta_trend_14d;
+  return (
+    <div className="flex flex-wrap items-baseline gap-3 text-sm" data-testid="target-readout">
+      <span
+        className={`font-semibold ${onPlan ? "text-emerald-300" : d > 0 ? "text-sky-300" : "text-amber-300"}`}
+      >
+        {label}
+      </span>
+      <span className="text-xs text-slate-400">
+        14-day trend {trend > 0 ? "+" : ""}
+        {num(trend, 1)}
+      </span>
+      <span className="text-xs text-slate-500">
+        end CTL {num(summary.projected_end_ctl_current, 0)} vs {num(summary.projected_end_ctl_planned, 0)} planned
+      </span>
+    </div>
   );
 }
 

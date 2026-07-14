@@ -10,6 +10,7 @@ import type {
   RecoveryContext,
   TrainingContext,
   PMCSeries,
+  TargetTrajectory,
   PowerCurve,
   CPModelResult,
   PowerProfileResult,
@@ -117,6 +118,19 @@ export function usePMC(from: string, to: string) {
     queryKey: ["pmc", from, to],
     queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The planned-vs-actual CTL trajectory for the active macrocycle. 404s
+// (no active macrocycle) surface as an error the PMC panel treats as "no
+// overlay"; retry is off so a persistent 404 doesn't spin.
+export function useTargetTrajectory() {
+  return useQuery({
+    queryKey: ["pmc-target-trajectory"],
+    queryFn: () =>
+      apiGet<TargetTrajectory>(`/performance/pmc/target-trajectory`),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
   });
 }
 

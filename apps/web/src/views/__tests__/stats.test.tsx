@@ -12,7 +12,9 @@ import {
   populatedPMC,
   populatedPowerCurve,
   populatedPowerProfile,
+  populatedTargetTrajectory,
   populatedWorkoutStats,
+  targetsMissingTrajectory,
 } from "../../test/fixtures";
 
 // Shared, hoisted mock state so the vi.mock factory can read it.
@@ -29,6 +31,8 @@ const h = vi.hoisted(() => ({
   cpData: undefined as unknown,
   ppData: undefined as unknown,
   ppError: false as boolean,
+  trajData: undefined as unknown,
+  trajError: false as boolean,
   intensityData: undefined as unknown,
 }));
 
@@ -58,6 +62,12 @@ vi.mock("../../api/hooks", () => ({
       error: null,
     };
   },
+  useTargetTrajectory: () => ({
+    data: h.trajError ? undefined : h.trajData,
+    isLoading: false,
+    isError: h.trajError,
+    error: null,
+  }),
   useIntensityDistribution: (from: string, to: string) => {
     h.intensityCalls.push({ from, to });
     return { data: h.intensityData, isLoading: false, isError: false, error: null };
@@ -79,6 +89,8 @@ beforeEach(() => {
   h.cpData = populatedCPModel;
   h.ppData = populatedPowerProfile;
   h.ppError = false;
+  h.trajData = populatedTargetTrajectory;
+  h.trajError = false;
   h.intensityData = populatedDistribution;
 });
 afterEach(() => cleanup());
@@ -148,6 +160,36 @@ describe("StatsView", () => {
     h.pmcData = emptyPMC;
     render(<StatsView />);
     expect(screen.getByText(/no training history to chart yet/i)).toBeInTheDocument();
+  });
+
+  it("overlays the target CTL trajectory with an on-plan readout", () => {
+    render(<StatsView />);
+    // Dashed target line + the behind-plan readout.
+    expect(screen.getByTestId("target-line")).toBeInTheDocument();
+    const readout = screen.getByTestId("target-readout");
+    expect(readout).toHaveTextContent(/behind plan/i);
+    expect(readout).toHaveTextContent("-3.1");
+  });
+
+  it("omits the target overlay when the trajectory is missing (targets_missing)", () => {
+    h.trajData = targetsMissingTrajectory; // trajectory: null, no summary
+    render(<StatsView />);
+    // The measured PMC chart still renders; no overlay or readout.
+    expect(
+      screen.getByRole("img", { name: /performance management chart/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("target-line")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-readout")).not.toBeInTheDocument();
+  });
+
+  it("omits the target overlay when there is no active macrocycle (fetch error)", () => {
+    h.trajError = true;
+    render(<StatsView />);
+    expect(
+      screen.getByRole("img", { name: /performance management chart/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("target-line")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-readout")).not.toBeInTheDocument();
   });
 
   it("renders the critical-power model readout and fitted curve", () => {

@@ -319,6 +319,34 @@ export interface PMCSeries {
   missing_tss_workouts: number;
 }
 
+// Mirrors internal/pmc target-trajectory. The target CTL curve implied by the
+// macrocycle's declared phase targets, beside measured CTL. `trajectory` is null
+// (with reason "targets_missing") when no phase declares a target.
+export interface TargetDay {
+  date: string;
+  target_ctl: number;
+  target_declared: boolean;
+  actual_ctl?: number;
+  delta?: number;
+}
+
+export interface TargetSummary {
+  current_delta: number;
+  delta_trend_14d: number;
+  projected_end_ctl_planned: number;
+  projected_end_ctl_current: number;
+}
+
+export interface TargetTrajectory {
+  macrocycle: { id: string; name: string; start_date: string; end_date: string };
+  tz: string;
+  seed_ctl: number;
+  trajectory: TargetDay[] | null;
+  reason?: "targets_missing";
+  summary?: TargetSummary;
+  missing_tss_workouts: number;
+}
+
 // Mirrors internal/workoutstats intensity distribution. Zone shares of zoned
 // time (not elapsed), with a band collapse + advisory classification label.
 export interface ZoneShare {

@@ -20,9 +20,27 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
+// fakeResolver is a settable pmc.MacroResolver for the target-trajectory tests.
+// Default: no active macrocycle (ErrMacrocycleNotFound).
+type fakeResolver struct {
+	macro *pmc.Macro
+	err   error
+}
+
+func (f *fakeResolver) Resolve(context.Context, *string, time.Time) (*pmc.Macro, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.macro == nil {
+		return nil, pmc.ErrMacrocycleNotFound
+	}
+	return f.macro, nil
+}
+
 type fixture struct {
-	r    *gin.Engine
-	repo *workouts.Repo
+	r        *gin.Engine
+	repo     *workouts.Repo
+	resolver *fakeResolver
 }
 
 func setup(t *testing.T) *fixture {
@@ -30,9 +48,10 @@ func setup(t *testing.T) *fixture {
 	pool := storetest.NewPool(t)
 	repo := workouts.NewRepo(pool)
 	svc := pmc.NewService(pmc.NewRepo(pool))
+	res := &fakeResolver{}
 	r := gin.New()
-	pmc.NewHandlers(svc, "UTC", slog.Default()).Register(r.Group("/"))
-	return &fixture{r: r, repo: repo}
+	pmc.NewHandlers(svc, res, "UTC", slog.Default()).Register(r.Group("/"))
+	return &fixture{r: r, repo: repo, resolver: res}
 }
 
 func fp(v float64) *float64 { return &v }

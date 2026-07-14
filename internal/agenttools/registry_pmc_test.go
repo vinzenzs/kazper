@@ -33,3 +33,25 @@ func TestBuild_PMCSeries_OmitsTZ(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, call.Query.Get("tz"))
 }
+
+// pmc_target_trajectory → GET /performance/pmc/target-trajectory; macrocycle_id
+// forwarded when set, omitted otherwise (server resolves the active macrocycle).
+func TestBuild_PMCTargetTrajectory(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["pmc_target_trajectory"]
+	require.True(t, ok, "pmc_target_trajectory must be registered")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"macrocycle_id":"abc-123","tz":"Europe/Berlin"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/performance/pmc/target-trajectory", call.Path)
+	assert.Equal(t, "abc-123", call.Query.Get("macrocycle_id"))
+	assert.Equal(t, "Europe/Berlin", call.Query.Get("tz"))
+	assert.Empty(t, call.Body)
+
+	// Omitted macrocycle_id is not forwarded (active-macrocycle default).
+	call2, err := spec.Build(json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.Empty(t, call2.Query.Get("macrocycle_id"))
+}

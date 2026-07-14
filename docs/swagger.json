@@ -5084,6 +5084,61 @@
                 }
             }
         },
+        "/performance/pmc/target-trajectory": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Simulates the target CTL curve implied by the macrocycle's declared phase `target_weekly_tss` (daily = weekly/7 through the same 42-day EWMA as the measured PMC, seeded from the actual CTL on the macrocycle start date) beside the measured CTL to date. Each day carries `target_ctl` + `target_declared` (false for gaps / null-target phases, which decay), plus `actual_ctl`/`delta` up to today. The summary reports `current_delta`, `delta_trend_14d`, and the projected CTL at macrocycle end on plan (`_planned`) vs from the current trajectory (`_current`). `macrocycle_id` is optional — omitted resolves the active macrocycle (containing today, latest start_date). No active/unknown macrocycle → `404 macrocycle_not_found`; a macrocycle whose phases declare no target → `200` with `trajectory: null` and `reason: \"targets_missing\"`. Compute-on-read; nothing persisted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "performance"
+                ],
+                "summary": "Planned-vs-actual CTL trajectory for a macrocycle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Macrocycle UUID; omitted resolves the active macrocycle",
+                        "name": "macrocycle_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pmc.TargetTrajectory"
+                        }
+                    },
+                    "400": {
+                        "description": "tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "macrocycle_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/personal-records": {
             "get": {
                 "security": [
@@ -12810,6 +12865,89 @@
                 },
                 "to": {
                     "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
+        "pmc.TargetDay": {
+            "type": "object",
+            "properties": {
+                "actual_ctl": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "delta": {
+                    "type": "number"
+                },
+                "target_ctl": {
+                    "type": "number"
+                },
+                "target_declared": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "pmc.TargetMacrocycle": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "pmc.TargetSummary": {
+            "type": "object",
+            "properties": {
+                "current_delta": {
+                    "type": "number"
+                },
+                "delta_trend_14d": {
+                    "type": "number"
+                },
+                "projected_end_ctl_current": {
+                    "type": "number"
+                },
+                "projected_end_ctl_planned": {
+                    "type": "number"
+                }
+            }
+        },
+        "pmc.TargetTrajectory": {
+            "type": "object",
+            "properties": {
+                "macrocycle": {
+                    "$ref": "#/definitions/pmc.TargetMacrocycle"
+                },
+                "missing_tss_workouts": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "seed_ctl": {
+                    "type": "number"
+                },
+                "summary": {
+                    "$ref": "#/definitions/pmc.TargetSummary"
+                },
+                "trajectory": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pmc.TargetDay"
+                    }
                 },
                 "tz": {
                     "type": "string"

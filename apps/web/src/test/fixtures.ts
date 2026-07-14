@@ -7,6 +7,7 @@ import type {
   RecoveryContext,
   TrainingContext,
   PMCSeries,
+  TargetTrajectory,
   PowerCurve,
   CPModelResult,
   PowerProfileResult,
@@ -405,6 +406,39 @@ export const populatedPMC: PMCSeries = {
     { week_start: "2026-06-22", ctl_start: 35.0, ctl_end: 45.3, ctl_delta: 10.3 },
   ],
   missing_tss_workouts: 1,
+};
+
+// Target trajectory overlapping the PMC window dates (so the overlay draws) plus
+// a couple of future days. The athlete is behind plan (negative current_delta).
+export const populatedTargetTrajectory: TargetTrajectory = {
+  macrocycle: { id: "m1", name: "Spring build", start_date: "2026-06-20", end_date: "2026-06-27" },
+  tz: "Europe/Vienna",
+  seed_ctl: 46.0,
+  trajectory: [
+    { date: "2026-06-22", target_ctl: 47.0, target_declared: true, actual_ctl: 44.1, delta: -2.9 },
+    { date: "2026-06-23", target_ctl: 47.5, target_declared: true, actual_ctl: 43.1, delta: -4.4 },
+    { date: "2026-06-24", target_ctl: 48.0, target_declared: false, actual_ctl: 44.9, delta: -3.1 },
+    { date: "2026-06-25", target_ctl: 48.4, target_declared: true, actual_ctl: 45.3, delta: -3.1 },
+    { date: "2026-06-26", target_ctl: 48.9, target_declared: true },
+    { date: "2026-06-27", target_ctl: 49.3, target_declared: true },
+  ],
+  summary: {
+    current_delta: -3.1,
+    delta_trend_14d: -1.2,
+    projected_end_ctl_planned: 49.3,
+    projected_end_ctl_current: 46.5,
+  },
+  missing_tss_workouts: 1,
+};
+
+// The targets-missing degradation: 200 with a null trajectory.
+export const targetsMissingTrajectory: TargetTrajectory = {
+  macrocycle: { id: "m1", name: "Spring build", start_date: "2026-06-20", end_date: "2026-06-27" },
+  tz: "Europe/Vienna",
+  seed_ctl: 46.0,
+  trajectory: null,
+  reason: "targets_missing",
+  missing_tss_workouts: 0,
 };
 
 export const emptyPMC: PMCSeries = {

@@ -398,7 +398,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	).Register(api)
 	// Performance Management Chart (add-performance-management): compute-on-read
 	// CTL/ATL/TSB over completed-workout TSS. Read-only; own read repo.
-	pmc.NewHandlers(pmc.NewService(pmc.NewRepo(pool)), cfg.DefaultUserTZ, logger).Register(api)
+	pmc.NewHandlers(pmc.NewService(pmc.NewRepo(pool)), macroResolver{repo: macrocycleRepo}, cfg.DefaultUserTZ, logger).Register(api)
 	wellness.NewHandlers(wellnessSvc).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
