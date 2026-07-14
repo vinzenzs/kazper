@@ -12,6 +12,7 @@ import type {
   PMCSeries,
   PowerCurve,
   CPModelResult,
+  PowerProfileResult,
   WPrimeBalanceResult,
   Workout,
   WorkoutStats,
@@ -125,6 +126,19 @@ export function useCPModel(from: string, to: string) {
     queryKey: ["cp-model", from, to],
     queryFn: () => apiGet<CPModelResult>(`/workouts/cp-model?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The Coggan power-profile ranking over the window. No weight_kg is sent — the
+// endpoint uses the latest stored body weight (or 400 weight_data_missing, which
+// surfaces as an error the panel degrades on); sex defaults to male server-side.
+export function usePowerProfile(from: string, to: string) {
+  return useQuery({
+    queryKey: ["power-profile", from, to],
+    queryFn: () =>
+      apiGet<PowerProfileResult>(`/workouts/power-profile?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
   });
 }
 

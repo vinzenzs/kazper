@@ -20,10 +20,23 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
+// fakeWeight is a settable WeightProvider — the power-profile tests toggle its
+// stored-weight fallback; the curve/cp-model tests ignore it.
+type fakeWeight struct {
+	kg    float64
+	found bool
+	err   error
+}
+
+func (f *fakeWeight) LatestWeightKg(context.Context) (float64, bool, error) {
+	return f.kg, f.found, f.err
+}
+
 type fixture struct {
-	r    *gin.Engine
-	repo *workouts.Repo
-	svc  *effortanalytics.Service
+	r      *gin.Engine
+	repo   *workouts.Repo
+	svc    *effortanalytics.Service
+	weight *fakeWeight
 }
 
 func setup(t *testing.T) *fixture {
@@ -31,9 +44,10 @@ func setup(t *testing.T) *fixture {
 	pool := storetest.NewPool(t)
 	wrepo := workouts.NewRepo(pool)
 	svc := effortanalytics.NewService(effortanalytics.NewRepo(pool))
+	fw := &fakeWeight{} // found=false by default (no stored weight)
 	r := gin.New()
-	effortanalytics.NewHandlers(svc, "UTC", slog.Default()).Register(r.Group("/"))
-	return &fixture{r: r, repo: wrepo, svc: svc}
+	effortanalytics.NewHandlers(svc, fw, "UTC", slog.Default()).Register(r.Group("/"))
+	return &fixture{r: r, repo: wrepo, svc: svc, weight: fw}
 }
 
 // seedWorkout inserts a completed bike workout and returns it.

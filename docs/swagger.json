@@ -9485,6 +9485,72 @@
                 }
             }
         },
+        "/workouts/power-profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ranks the athlete's windowed best power efforts at four benchmark durations — 5 s (neuromuscular), 1 min (anaerobic), 5 min (VO₂max), and the 20-min best as a functional-threshold proxy (no 0.95 haircut) — against the embedded Coggan power-profile tables. Each anchor carries `watts`, `w_per_kg`, the Coggan `category` band, an interpolated `percentile` (0–100, an **estimate** — the category is authoritative), and the contributing workout. `phenotype` (sprinter / time_trialist / climber / all_rounder) is null unless all four anchors are present. W/kg denominator: the `weight_kg` query param (\u003e 0), else the most-recent stored body weight, else `400 weight_data_missing`; the response echoes `weight_source`. `sex` selects the table (male default). **Advisory** — never reads or writes athlete-config. Power only. Compute-on-read; nothing persisted. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Power-profile ranking against the Coggan tables",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Body-weight override in kg (\u003e 0); falls back to the latest stored weight",
+                        "name": "weight_kg",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "male (default) | female — selects the Coggan table",
+                        "name": "sex",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.PowerProfileResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | weight_kg_invalid | sex_invalid | weight_data_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/recompute-tss": {
             "post": {
                 "security": [
@@ -11538,6 +11604,73 @@
                 "MetricPower",
                 "MetricSpeed"
             ]
+        },
+        "effortanalytics.PowerProfileAnchor": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "percentile": {
+                    "type": "number"
+                },
+                "w_per_kg": {
+                    "type": "number"
+                },
+                "watts": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.PowerProfileResult": {
+            "type": "object",
+            "properties": {
+                "anchors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.PowerProfileAnchor"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "missing_anchors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "phenotype": {
+                    "type": "string"
+                },
+                "sex": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                },
+                "weight_kg": {
+                    "type": "number"
+                },
+                "weight_source": {
+                    "type": "string"
+                }
+            }
         },
         "energy.Availability": {
             "type": "object",

@@ -1,8 +1,10 @@
 package effortanalytics
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,15 +16,24 @@ import (
 // windows are the point of a mean-maximal curve, so it clears a full year.
 const maxRangeDays = 400
 
+// WeightProvider resolves the most-recent stored body weight for the W/kg
+// denominator when the request omits an explicit weight_kg. A narrow interface
+// (the workoutcompliance injection pattern) so effort-analytics stays decoupled
+// from the bodyweight package; `found=false` means no entry has ever been logged.
+type WeightProvider interface {
+	LatestWeightKg(ctx context.Context) (kg float64, found bool, err error)
+}
+
 // Handlers wires the effort-analytics endpoints onto a Gin router group.
 type Handlers struct {
 	svc           *Service
+	weight        WeightProvider
 	defaultTZName string
 	logger        *slog.Logger
 }
 
-func NewHandlers(svc *Service, defaultTZ string, logger *slog.Logger) *Handlers {
-	return &Handlers{svc: svc, defaultTZName: defaultTZ, logger: logger}
+func NewHandlers(svc *Service, weight WeightProvider, defaultTZ string, logger *slog.Logger) *Handlers {
+	return &Handlers{svc: svc, weight: weight, defaultTZName: defaultTZ, logger: logger}
 }
 
 func (h *Handlers) Register(rg *gin.RouterGroup) {
@@ -32,6 +43,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	// effort-analytics keeps the read-side curve.
 	rg.GET("/workouts/power-curve", h.curve)
 	rg.GET("/workouts/cp-model", h.cpModel)
+	rg.GET("/workouts/power-profile", h.powerProfile)
 }
 
 // curve godoc
@@ -99,6 +111,90 @@ func (h *Handlers) cpModel(c *gin.Context) {
 	res.TZ = loc.String()
 	roundCPResult(res)
 	c.JSON(http.StatusOK, res)
+}
+
+// powerProfile godoc
+// @Summary      Power-profile ranking against the Coggan tables
+// @Description  Ranks the athlete's windowed best power efforts at four benchmark durations — 5 s (neuromuscular), 1 min (anaerobic), 5 min (VO₂max), and the 20-min best as a functional-threshold proxy (no 0.95 haircut) — against the embedded Coggan power-profile tables. Each anchor carries `watts`, `w_per_kg`, the Coggan `category` band, an interpolated `percentile` (0–100, an **estimate** — the category is authoritative), and the contributing workout. `phenotype` (sprinter / time_trialist / climber / all_rounder) is null unless all four anchors are present. W/kg denominator: the `weight_kg` query param (> 0), else the most-recent stored body weight, else `400 weight_data_missing`; the response echoes `weight_source`. `sex` selects the table (male default). **Advisory** — never reads or writes athlete-config. Power only. Compute-on-read; nothing persisted. Range capped at 400 days.
+// @Tags         workouts
+// @Produce      json
+// @Param        from       query  string  true   "Inclusive start date YYYY-MM-DD"
+// @Param        to         query  string  true   "Inclusive end date YYYY-MM-DD"
+// @Param        tz         query  string  false  "IANA timezone (defaults to DEFAULT_USER_TZ)"
+// @Param        weight_kg  query  number  false  "Body-weight override in kg (> 0); falls back to the latest stored weight"
+// @Param        sex        query  string  false  "male (default) | female — selects the Coggan table"
+// @Success      200  {object}  PowerProfileResult
+// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | weight_kg_invalid | sex_invalid | weight_data_missing"
+// @Security     BearerAuth
+// @Router       /workouts/power-profile [get]
+func (h *Handlers) powerProfile(c *gin.Context) {
+	from, to, loc, ok := h.parseWindow(c)
+	if !ok {
+		return
+	}
+	sex := c.Query("sex")
+	switch sex {
+	case "":
+		sex = sexMale
+	case sexMale, sexFemale:
+		// ok
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sex_invalid"})
+		return
+	}
+
+	weightKg, source, ok := h.resolveWeight(c)
+	if !ok {
+		return
+	}
+
+	res, err := h.svc.PowerProfileFor(c.Request.Context(), CurveParams{From: from, To: to, Loc: loc}, weightKg, sex)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "power_profile_failed"})
+		return
+	}
+	res.From = from.Format("2006-01-02")
+	res.To = to.Format("2006-01-02")
+	res.TZ = loc.String()
+	res.WeightSource = source
+	roundPowerProfile(res)
+	c.JSON(http.StatusOK, res)
+}
+
+// resolveWeight returns the W/kg denominator and its provenance: an explicit
+// weight_kg param (> 0) wins; otherwise the latest stored body weight; otherwise
+// 400 weight_data_missing. Writes the 400 and returns ok=false on any failure.
+func (h *Handlers) resolveWeight(c *gin.Context) (kg float64, source string, ok bool) {
+	if s := c.Query("weight_kg"); s != "" {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil || v <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "weight_kg_invalid"})
+			return 0, "", false
+		}
+		return v, WeightSourceParam, true
+	}
+	stored, found, err := h.weight.LatestWeightKg(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "power_profile_failed"})
+		return 0, "", false
+	}
+	if !found || stored <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "weight_data_missing"})
+		return 0, "", false
+	}
+	return stored, WeightSourceStored, true
+}
+
+// roundPowerProfile applies numfmt rounding at the response boundary: W/kg and
+// percentile to 1dp, watts to 1dp (already stored rounded). The weight echo is
+// rounded to 1dp so a stored 72.53 doesn't leak full precision.
+func roundPowerProfile(res *PowerProfileResult) {
+	res.WeightKg = numfmt.Round1(res.WeightKg)
+	for i := range res.Anchors {
+		res.Anchors[i].Watts = numfmt.Round1(res.Anchors[i].Watts)
+		res.Anchors[i].WPerKg = numfmt.Round1(res.Anchors[i].WPerKg)
+		res.Anchors[i].Percentile = numfmt.Round1(res.Anchors[i].Percentile)
+	}
 }
 
 // parseWindow parses the shared from/to/tz window contract, writing the 400 and

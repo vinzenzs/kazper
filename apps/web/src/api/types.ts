@@ -240,6 +240,33 @@ export interface CPModelResult {
   points: CPPoint[];
 }
 
+// Mirrors internal/effortanalytics power-profile ranking. Each anchor ranks a
+// benchmark duration's W/kg against the Coggan tables: `category` is the
+// authoritative band, `percentile` an interpolated estimate. `phenotype` is null
+// unless all four anchors are present. Advisory — no athlete-config coupling.
+export interface PowerProfileAnchor {
+  label: "neuromuscular" | "anaerobic" | "vo2max" | "threshold";
+  duration_s: number;
+  watts: number;
+  w_per_kg: number;
+  category: string;
+  percentile: number;
+  workout_id: string;
+  date: string;
+}
+
+export interface PowerProfileResult {
+  from: string;
+  to: string;
+  tz: string;
+  sex: "male" | "female";
+  weight_kg: number;
+  weight_source: "param" | "stored";
+  anchors: PowerProfileAnchor[];
+  missing_anchors: string[];
+  phenotype: "sprinter" | "time_trialist" | "climber" | "all_rounder" | null;
+}
+
 // Mirrors internal/activitystreams W′-balance. The anaerobic-battery story of a
 // ride, computed from its stored power stream + explicit CP/W′ params.
 // `min_w_prime_kj` can be negative / `max_depletion_pct` over 100 when the

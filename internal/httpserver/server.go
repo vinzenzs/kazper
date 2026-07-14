@@ -389,7 +389,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutstats.NewHandlers(workoutStatsSvc, cfg.DefaultUserTZ, logger).Register(api)
-	effortanalytics.NewHandlers(effortAnalyticsSvc, cfg.DefaultUserTZ, logger).Register(api)
+	effortanalytics.NewHandlers(effortAnalyticsSvc, latestBodyWeight{repo: bodyWeightRepo}, cfg.DefaultUserTZ, logger).Register(api)
 	// Raw activity streams (persist-activity-streams): stores the 1 Hz series,
 	// delegates the best-effort ladder to effort-analytics, and derives the
 	// workout's execution metrics (VI/EF/decoupling).

@@ -898,6 +898,50 @@ definitions:
     x-enum-varnames:
     - MetricPower
     - MetricSpeed
+  effortanalytics.PowerProfileAnchor:
+    properties:
+      category:
+        type: string
+      date:
+        type: string
+      duration_s:
+        type: integer
+      label:
+        type: string
+      percentile:
+        type: number
+      w_per_kg:
+        type: number
+      watts:
+        type: number
+      workout_id:
+        type: string
+    type: object
+  effortanalytics.PowerProfileResult:
+    properties:
+      anchors:
+        items:
+          $ref: '#/definitions/effortanalytics.PowerProfileAnchor'
+        type: array
+      from:
+        type: string
+      missing_anchors:
+        items:
+          type: string
+        type: array
+      phenotype:
+        type: string
+      sex:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+      weight_kg:
+        type: number
+      weight_source:
+        type: string
+    type: object
   energy.Availability:
     properties:
       composition:
@@ -10806,6 +10850,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Mean-maximal power/pace curve over a window
+      tags:
+      - workouts
+  /workouts/power-profile:
+    get:
+      description: 'Ranks the athlete''s windowed best power efforts at four benchmark
+        durations — 5 s (neuromuscular), 1 min (anaerobic), 5 min (VO₂max), and the
+        20-min best as a functional-threshold proxy (no 0.95 haircut) — against the
+        embedded Coggan power-profile tables. Each anchor carries `watts`, `w_per_kg`,
+        the Coggan `category` band, an interpolated `percentile` (0–100, an **estimate**
+        — the category is authoritative), and the contributing workout. `phenotype`
+        (sprinter / time_trialist / climber / all_rounder) is null unless all four
+        anchors are present. W/kg denominator: the `weight_kg` query param (> 0),
+        else the most-recent stored body weight, else `400 weight_data_missing`; the
+        response echoes `weight_source`. `sex` selects the table (male default). **Advisory**
+        — never reads or writes athlete-config. Power only. Compute-on-read; nothing
+        persisted. Range capped at 400 days.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      - description: Body-weight override in kg (> 0); falls back to the latest stored
+          weight
+        in: query
+        name: weight_kg
+        type: number
+      - description: male (default) | female — selects the Coggan table
+        in: query
+        name: sex
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/effortanalytics.PowerProfileResult'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid | weight_kg_invalid | sex_invalid | weight_data_missing
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Power-profile ranking against the Coggan tables
       tags:
       - workouts
   /workouts/recompute-tss:

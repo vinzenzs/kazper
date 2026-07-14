@@ -26,6 +26,13 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
+// noWeight satisfies effortanalytics.WeightProvider for the effort-analytics
+// handlers registered alongside the stream routes; these tests never hit the
+// power-profile endpoint, so it always reports no stored weight.
+type noWeight struct{}
+
+func (noWeight) LatestWeightKg(context.Context) (float64, bool, error) { return 0, false, nil }
+
 type fixture struct {
 	r    *gin.Engine
 	repo *workouts.Repo
@@ -40,7 +47,7 @@ func setup(t *testing.T) *fixture {
 	svc := activitystreams.NewService(activitystreams.NewRepo(pool), wrepo, effortSvc)
 	r := gin.New()
 	activitystreams.NewHandlers(svc).Register(r.Group("/"))
-	effortanalytics.NewHandlers(effortSvc, "UTC", slog.Default()).Register(r.Group("/"))
+	effortanalytics.NewHandlers(effortSvc, noWeight{}, "UTC", slog.Default()).Register(r.Group("/"))
 	return &fixture{r: r, repo: wrepo, pool: pool}
 }
 

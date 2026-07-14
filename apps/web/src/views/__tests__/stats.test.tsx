@@ -11,6 +11,7 @@ import {
   populatedDistribution,
   populatedPMC,
   populatedPowerCurve,
+  populatedPowerProfile,
   populatedWorkoutStats,
 } from "../../test/fixtures";
 
@@ -20,11 +21,14 @@ const h = vi.hoisted(() => ({
   curveCalls: [] as { from: string; to: string; sport: string }[],
   pmcCalls: [] as { from: string; to: string }[],
   cpCalls: [] as { from: string; to: string }[],
+  ppCalls: [] as { from: string; to: string }[],
   intensityCalls: [] as { from: string; to: string }[],
   statsData: undefined as unknown,
   curveData: undefined as unknown,
   pmcData: undefined as unknown,
   cpData: undefined as unknown,
+  ppData: undefined as unknown,
+  ppError: false as boolean,
   intensityData: undefined as unknown,
 }));
 
@@ -45,6 +49,15 @@ vi.mock("../../api/hooks", () => ({
     h.cpCalls.push({ from, to });
     return { data: h.cpData, isLoading: false, isError: false, error: null };
   },
+  usePowerProfile: (from: string, to: string) => {
+    h.ppCalls.push({ from, to });
+    return {
+      data: h.ppError ? undefined : h.ppData,
+      isLoading: false,
+      isError: h.ppError,
+      error: null,
+    };
+  },
   useIntensityDistribution: (from: string, to: string) => {
     h.intensityCalls.push({ from, to });
     return { data: h.intensityData, isLoading: false, isError: false, error: null };
@@ -58,11 +71,14 @@ beforeEach(() => {
   h.curveCalls.length = 0;
   h.pmcCalls.length = 0;
   h.cpCalls.length = 0;
+  h.ppCalls.length = 0;
   h.intensityCalls.length = 0;
   h.statsData = populatedWorkoutStats;
   h.curveData = populatedPowerCurve;
   h.pmcData = populatedPMC;
   h.cpData = populatedCPModel;
+  h.ppData = populatedPowerProfile;
+  h.ppError = false;
   h.intensityData = populatedDistribution;
 });
 afterEach(() => cleanup());
@@ -146,9 +162,10 @@ describe("StatsView", () => {
   it("re-queries the CP model when its window selector changes", () => {
     render(<StatsView />);
     const first = h.cpCalls[h.cpCalls.length - 1].from;
-    // The CP panel has its own 90/180/365 toggle (the last 365d button on the page).
+    // 90/180/365 toggles, in page order: PMC, CP, Power profile. The CP panel's
+    // is the second-to-last 365d button.
     const buttons = screen.getAllByRole("button", { name: "365d" });
-    fireEvent.click(buttons[buttons.length - 1]);
+    fireEvent.click(buttons[buttons.length - 2]);
     const wider = h.cpCalls[h.cpCalls.length - 1].from;
     expect(new Date(wider).getTime()).toBeLessThan(new Date(first).getTime());
   });
@@ -179,5 +196,42 @@ describe("StatsView", () => {
     h.intensityData = emptyDistribution;
     render(<StatsView />);
     expect(screen.getByText(/no hr-zone data in this period/i)).toBeInTheDocument();
+  });
+
+  it("renders the power-profile panel with anchors, categories and phenotype", () => {
+    render(<StatsView />);
+    expect(screen.getByText("Power profile (Coggan)")).toBeInTheDocument();
+    // Four ranked anchors present.
+    const anchors = screen.getByTestId("power-profile-anchors");
+    expect(anchors.children.length).toBe(4);
+    expect(screen.getByText("Neuromuscular (5 s)")).toBeInTheDocument();
+    expect(screen.getByText("Threshold (20 min)")).toBeInTheDocument();
+    // W/kg + a category badge.
+    expect(screen.getByText("16.3 W/kg")).toBeInTheDocument();
+    expect(screen.getByText("Very good")).toBeInTheDocument();
+    // Phenotype label.
+    expect(screen.getByText("Sprinter")).toBeInTheDocument();
+  });
+
+  it("degrades the power-profile panel when weight is missing (fetch error)", () => {
+    h.ppError = true;
+    render(<StatsView />);
+    expect(screen.getByText("Power profile (Coggan)")).toBeInTheDocument();
+    expect(screen.getByText(/add a body-weight entry/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("power-profile-anchors")).not.toBeInTheDocument();
+  });
+
+  it("omits the phenotype label when the profile is incomplete", () => {
+    h.ppData = {
+      ...populatedPowerProfile,
+      anchors: populatedPowerProfile.anchors.slice(0, 2),
+      missing_anchors: ["vo2max", "threshold"],
+      phenotype: null,
+    };
+    render(<StatsView />);
+    expect(screen.getByText(/phenotype needs all four anchors/i)).toBeInTheDocument();
+    expect(screen.queryByText("Sprinter")).not.toBeInTheDocument();
+    // Missing anchors are named.
+    expect(screen.getByText(/no effort for:/i)).toBeInTheDocument();
   });
 });

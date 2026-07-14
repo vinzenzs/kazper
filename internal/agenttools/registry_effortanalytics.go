@@ -3,6 +3,7 @@ package agenttools
 import (
 	"encoding/json"
 	"net/url"
+	"strconv"
 )
 
 // Mean-maximal power/pace curve read — the best average power (cycling) or speed
@@ -26,6 +27,16 @@ type CPModelArgs struct {
 	From string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
 	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
 	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
+// PowerProfileArgs is the input to power_profile. `weight_kg` overrides the W/kg
+// denominator; omitted, the endpoint uses the latest stored body weight.
+type PowerProfileArgs struct {
+	From     string  `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To       string  `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	WeightKg float64 `json:"weight_kg,omitempty" jsonschema:"body weight in kg for the W/kg denominator (> 0); if omitted, the latest stored body weight is used"`
+	Sex      string  `json:"sex,omitempty" jsonschema:"male (default) | female — selects the Coggan reference table"`
+	TZ       string  `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
 func effortAnalyticsSpecs() []Spec {
@@ -85,6 +96,40 @@ func effortAnalyticsSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/cp-model", Query: q}, nil
+			},
+		},
+		{
+			Name: "power_profile",
+			Description: "Rank the athlete's windowed best power efforts against the Coggan power-profile tables. " +
+				"For four benchmark durations — 5 s (neuromuscular), 1 min (anaerobic), 5 min (VO₂max), and the " +
+				"20-minute best as a functional-threshold proxy (no 0.95 haircut) — it reports W/kg, the Coggan " +
+				"CATEGORY band (untrained → world class) which is the authoritative output, and an interpolated " +
+				"`percentile` (an estimate). It also returns a rider `phenotype` (sprinter / time_trialist / " +
+				"climber / all_rounder), null unless all four anchors are present. The W/kg denominator is the " +
+				"`weight_kg` arg (> 0) or, if omitted, the latest stored body weight (else `weight_data_missing`); " +
+				"`weight_source` is echoed. `sex` selects the table (male default). Cycling power only. ADVISORY: " +
+				"does not read or change athlete-config. Read-only; no idempotency key. Typical call: the trailing " +
+				"90 days.",
+			SchemaType: PowerProfileArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a PowerProfileArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.WeightKg > 0 {
+					q.Set("weight_kg", strconv.FormatFloat(a.WeightKg, 'f', -1, 64))
+				}
+				if a.Sex != "" {
+					q.Set("sex", a.Sex)
+				}
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/power-profile", Query: q}, nil
 			},
 		},
 	}

@@ -9,6 +9,7 @@ import type {
   PMCSeries,
   PowerCurve,
   CPModelResult,
+  PowerProfileResult,
   Workout,
   WorkoutStats,
 } from "../api/types";
@@ -343,6 +344,23 @@ export const populatedCPModel: CPModelResult = {
     { duration_s: 1200, watts: 284.0, workout_id: "w3", date: "2026-06-01" },
     { duration_s: 1800, watts: 273.0, workout_id: "w4", date: "2026-06-10" },
   ],
+};
+
+export const populatedPowerProfile: PowerProfileResult = {
+  from: "2026-04-15",
+  to: "2026-07-14",
+  tz: "Europe/Vienna",
+  sex: "male",
+  weight_kg: 72.5,
+  weight_source: "stored",
+  anchors: [
+    { label: "neuromuscular", duration_s: 5, watts: 1180, w_per_kg: 16.3, category: "Good", percentile: 45.2, workout_id: "w1", date: "2026-05-02" },
+    { label: "anaerobic", duration_s: 60, watts: 610, w_per_kg: 8.4, category: "Very good", percentile: 57.1, workout_id: "w2", date: "2026-05-16" },
+    { label: "vo2max", duration_s: 300, watts: 340, w_per_kg: 4.7, category: "Untrained", percentile: 4.5, workout_id: "w3", date: "2026-06-01" },
+    { label: "threshold", duration_s: 1200, watts: 290, w_per_kg: 4.0, category: "Fair", percentile: 14.3, workout_id: "w4", date: "2026-06-10" },
+  ],
+  missing_anchors: [],
+  phenotype: "sprinter",
 };
 
 export const nullCPModel: CPModelResult = {

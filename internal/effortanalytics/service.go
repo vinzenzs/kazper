@@ -77,6 +77,53 @@ func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult
 	return res, nil
 }
 
+// PowerProfileFor ranks the window's power best-efforts at the four Coggan
+// anchors against the reference tables for `sex`, dividing by `weightKg`. It
+// reuses the windowed per-duration MAX (the power-curve projection); an anchor
+// with no best-effort in the window is omitted and named in MissingAnchors. The
+// phenotype is derived from the ranked anchors (nil unless all four are present).
+// Compute-on-read; reads no athlete-config; persists nothing. The caller resolves
+// the weight (param or stored) and sets From/To/TZ/WeightSource.
+func (s *Service) PowerProfileFor(ctx context.Context, p CurveParams, weightKg float64, sex string) (*PowerProfileResult, error) {
+	p.Metric = MetricPower
+	curve, err := s.CurveFor(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	byDuration := make(map[int]CurvePoint, len(curve))
+	for _, c := range curve {
+		byDuration[c.DurationS] = c
+	}
+
+	res := &PowerProfileResult{
+		Sex:            sex,
+		WeightKg:       weightKg,
+		Anchors:        []PowerProfileAnchor{},
+		MissingAnchors: []string{},
+	}
+	for _, a := range cogganAnchors {
+		pt, ok := byDuration[a.durationS]
+		if !ok {
+			res.MissingAnchors = append(res.MissingAnchors, a.label)
+			continue
+		}
+		wPerKg := pt.Value / weightKg
+		category, percentile := rankAnchor(wPerKg, a.col, sex)
+		res.Anchors = append(res.Anchors, PowerProfileAnchor{
+			Label:      a.label,
+			DurationS:  a.durationS,
+			Watts:      pt.Value,
+			WPerKg:     wPerKg,
+			Category:   category,
+			Percentile: percentile,
+			WorkoutID:  pt.WorkoutID,
+			Date:       pt.Date,
+		})
+	}
+	res.Phenotype = phenotype(res.Anchors)
+	return res, nil
+}
+
 // meanMaximal returns the best rolling-window mean of a 1 Hz sample series at
 // each ladder duration — the mean-maximal (a.k.a. mean-max) curve for one
 // activity. Samples are contiguous seconds (coasting seconds are 0), so a

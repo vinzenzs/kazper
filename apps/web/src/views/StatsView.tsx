@@ -6,12 +6,14 @@ import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PMCChart, PMCSummary } from "../components/PMCChart";
 import { CPModelChart } from "../components/CPModelChart";
+import { PowerProfilePanel } from "../components/PowerProfilePanel";
 import { IntensityDistributionPanel } from "../components/IntensityDistribution";
 import {
   useCPModel,
   useIntensityDistribution,
   usePMC,
   usePowerCurve,
+  usePowerProfile,
   useWorkoutStats,
 } from "../api/hooks";
 
@@ -81,6 +83,9 @@ export function StatsView() {
   const pmc = usePMC(pmcRange.from, pmcRange.to);
   const cpRange = trailingDays(Number(cpWindow) - 1);
   const cp = useCPModel(cpRange.from, cpRange.to);
+  const [ppWindow, setPpWindow] = useState<PMCWindow>("90");
+  const ppRange = trailingDays(Number(ppWindow) - 1);
+  const pp = usePowerProfile(ppRange.from, ppRange.to);
   const intensity = useIntensityDistribution(from, to);
 
   const total = data?.total;
@@ -187,6 +192,23 @@ export function StatsView() {
           ) : (
             <div className="py-6 text-center text-sm text-slate-500">
               Loading critical-power model…
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel title="Power profile (Coggan)" isLoading={pp.isLoading}>
+        {/* The read 400s with weight_data_missing when no weight is on file; the
+            panel degrades to a neutral hint rather than an error banner. */}
+        <div className="flex flex-col gap-3">
+          <Toggle options={PMC_WINDOWS} value={ppWindow} onChange={setPpWindow} />
+          {pp.data ? (
+            <PowerProfilePanel result={pp.data} />
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-500">
+              {pp.isError
+                ? "Add a body-weight entry to rank your power profile."
+                : "Loading power profile…"}
             </div>
           )}
         </div>

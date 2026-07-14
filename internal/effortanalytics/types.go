@@ -98,3 +98,47 @@ type CPModelResult struct {
 	Reason string    `json:"reason,omitempty"`
 	Points []CPPoint `json:"points"`
 }
+
+// Sex selects the Coggan reference table. Athlete-config has no sex field (the
+// advisory posture holds), so this is a query parameter, defaulting to male.
+const (
+	sexMale   = "male"
+	sexFemale = "female"
+)
+
+// Weight-source provenance echoed on the power-profile response so the W/kg
+// denominator is auditable.
+const (
+	WeightSourceParam  = "param"
+	WeightSourceStored = "stored"
+)
+
+// PowerProfileAnchor is one benchmark duration's ranking: the windowed best in
+// watts, its W/kg, the Coggan category band, an interpolated percentile, and the
+// workout it came from.
+type PowerProfileAnchor struct {
+	Label      string  `json:"label"`
+	DurationS  int     `json:"duration_s"`
+	Watts      float64 `json:"watts"`
+	WPerKg     float64 `json:"w_per_kg"`
+	Category   string  `json:"category"`
+	Percentile float64 `json:"percentile"`
+	WorkoutID  string  `json:"workout_id"`
+	Date       string  `json:"date"`
+}
+
+// PowerProfileResult is the GET /workouts/power-profile response. Anchors carries
+// the ranked benchmark durations present in the window; MissingAnchors names the
+// ones with no best-effort. Phenotype is null unless all four anchors rank.
+// Nothing is persisted.
+type PowerProfileResult struct {
+	From           string               `json:"from"`
+	To             string               `json:"to"`
+	TZ             string               `json:"tz"`
+	Sex            string               `json:"sex"`
+	WeightKg       float64              `json:"weight_kg"`
+	WeightSource   string               `json:"weight_source"`
+	Anchors        []PowerProfileAnchor `json:"anchors"`
+	MissingAnchors []string             `json:"missing_anchors"`
+	Phenotype      *string              `json:"phenotype"`
+}
