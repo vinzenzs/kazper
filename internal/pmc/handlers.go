@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/vinzenzs/kazper/internal/workouts"
 )
 
 // Handlers wires the PMC read endpoints onto a Gin router group.
@@ -34,8 +36,9 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 // @Param        from  query  string  true   "Inclusive start date YYYY-MM-DD"
 // @Param        to    query  string  true   "Inclusive end date YYYY-MM-DD"
 // @Param        tz    query  string  false  "IANA timezone (defaults to DEFAULT_USER_TZ)"
+// @Param        sport query  string  false  "Filter to one sport (bike|run|swim|strength|multisport|…); omitted = combined. Multisport workouts count under 'multisport' (no per-segment TSS split)."
 // @Success      200  {object}  Series
-// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | tz_invalid"
+// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | sport_invalid"
 // @Security     BearerAuth
 // @Router       /performance/pmc [get]
 func (h *Handlers) pmc(c *gin.Context) {
@@ -68,8 +71,16 @@ func (h *Handlers) pmc(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tz_invalid"})
 		return
 	}
+	var sport *string
+	if s := c.Query("sport"); s != "" {
+		if !workouts.ValidSport(s) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sport_invalid"})
+			return
+		}
+		sport = &s
+	}
 
-	series, err := h.svc.SeriesFor(c.Request.Context(), Params{From: from, To: to, Loc: loc})
+	series, err := h.svc.SeriesFor(c.Request.Context(), Params{From: from, To: to, Loc: loc, Sport: sport})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pmc_failed"})
 		return

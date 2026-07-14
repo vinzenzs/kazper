@@ -10,6 +10,7 @@ type Series struct {
 	From               string      `json:"from"`
 	To                 string      `json:"to"`
 	TZ                 string      `json:"tz"`
+	Sport              string      `json:"sport,omitempty"` // echoed only when sport-filtered
 	SeedDate           *string     `json:"seed_date,omitempty"`
 	Days               []Day       `json:"days"`
 	RampAlerts         []RampAlert `json:"ramp_alerts"`

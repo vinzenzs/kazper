@@ -20,9 +20,10 @@ func NewService(repo *Repo) *Service { return &Service{repo: repo} }
 // (midnight UTC, tz-agnostic sequence) and the timezone the day buckets resolve
 // in.
 type Params struct {
-	From time.Time
-	To   time.Time
-	Loc  *time.Location
+	From  time.Time
+	To    time.Time
+	Loc   *time.Location
+	Sport *string // nil = combined (all sports); non-nil filters the series
 }
 
 // SeriesFor computes the CTL/ATL/TSB daily series for the window. The EWMA warms
@@ -31,15 +32,19 @@ type Params struct {
 // yields an all-zero series with no seed_date.
 func (s *Service) SeriesFor(ctx context.Context, p Params) (*Series, error) {
 	tz := p.Loc.String()
-	earliest, hasHistory, err := s.repo.EarliestCompletedDate(ctx, tz)
+	earliest, hasHistory, err := s.repo.EarliestCompletedDate(ctx, tz, p.Sport)
 	if err != nil {
 		return nil, err
 	}
-	daily, err := s.repo.DailyTSS(ctx, tz, dateOnly(p.To))
+	daily, err := s.repo.DailyTSS(ctx, tz, dateOnly(p.To), p.Sport)
 	if err != nil {
 		return nil, err
 	}
-	return computeSeries(dateOnly(p.From), dateOnly(p.To), tz, earliest, hasHistory, daily), nil
+	series := computeSeries(dateOnly(p.From), dateOnly(p.To), tz, earliest, hasHistory, daily)
+	if p.Sport != nil {
+		series.Sport = *p.Sport
+	}
+	return series, nil
 }
 
 // computeSeries is the pure PMC math over already-fetched repo data — no DB, so

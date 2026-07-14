@@ -1862,6 +1862,9 @@ definitions:
         type: array
       seed_date:
         type: string
+      sport:
+        description: echoed only when sport-filtered
+        type: string
       to:
         type: string
       tz:
@@ -7495,6 +7498,12 @@ paths:
         in: query
         name: tz
         type: string
+      - description: Filter to one sport (bike|run|swim|strength|multisport|…); omitted
+          = combined. Multisport workouts count under 'multisport' (no per-segment
+          TSS split).
+        in: query
+        name: sport
+        type: string
       produces:
       - application/json
       responses:
@@ -7504,7 +7513,7 @@ paths:
             $ref: '#/definitions/pmc.Series'
         "400":
           description: range_required | date_invalid | range_invalid | range_too_large
-            | tz_invalid
+            | tz_invalid | sport_invalid
           schema:
             additionalProperties: true
             type: object

@@ -32,6 +32,15 @@ func TestBuild_PMCSeries_OmitsTZ(t *testing.T) {
 	call, err := specs["pmc_series"].Build(json.RawMessage(`{"from":"2026-06-01","to":"2026-06-30"}`))
 	require.NoError(t, err)
 	assert.Empty(t, call.Query.Get("tz"))
+	assert.Empty(t, call.Query.Get("sport"))
+}
+
+// sport is forwarded when set (per-sport PMC).
+func TestBuild_PMCSeries_Sport(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	call, err := specs["pmc_series"].Build(json.RawMessage(`{"from":"2026-06-01","to":"2026-06-30","sport":"run"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "run", call.Query.Get("sport"))
 }
 
 // pmc_target_trajectory → GET /performance/pmc/target-trajectory; macrocycle_id

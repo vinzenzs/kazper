@@ -23,7 +23,7 @@ import {
 const h = vi.hoisted(() => ({
   statsCalls: [] as { from: string; to: string }[],
   curveCalls: [] as { from: string; to: string; sport: string }[],
-  pmcCalls: [] as { from: string; to: string }[],
+  pmcCalls: [] as { from: string; to: string; sport?: string }[],
   cpCalls: [] as { from: string; to: string }[],
   ppCalls: [] as { from: string; to: string }[],
   intensityCalls: [] as { from: string; to: string }[],
@@ -48,8 +48,8 @@ vi.mock("../../api/hooks", () => ({
     h.curveCalls.push({ from, to, sport });
     return { data: h.curveData, isLoading: false, isError: false, error: null };
   },
-  usePMC: (from: string, to: string) => {
-    h.pmcCalls.push({ from, to });
+  usePMC: (from: string, to: string, sport = "") => {
+    h.pmcCalls.push({ from, to, sport });
     return { data: h.pmcData, isLoading: false, isError: false, error: null };
   },
   useCPModel: (from: string, to: string) => {
@@ -128,7 +128,8 @@ describe("StatsView", () => {
   it("renders the power curve and re-queries when the sport changes", () => {
     render(<StatsView />);
     expect(screen.getByRole("img", { name: /power\/pace curve/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    // Two "Run" buttons now: PMC sport selector (0) and the power-curve one (1).
+    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[1]);
     expect(h.curveCalls[h.curveCalls.length - 1].sport).toEqual("run");
   });
 
@@ -136,8 +137,8 @@ describe("StatsView", () => {
     h.curveData = emptyPowerCurve;
     render(<StatsView />);
     expect(screen.getByText(/no effort data for bike in this period/i)).toBeInTheDocument();
-    // The sport selector must remain available so the user can switch.
-    expect(screen.getByRole("button", { name: "Run" })).toBeInTheDocument();
+    // The power-curve sport selector must remain available so the user can switch.
+    expect(screen.getAllByRole("button", { name: "Run" })[1]).toBeInTheDocument();
   });
 
   it("renders the PMC chart with the fitness/fatigue/form summary and ramp flag", () => {
@@ -165,6 +166,16 @@ describe("StatsView", () => {
     h.pmcData = emptyPMC;
     render(<StatsView />);
     expect(screen.getByText(/no training history to chart yet/i)).toBeInTheDocument();
+  });
+
+  it("re-queries the PMC series filtered when a sport is selected", () => {
+    render(<StatsView />);
+    // The PMC sport selector's "Run" is the first on the page (before the curve's).
+    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0]);
+    const last = h.pmcCalls[h.pmcCalls.length - 1];
+    expect(last.sport).toBe("run");
+    // A sport filter hides the target overlay (target trajectory is combined-only).
+    expect(screen.queryByTestId("target-readout")).not.toBeInTheDocument();
   });
 
   it("overlays the target CTL trajectory with an on-plan readout", () => {

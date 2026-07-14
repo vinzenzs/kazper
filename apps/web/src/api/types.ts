@@ -403,6 +403,7 @@ export interface PMCSeries {
   from: string;
   to: string;
   tz: string;
+  sport?: string;
   seed_date?: string;
   days: PMCDay[];
   ramp_alerts: PMCRampAlert[];

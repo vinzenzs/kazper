@@ -13,9 +13,10 @@ func init() { registerMCPDomain(pmcSpecs()) }
 
 // PMCSeriesArgs is the input to pmc_series. from/to are inclusive calendar dates.
 type PMCSeriesArgs struct {
-	From string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
-	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
-	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+	From  string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To    string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	TZ    string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+	Sport string `json:"sport,omitempty" jsonschema:"optional sport filter (bike|run|swim|strength|multisport|…); omitted = combined across all sports. NOTE: the combined CTL is NOT the sum of per-sport CTLs (each is its own EWMA). Multisport workouts count under 'multisport'."`
 }
 
 // PMCTargetTrajectoryArgs is the input to pmc_target_trajectory.
@@ -50,6 +51,9 @@ func pmcSpecs() []Spec {
 				q.Set("to", a.To)
 				if a.TZ != "" {
 					q.Set("tz", a.TZ)
+				}
+				if a.Sport != "" {
+					q.Set("sport", a.Sport)
 				}
 				return HTTPCall{Method: "GET", Path: "/performance/pmc", Query: q}, nil
 			},

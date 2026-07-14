@@ -116,10 +116,13 @@ export function usePowerCurve(from: string, to: string, sport: string) {
   });
 }
 
-export function usePMC(from: string, to: string) {
+// The PMC series, optionally filtered to one sport (per-discipline fitness).
+// `sport` empty = combined across all sports.
+export function usePMC(from: string, to: string, sport = "") {
+  const q = sport ? `&sport=${sport}` : "";
   return useQuery({
-    queryKey: ["pmc", from, to],
-    queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}`),
+    queryKey: ["pmc", from, to, sport],
+    queryFn: () => apiGet<PMCSeries>(`/performance/pmc?from=${from}&to=${to}${q}`),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

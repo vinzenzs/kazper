@@ -124,6 +124,53 @@ func TestPMC_PopulatedWindowShape(t *testing.T) {
 	assert.NotNil(t, s.RampAlerts)
 }
 
+func TestPMC_SportFilter(t *testing.T) {
+	f := setup(t)
+	// Bike and run on the same days; the run series should reflect only run TSS.
+	seedW(t, f.repo, "bike", "completed", utc("2026-06-05T09:00:00Z"), fp(120))
+	seedW(t, f.repo, "run", "completed", utc("2026-06-05T17:00:00Z"), fp(60))
+	seedW(t, f.repo, "run", "completed", utc("2026-06-08T09:00:00Z"), fp(80))
+
+	combined := decode(t, get(t, f, "from=2026-06-05&to=2026-06-10&tz=UTC"))
+	runOnly := decode(t, get(t, f, "from=2026-06-05&to=2026-06-10&tz=UTC&sport=run"))
+
+	assert.Empty(t, combined.Sport, "combined echoes no sport")
+	assert.Equal(t, "run", runOnly.Sport)
+	// Day 0 (06-05): combined sees 180 TSS, run-only sees 60.
+	assert.Equal(t, 180.0, combined.Days[0].TSSTotal)
+	assert.Equal(t, 60.0, runOnly.Days[0].TSSTotal)
+	// Run-only seed is the earliest RUN workout (06-05), not the bike's.
+	require.NotNil(t, runOnly.SeedDate)
+	assert.Equal(t, "2026-06-04", *runOnly.SeedDate)
+	// Filtered CTL is strictly lower than combined (less load).
+	assert.Less(t, runOnly.Days[len(runOnly.Days)-1].CTL, combined.Days[len(combined.Days)-1].CTL)
+}
+
+func TestPMC_SportOmittedIsByteIdenticalCombined(t *testing.T) {
+	f := setup(t)
+	seedW(t, f.repo, "bike", "completed", utc("2026-06-05T09:00:00Z"), fp(120))
+	// The omitted-sport response must be unchanged from before the param existed.
+	plain := get(t, f, "from=2026-06-01&to=2026-06-10&tz=UTC")
+	assert.NotContains(t, plain.Body.String(), `"sport"`, "no sport key when unfiltered")
+}
+
+func TestPMC_MultisportCountsAsOwnSport(t *testing.T) {
+	f := setup(t)
+	seedW(t, f.repo, "multisport", "completed", utc("2026-06-05T09:00:00Z"), fp(200))
+	ms := decode(t, get(t, f, "from=2026-06-05&to=2026-06-10&tz=UTC&sport=multisport"))
+	assert.Equal(t, "multisport", ms.Sport)
+	assert.Equal(t, 200.0, ms.Days[0].TSSTotal)
+}
+
+func TestPMC_InvalidSport(t *testing.T) {
+	f := setup(t)
+	rec := get(t, f, "from=2026-06-01&to=2026-06-10&tz=UTC&sport=underwater-basketry")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "sport_invalid", body["error"])
+}
+
 func TestPMC_PlannedExcludedAndMissingSurfaced(t *testing.T) {
 	f := setup(t)
 	day := utc("2026-06-10T09:00:00Z")

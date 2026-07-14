@@ -5072,6 +5072,12 @@ const docTemplate = `{
                         "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
                         "name": "tz",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to one sport (bike|run|swim|strength|multisport|…); omitted = combined. Multisport workouts count under 'multisport' (no per-segment TSS split).",
+                        "name": "sport",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5082,7 +5088,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid | sport_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -13283,6 +13289,10 @@ const docTemplate = `{
                     }
                 },
                 "seed_date": {
+                    "type": "string"
+                },
+                "sport": {
+                    "description": "echoed only when sport-filtered",
                     "type": "string"
                 },
                 "to": {

@@ -28,6 +28,14 @@ const PMC_WINDOWS: { key: PMCWindow; label: string }[] = [
   { key: "365", label: "365d" },
 ];
 
+// PMC sport filter — "" is the combined (all-sports) series.
+const PMC_SPORTS: { key: string; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "bike", label: "Bike" },
+  { key: "run", label: "Run" },
+  { key: "swim", label: "Swim" },
+];
+
 type Period = "week" | "month" | "ytd";
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -82,13 +90,15 @@ export function StatsView() {
   const { from, to } = rangeFor(period);
   const { data, isLoading, isError, error } = useWorkoutStats(from, to);
   const curve = usePowerCurve(from, to, sport);
+  const [pmcSport, setPmcSport] = useState<string>("");
   const pmcRange = trailingDays(Number(pmcWindow) - 1);
-  const pmc = usePMC(pmcRange.from, pmcRange.to);
+  const pmc = usePMC(pmcRange.from, pmcRange.to, pmcSport);
   const trajectory = useTargetTrajectory();
-  // Overlay only when the active macrocycle declares targets; a 404 / targets_missing
-  // / fetch error leaves the measured PMC panel exactly as it was.
-  const target = trajectory.data?.trajectory ?? undefined;
-  const targetSummary = trajectory.data?.summary;
+  // Overlay only when the active macrocycle declares targets AND the combined
+  // (All) series is shown — the target trajectory is combined-CTL only. A 404 /
+  // targets_missing / fetch error / a sport filter leaves the panel measured-only.
+  const target = pmcSport === "" ? trajectory.data?.trajectory ?? undefined : undefined;
+  const targetSummary = pmcSport === "" ? trajectory.data?.summary : undefined;
   const cpRange = trailingDays(Number(cpWindow) - 1);
   const cp = useCPModel(cpRange.from, cpRange.to);
   const [ppWindow, setPpWindow] = useState<PMCWindow>("90");
@@ -141,7 +151,10 @@ export function StatsView() {
         error={pmc.error}
       >
         <div className="flex flex-col gap-3">
-          <Toggle options={PMC_WINDOWS} value={pmcWindow} onChange={setPmcWindow} />
+          <div className="flex flex-wrap gap-2">
+            <Toggle options={PMC_WINDOWS} value={pmcWindow} onChange={setPmcWindow} />
+            <Toggle options={PMC_SPORTS} value={pmcSport} onChange={setPmcSport} />
+          </div>
           {pmc.data && !pmcEmpty ? (
             <>
               <PMCSummary series={pmc.data} />
