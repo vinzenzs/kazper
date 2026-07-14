@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-14
+goal: Serve the public race site as an in-cluster nginx container via the Helm
+  chart instead of GitHub Pages, superseding the CI-as-shield/Pages topology;
+  feed fetch stays build-time (no runtime secret).
