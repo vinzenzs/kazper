@@ -2,7 +2,6 @@ package effortanalytics
 
 import (
 	"context"
-	"errors"
 	"math"
 	"time"
 
@@ -12,50 +11,36 @@ import (
 	"github.com/vinzenzs/kazper/internal/workouts"
 )
 
-// ErrWorkoutNotFound is returned by IngestStreams when the id has no workout.
-var ErrWorkoutNotFound = errors.New("workout not found")
-
 // BestEffortsStore is the persistence dependency (satisfied by *Repo).
 type BestEffortsStore interface {
 	Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time.Time, recs []Record) error
 	Curve(ctx context.Context, from, to time.Time, metric Metric) ([]CurvePoint, error)
 }
 
-// WorkoutsRepo resolves the workout a stream belongs to (existence + started_at).
-type WorkoutsRepo interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*workouts.Workout, error)
-}
-
 // Service computes best efforts from streams and serves the aggregated curve.
+// The stream-ingest entrypoint lives in the activity-streams capability, which
+// persists the raw arrays and then delegates the mean-maximal computation here
+// via ComputeAndReplace (persist-activity-streams).
 type Service struct {
-	store    BestEffortsStore
-	workouts WorkoutsRepo
+	store BestEffortsStore
 }
 
-func NewService(store BestEffortsStore, workoutsRepo WorkoutsRepo) *Service {
-	return &Service{store: store, workouts: workoutsRepo}
+func NewService(store BestEffortsStore) *Service {
+	return &Service{store: store}
 }
 
-// IngestStreams computes the mean-maximal ladder for each provided series and
-// replaces the workout's best-effort rows. An empty payload is a no-op (nothing
-// written, existing rows untouched). Returns the number of records written.
-// ErrWorkoutNotFound if the id resolves to no workout.
-func (s *Service) IngestStreams(ctx context.Context, id uuid.UUID, p StreamPayload) (int, error) {
-	w, err := s.workouts.GetByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, workouts.ErrNotFound) {
-			return 0, ErrWorkoutNotFound
-		}
-		return 0, err
-	}
-	if p.empty() {
+// ComputeAndReplace recomputes the mean-maximal ladder for the already-resolved
+// workout from the power/speed series and replaces its best-effort rows. Empty
+// input is a no-op (existing rows untouched). Returns the record count. Exposed
+// so the activity-streams capability can reuse the computation without a second
+// workout fetch (persist-activity-streams).
+func (s *Service) ComputeAndReplace(ctx context.Context, w *workouts.Workout, power, speed []float64) (int, error) {
+	if len(power) == 0 && len(speed) == 0 {
 		return 0, nil
 	}
-
 	var recs []Record
-	recs = append(recs, meanMaximal(p.Power, MetricPower)...)
-	recs = append(recs, meanMaximal(p.Speed, MetricSpeed)...)
-
+	recs = append(recs, meanMaximal(power, MetricPower)...)
+	recs = append(recs, meanMaximal(speed, MetricSpeed)...)
 	if err := s.store.Replace(ctx, w.ID, w.StartedAt, recs); err != nil {
 		return 0, err
 	}

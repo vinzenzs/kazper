@@ -1,19 +1,15 @@
 package effortanalytics_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,20 +23,21 @@ func init() { gin.SetMode(gin.TestMode) }
 type fixture struct {
 	r    *gin.Engine
 	repo *workouts.Repo
+	svc  *effortanalytics.Service
 }
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	pool := storetest.NewPool(t)
 	wrepo := workouts.NewRepo(pool)
-	svc := effortanalytics.NewService(effortanalytics.NewRepo(pool), wrepo)
+	svc := effortanalytics.NewService(effortanalytics.NewRepo(pool))
 	r := gin.New()
 	effortanalytics.NewHandlers(svc, "UTC", slog.Default()).Register(r.Group("/"))
-	return &fixture{r: r, repo: wrepo}
+	return &fixture{r: r, repo: wrepo, svc: svc}
 }
 
-// seedWorkout inserts a completed bike workout and returns its id.
-func seedWorkout(t *testing.T, repo *workouts.Repo, start time.Time) uuid.UUID {
+// seedWorkout inserts a completed bike workout and returns it.
+func seedWorkout(t *testing.T, repo *workouts.Repo, start time.Time) *workouts.Workout {
 	t.Helper()
 	w := &workouts.Workout{
 		Source:    workouts.SourceManual,
@@ -51,16 +48,7 @@ func seedWorkout(t *testing.T, repo *workouts.Repo, start time.Time) uuid.UUID {
 	}
 	_, err := repo.Upsert(context.Background(), w)
 	require.NoError(t, err)
-	return w.ID
-}
-
-func post(t *testing.T, r *gin.Engine, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	return rec
+	return w
 }
 
 func get(t *testing.T, r *gin.Engine, path string) *httptest.ResponseRecorder {
@@ -70,26 +58,26 @@ func get(t *testing.T, r *gin.Engine, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// constPower builds a JSON body with a power array of n samples all at v.
-func constPower(n int, v float64) string {
-	vals := make([]string, n)
-	for i := range vals {
-		vals[i] = fmt.Sprintf("%g", v)
+// constSlice builds a slice of n samples all at v.
+func constSlice(n int, v float64) []float64 {
+	s := make([]float64, n)
+	for i := range s {
+		s[i] = v
 	}
-	return `{"power":[` + strings.Join(vals, ",") + `]}`
+	return s
 }
 
-func TestIngest_ComputesAndStoresBestEfforts(t *testing.T) {
+// The ingest entrypoint moved to the activity-streams capability; here we
+// exercise ComputeAndReplace directly and confirm the curve reflects the stored
+// best efforts (one point per ladder duration, at the constant value).
+func TestComputeAndReplace_CurveReflectsStoredEfforts(t *testing.T) {
 	f := setup(t)
-	id := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
+	w := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
 
-	rec := post(t, f.r, "/workouts/"+id.String()+"/streams", constPower(3600, 250))
-	require.Equal(t, http.StatusOK, rec.Code)
-	var out effortanalytics.IngestResult
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, len(effortanalytics.Ladder), out.RecordsWritten)
+	n, err := f.svc.ComputeAndReplace(context.Background(), w, constSlice(3600, 250), nil)
+	require.NoError(t, err)
+	assert.Equal(t, len(effortanalytics.Ladder), n)
 
-	// The curve reflects them.
 	crec := get(t, f.r, "/workouts/power-curve?from=2026-03-10&to=2026-03-10&sport=bike&tz=UTC")
 	require.Equal(t, http.StatusOK, crec.Code)
 	var curve effortanalytics.Curve
@@ -97,18 +85,18 @@ func TestIngest_ComputesAndStoresBestEfforts(t *testing.T) {
 	assert.Equal(t, effortanalytics.MetricPower, curve.Metric)
 	require.Len(t, curve.Points, len(effortanalytics.Ladder))
 	assert.InDelta(t, 250.0, curve.Points[0].Value, 0.001)
-	assert.Equal(t, id.String(), curve.Points[0].WorkoutID)
+	assert.Equal(t, w.ID.String(), curve.Points[0].WorkoutID)
 }
 
-func TestIngest_RepostReplacesNotDuplicates(t *testing.T) {
+func TestComputeAndReplace_ReplacesNotDuplicates(t *testing.T) {
 	f := setup(t)
-	id := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
-	path := "/workouts/" + id.String() + "/streams"
+	w := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
 
-	require.Equal(t, http.StatusOK, post(t, f.r, path, constPower(600, 200)).Code)
-	require.Equal(t, http.StatusOK, post(t, f.r, path, constPower(600, 300)).Code)
+	_, err := f.svc.ComputeAndReplace(context.Background(), w, constSlice(600, 200), nil)
+	require.NoError(t, err)
+	_, err = f.svc.ComputeAndReplace(context.Background(), w, constSlice(600, 300), nil)
+	require.NoError(t, err)
 
-	// After re-post the curve still has one point per duration, at the new value.
 	crec := get(t, f.r, "/workouts/power-curve?from=2026-03-10&to=2026-03-10&sport=bike&tz=UTC")
 	var curve effortanalytics.Curve
 	require.NoError(t, json.Unmarshal(crec.Body.Bytes(), &curve))
@@ -122,20 +110,12 @@ func TestIngest_RepostReplacesNotDuplicates(t *testing.T) {
 	}
 }
 
-func TestIngest_UnknownWorkoutIs404(t *testing.T) {
+func TestComputeAndReplace_EmptyInputWritesNothing(t *testing.T) {
 	f := setup(t)
-	rec := post(t, f.r, "/workouts/"+uuid.New().String()+"/streams", constPower(60, 100))
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestIngest_EmptyBodyWritesNothing(t *testing.T) {
-	f := setup(t)
-	id := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
-	rec := post(t, f.r, "/workouts/"+id.String()+"/streams", `{}`)
-	require.Equal(t, http.StatusOK, rec.Code)
-	var out effortanalytics.IngestResult
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, 0, out.RecordsWritten)
+	w := seedWorkout(t, f.repo, time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC))
+	n, err := f.svc.ComputeAndReplace(context.Background(), w, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
 }
 
 func TestCurve_EmptyWindowReturnsEmptyPoints(t *testing.T) {

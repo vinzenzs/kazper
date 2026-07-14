@@ -407,12 +407,12 @@ def map_workouts(raw: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def map_workout_streams(raw: dict[str, Any]) -> dict[str, dict[str, list[float]]]:
-    """Garmin activity detail streams → {external_id: {"power":[…], "speed":[…]}}.
+    """Garmin activity detail streams → {external_id: {"power":…, "speed":…, "heart_rate":…}}.
 
     Keyed by the same ``garmin:{activityId}`` external id the workout upsert uses,
     so the sync can join a posted workout's id to its streams. Only activities
-    with a usable (non-flat) power or speed series appear; everything else is
-    omitted (a run without a power meter, an indoor session, a failed fetch).
+    with a usable (non-flat) power, speed or heart-rate series appear; everything
+    else is omitted (an indoor session with no sensors, a failed fetch).
     """
     details = raw.get("activity_details") or {}
     out: dict[str, dict[str, list[float]]] = {}
@@ -427,13 +427,14 @@ def map_workout_streams(raw: dict[str, Any]) -> dict[str, dict[str, list[float]]
 
 
 def _extract_streams(detail: Any) -> dict[str, list[float]]:
-    """get_activity_details → contiguous power (W) / speed (m/s) sample arrays.
+    """get_activity_details → contiguous power (W) / speed (m/s) / heart_rate (bpm) arrays.
 
-    Reads ``metricDescriptors`` to locate the power/speed columns, then pulls
-    those columns out of ``activityDetailMetrics`` (treated as ~1 Hz samples).
+    Reads ``metricDescriptors`` to locate the power/speed/heart-rate columns, then
+    pulls those columns out of ``activityDetailMetrics`` (treated as ~1 Hz samples).
     Missing samples become 0 so coasting counts toward mean-maximal power, the
-    way Strava/intervals compute it. Defensive: any unexpected shape → ``{}``.
-    A series that is entirely non-positive (no meter present) is dropped.
+    way Strava/intervals compute it, and HR gaps read as dropouts (excluded from
+    HR means server-side). Defensive: any unexpected shape → ``{}``. A series that
+    is entirely non-positive (no sensor present) is dropped.
     """
     if not isinstance(detail, dict):
         return {}
@@ -471,6 +472,9 @@ def _extract_streams(detail: Any) -> dict[str, list[float]]:
     speed = column(index_of.get("directSpeed"))
     if speed and any(v > 0 for v in speed):
         out["speed"] = speed
+    heart_rate = column(index_of.get("directHeartRate"))
+    if heart_rate and any(v > 0 for v in heart_rate):
+        out["heart_rate"] = heart_rate
     return out
 
 

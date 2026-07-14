@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus, tss_source`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus, tss_source, variability_index, efficiency_factor, decoupling_pct`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -657,6 +657,23 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	return nil
 }
 
+// SetExecutionMetrics writes the three stream-derived execution metrics (any of
+// which may be nil to clear it) on a workout row. Used only by the
+// activity-streams ingest/recompute path (persist-activity-streams).
+func (r *Repo) SetExecutionMetrics(ctx context.Context, id uuid.UUID, vi, ef, decoupling *float64) error {
+	tag, err := r.q.Exec(ctx, `
+		UPDATE workouts
+		SET variability_index = $2, efficiency_factor = $3, decoupling_pct = $4, updated_at = now()
+		WHERE id = $1`, id, vi, ef, decoupling)
+	if err != nil {
+		return fmt.Errorf("set execution metrics: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetGarminIDs sets (or clears, when nil) the two Garmin scheduling ids on a
 // workout row. Used by the scheduling orchestration after a push/unschedule.
 // Returns ErrNotFound if no row matched.
@@ -969,6 +986,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&w.MultisportTemplateID,
 		&trainingFocus,
 		&w.TSSSource,
+		&w.VariabilityIndex, &w.EfficiencyFactor, &w.DecouplingPct,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -1,8 +1,9 @@
 // Package effortanalytics computes and serves per-activity mean-maximal
 // best-effort records (power/speed at a fixed duration ladder) and the windowed
-// power/pace curve aggregated from them. Streams are computed-over in-request
-// and NOT persisted; only the compact best-effort rows survive. Unit-isolated:
-// power (W) and speed (m/s) feed no nutrition/hydration/energy total.
+// power/pace curve aggregated from them. It no longer owns stream ingest: the
+// activity-streams capability persists the raw 1 Hz arrays and calls
+// ComputeAndReplace here to (re)derive the compact best-effort rows. Unit-
+// isolated: power (W) and speed (m/s) feed no nutrition/hydration/energy total.
 package effortanalytics
 
 import "time"
@@ -21,28 +22,12 @@ const (
 // activity yields no record.
 var Ladder = []int{5, 15, 30, 60, 300, 600, 1200, 1800, 3600}
 
-// StreamPayload is the POST /workouts/{id}/streams body: contiguous 1 Hz sample
-// arrays (one value per second, coasting seconds included as 0). Either or both
-// series may be present; an empty body writes nothing. The bridge resamples
-// Garmin's activity detail to 1 Hz before posting.
-type StreamPayload struct {
-	Power []float64 `json:"power,omitempty"`
-	Speed []float64 `json:"speed,omitempty"`
-}
-
-func (p StreamPayload) empty() bool { return len(p.Power) == 0 && len(p.Speed) == 0 }
-
 // Record is one stored best-effort row (before persistence): the best mean of a
 // metric over duration_s seconds anywhere in the activity.
 type Record struct {
 	Metric    Metric
 	DurationS int
 	Value     float64
-}
-
-// IngestResult is the streams-POST response.
-type IngestResult struct {
-	RecordsWritten int `json:"records_written"`
 }
 
 // CurvePoint is one duration's best across the window: the max mean value and

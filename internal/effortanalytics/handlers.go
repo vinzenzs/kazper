@@ -1,13 +1,11 @@
 package effortanalytics
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // maxRangeDays caps the curve window; year-to-date and longer all-time-ish
@@ -26,44 +24,11 @@ func NewHandlers(svc *Service, defaultTZ string, logger *slog.Logger) *Handlers 
 }
 
 func (h *Handlers) Register(rg *gin.RouterGroup) {
-	rg.POST("/workouts/:id/streams", h.ingest)
+	// The POST /workouts/:id/streams ingest route moved to the activity-streams
+	// capability (persist-activity-streams), which persists the raw arrays and
+	// then delegates the mean-maximal computation back here via ComputeAndReplace.
+	// effort-analytics keeps the read-side curve.
 	rg.GET("/workouts/power-curve", h.curve)
-}
-
-// ingest godoc
-// @Summary      Ingest a workout's power/speed streams
-// @Description  Accepts contiguous 1 Hz power (W) and/or speed (m/s) sample arrays for a completed workout, computes the mean-maximal value at the fixed duration ladder (5s…60m), and stores the compact best-effort records (replacing any prior set for the workout). Raw streams are not persisted. An empty body writes nothing. Distance/power/speed are workout-only and feed no nutrition total.
-// @Tags         workouts
-// @Accept       json
-// @Produce      json
-// @Param        id       path  string        true  "Workout id (uuid)"
-// @Param        streams  body  StreamPayload  true  "1 Hz power/speed sample arrays"
-// @Success      200  {object}  IngestResult
-// @Failure      400  {object}  map[string]string  "invalid_body"
-// @Failure      404  {object}  map[string]string  "workout_not_found"
-// @Security     BearerAuth
-// @Router       /workouts/{id}/streams [post]
-func (h *Handlers) ingest(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
-		return
-	}
-	var p StreamPayload
-	if err := c.ShouldBindJSON(&p); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
-		return
-	}
-	n, err := h.svc.IngestStreams(c.Request.Context(), id, p)
-	if err != nil {
-		if errors.Is(err, ErrWorkoutNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "ingest_failed"})
-		return
-	}
-	c.JSON(http.StatusOK, IngestResult{RecordsWritten: n})
 }
 
 // curve godoc

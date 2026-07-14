@@ -13,6 +13,7 @@ import (
 
 	webapp "github.com/vinzenzs/kazper/apps/web"
 	"github.com/vinzenzs/kazper/internal/achievements"
+	"github.com/vinzenzs/kazper/internal/activitystreams"
 	"github.com/vinzenzs/kazper/internal/athleteconfig"
 	"github.com/vinzenzs/kazper/internal/auth"
 	"github.com/vinzenzs/kazper/internal/bodyweight"
@@ -207,7 +208,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workoutsRepo := workouts.NewRepo(pool)
 	workoutsSvc := workouts.NewService(workoutsRepo, pool, cfg.DefaultUserTZ)
 	workoutStatsSvc := workoutstats.NewService(workoutsRepo)
-	effortAnalyticsSvc := effortanalytics.NewService(effortanalytics.NewRepo(pool), workoutsRepo)
+	effortAnalyticsSvc := effortanalytics.NewService(effortanalytics.NewRepo(pool))
 	// Wire workouts existence-checks into meals + hydration services so the
 	// optional workout_id link is validated before insert/patch (added by
 	// add-meal-workout-link).
@@ -379,6 +380,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	workouts.NewHandlers(workoutsSvc).Register(api)
 	workoutstats.NewHandlers(workoutStatsSvc, cfg.DefaultUserTZ, logger).Register(api)
 	effortanalytics.NewHandlers(effortAnalyticsSvc, cfg.DefaultUserTZ, logger).Register(api)
+	// Raw activity streams (persist-activity-streams): stores the 1 Hz series,
+	// delegates the best-effort ladder to effort-analytics, and derives the
+	// workout's execution metrics (VI/EF/decoupling).
+	activitystreams.NewHandlers(
+		activitystreams.NewService(activitystreams.NewRepo(pool), workoutsRepo, effortAnalyticsSvc),
+	).Register(api)
 	// Performance Management Chart (add-performance-management): compute-on-read
 	// CTL/ATL/TSB over completed-workout TSS. Read-only; own read repo.
 	pmc.NewHandlers(pmc.NewService(pmc.NewRepo(pool)), cfg.DefaultUserTZ, logger).Register(api)

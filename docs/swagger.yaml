@@ -40,6 +40,52 @@ definitions:
       progress_pct:
         type: number
     type: object
+  activitystreams.IngestResult:
+    properties:
+      records_written:
+        type: integer
+      streams_stored:
+        type: integer
+    type: object
+  activitystreams.RecomputeResult:
+    properties:
+      records_written:
+        type: integer
+      streams_used:
+        type: integer
+    type: object
+  activitystreams.StreamPayload:
+    properties:
+      heart_rate:
+        items:
+          type: number
+        type: array
+      power:
+        items:
+          type: number
+        type: array
+      speed:
+        items:
+          type: number
+        type: array
+    type: object
+  activitystreams.StreamsResponse:
+    properties:
+      downsample:
+        type: integer
+      duration_s:
+        type: integer
+      sample_rate_hz:
+        type: integer
+      streams:
+        additionalProperties:
+          items:
+            type: number
+          type: array
+        type: object
+      workout_id:
+        type: string
+    type: object
   agenttools.ProposalCall:
     properties:
       name:
@@ -761,11 +807,6 @@ definitions:
       workout_id:
         type: string
     type: object
-  effortanalytics.IngestResult:
-    properties:
-      records_written:
-        type: integer
-    type: object
   effortanalytics.Metric:
     enum:
     - power
@@ -774,17 +815,6 @@ definitions:
     x-enum-varnames:
     - MetricPower
     - MetricSpeed
-  effortanalytics.StreamPayload:
-    properties:
-      power:
-        items:
-          type: number
-        type: array
-      speed:
-        items:
-          type: number
-        type: array
-    type: object
   energy.Availability:
     properties:
       composition:
@@ -3075,6 +3105,8 @@ definitions:
         type: number
       created_at:
         type: string
+      decoupling_pct:
+        type: number
       distance_m:
         description: |-
           Source-agnostic ingestion metrics — all nullable, populated by whatever
@@ -3082,6 +3114,8 @@ definitions:
           watts, ambient temperature in °C, estimated sweat loss in ml. SessionGroup
           is a free-text key linking the legs of a brick/multisport session (e.g. the
           Garmin parent activity id set on every leg).
+        type: number
+      efficiency_factor:
         type: number
       elevation_gain_m:
         description: |-
@@ -3208,6 +3242,13 @@ definitions:
         type: string
       updated_at:
         type: string
+      variability_index:
+        description: |-
+          Stream-derived execution-quality metrics (persist-activity-streams), all
+          nullable. Written ONLY by the activity-streams ingest/recompute path — never
+          accepted on POST/bulk/PATCH. VI = NP/mean power, EF = NP or speed per HR,
+          decoupling_pct = aerobic HR-drift over the activity halves.
+        type: number
       wind_speed_mps:
         type: number
     type: object
@@ -9656,33 +9697,73 @@ paths:
       tags:
       - workouts
   /workouts/{id}/streams:
-    post:
-      consumes:
-      - application/json
-      description: Accepts contiguous 1 Hz power (W) and/or speed (m/s) sample arrays
-        for a completed workout, computes the mean-maximal value at the fixed duration
-        ladder (5s…60m), and stores the compact best-effort records (replacing any
-        prior set for the workout). Raw streams are not persisted. An empty body writes
-        nothing. Distance/power/speed are workout-only and feed no nutrition total.
+    get:
+      description: Returns the workout's stored 1 Hz streams keyed by type (absent
+        types omitted). Pass `downsample=N` (10..5000) to bucket-mean each series
+        down to N points for charting; `duration_s` always reflects the full-resolution
+        activity length.
       parameters:
       - description: Workout id (uuid)
         in: path
         name: id
         required: true
         type: string
-      - description: 1 Hz power/speed sample arrays
-        in: body
-        name: streams
-        required: true
-        schema:
-          $ref: '#/definitions/effortanalytics.StreamPayload'
+      - description: Bucket-mean each series down to N points (10..5000)
+        in: query
+        name: downsample
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/effortanalytics.IngestResult'
+            $ref: '#/definitions/activitystreams.StreamsResponse'
+        "400":
+          description: downsample_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: workout_not_found | streams_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Retrieve a workout's stored streams
+      tags:
+      - workouts
+    post:
+      consumes:
+      - application/json
+      description: Persists contiguous 1 Hz power (W), speed (m/s) and/or heart_rate
+        (bpm) sample arrays for a completed workout (replacing any prior streams),
+        refreshes the mean-maximal best-effort ladder, and derives + stores the execution
+        metrics (variability_index, efficiency_factor, decoupling_pct) onto the workout.
+        An empty body writes nothing. Streams are workout-only and feed no nutrition
+        total.
+      parameters:
+      - description: Workout id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 1 Hz power/speed/heart_rate sample arrays
+        in: body
+        name: streams
+        required: true
+        schema:
+          $ref: '#/definitions/activitystreams.StreamPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/activitystreams.IngestResult'
         "400":
           description: invalid_body
           schema:
@@ -9697,7 +9778,37 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: Ingest a workout's power/speed streams
+      summary: Ingest a workout's raw sample streams
+      tags:
+      - workouts
+  /workouts/{id}/streams/recompute:
+    post:
+      description: Reloads the workout's stored streams and rewrites the best-effort
+        ladder and execution metrics (variability_index, efficiency_factor, decoupling_pct)
+        from them, without a re-post. Used after a metric-formula change or a partial
+        earlier ingest.
+      parameters:
+      - description: Workout id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/activitystreams.RecomputeResult'
+        "404":
+          description: workout_not_found | streams_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Recompute stream-derived metrics from stored streams
       tags:
       - workouts
   /workouts/{id}/unfulfill:

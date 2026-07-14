@@ -28,3 +28,9 @@ func Round1Ptr(p *float64) *float64 {
 func Round2(f float64) float64 {
 	return math.Round(f*100) / 100
 }
+
+// Round3 rounds f to three decimal places (e.g. a workout's efficiency_factor,
+// a NUMERIC(6,3) column).
+func Round3(f float64) float64 {
+	return math.Round(f*1000) / 1000
+}

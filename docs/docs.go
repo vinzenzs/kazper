@@ -9408,23 +9408,20 @@ const docTemplate = `{
             }
         },
         "/workouts/{id}/streams": {
-            "post": {
+            "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Accepts contiguous 1 Hz power (W) and/or speed (m/s) sample arrays for a completed workout, computes the mean-maximal value at the fixed duration ladder (5s…60m), and stores the compact best-effort records (replacing any prior set for the workout). Raw streams are not persisted. An empty body writes nothing. Distance/power/speed are workout-only and feed no nutrition total.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Returns the workout's stored 1 Hz streams keyed by type (absent types omitted). Pass ` + "`" + `downsample=N` + "`" + ` (10..5000) to bucket-mean each series down to N points for charting; ` + "`" + `duration_s` + "`" + ` always reflects the full-resolution activity length.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "workouts"
                 ],
-                "summary": "Ingest a workout's power/speed streams",
+                "summary": "Retrieve a workout's stored streams",
                 "parameters": [
                     {
                         "type": "string",
@@ -9434,12 +9431,71 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "1 Hz power/speed sample arrays",
+                        "type": "integer",
+                        "description": "Bucket-mean each series down to N points (10..5000)",
+                        "name": "downsample",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.StreamsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "downsample_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Persists contiguous 1 Hz power (W), speed (m/s) and/or heart_rate (bpm) sample arrays for a completed workout (replacing any prior streams), refreshes the mean-maximal best-effort ladder, and derives + stores the execution metrics (variability_index, efficiency_factor, decoupling_pct) onto the workout. An empty body writes nothing. Streams are workout-only and feed no nutrition total.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Ingest a workout's raw sample streams",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "1 Hz power/speed/heart_rate sample arrays",
                         "name": "streams",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/effortanalytics.StreamPayload"
+                            "$ref": "#/definitions/activitystreams.StreamPayload"
                         }
                     }
                 ],
@@ -9447,7 +9503,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/effortanalytics.IngestResult"
+                            "$ref": "#/definitions/activitystreams.IngestResult"
                         }
                     },
                     "400": {
@@ -9461,6 +9517,49 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "workout_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/workouts/{id}/streams/recompute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reloads the workout's stored streams and rewrites the best-effort ladder and execution metrics (variability_index, efficiency_factor, decoupling_pct) from them, without a re-post. Used after a metric-formula change or a partial earlier ingest.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Recompute stream-derived metrics from stored streams",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.RecomputeResult"
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -9582,6 +9681,77 @@ const docTemplate = `{
                 },
                 "progress_pct": {
                     "type": "number"
+                }
+            }
+        },
+        "activitystreams.IngestResult": {
+            "type": "object",
+            "properties": {
+                "records_written": {
+                    "type": "integer"
+                },
+                "streams_stored": {
+                    "type": "integer"
+                }
+            }
+        },
+        "activitystreams.RecomputeResult": {
+            "type": "object",
+            "properties": {
+                "records_written": {
+                    "type": "integer"
+                },
+                "streams_used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "activitystreams.StreamPayload": {
+            "type": "object",
+            "properties": {
+                "heart_rate": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "power": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "speed": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                }
+            }
+        },
+        "activitystreams.StreamsResponse": {
+            "type": "object",
+            "properties": {
+                "downsample": {
+                    "type": "integer"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "sample_rate_hz": {
+                    "type": "integer"
+                },
+                "streams": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "workout_id": {
+                    "type": "string"
                 }
             }
         },
@@ -10627,14 +10797,6 @@ const docTemplate = `{
                 }
             }
         },
-        "effortanalytics.IngestResult": {
-            "type": "object",
-            "properties": {
-                "records_written": {
-                    "type": "integer"
-                }
-            }
-        },
         "effortanalytics.Metric": {
             "type": "string",
             "enum": [
@@ -10645,23 +10807,6 @@ const docTemplate = `{
                 "MetricPower",
                 "MetricSpeed"
             ]
-        },
-        "effortanalytics.StreamPayload": {
-            "type": "object",
-            "properties": {
-                "power": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    }
-                },
-                "speed": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    }
-                }
-            }
         },
         "energy.Availability": {
             "type": "object",
@@ -13969,8 +14114,14 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "decoupling_pct": {
+                    "type": "number"
+                },
                 "distance_m": {
                     "description": "Source-agnostic ingestion metrics — all nullable, populated by whatever\nwriter measured them (Garmin today). distance in metres, average power in\nwatts, ambient temperature in °C, estimated sweat loss in ml. SessionGroup\nis a free-text key linking the legs of a brick/multisport session (e.g. the\nGarmin parent activity id set on every leg).",
+                    "type": "number"
+                },
+                "efficiency_factor": {
                     "type": "number"
                 },
                 "elevation_gain_m": {
@@ -14106,6 +14257,10 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "variability_index": {
+                    "description": "Stream-derived execution-quality metrics (persist-activity-streams), all\nnullable. Written ONLY by the activity-streams ingest/recompute path — never\naccepted on POST/bulk/PATCH. VI = NP/mean power, EF = NP or speed per HR,\ndecoupling_pct = aerobic HR-drift over the activity halves.",
+                    "type": "number"
                 },
                 "wind_speed_mps": {
                     "type": "number"

@@ -167,6 +167,14 @@ type Workout struct {
 	ElevationLossM   *float64 `json:"elevation_loss_m,omitempty"`
 	NormalizedPowerW *int     `json:"normalized_power_w,omitempty"`
 	IntensityFactor  *float64 `json:"intensity_factor,omitempty"`
+
+	// Stream-derived execution-quality metrics (persist-activity-streams), all
+	// nullable. Written ONLY by the activity-streams ingest/recompute path — never
+	// accepted on POST/bulk/PATCH. VI = NP/mean power, EF = NP or speed per HR,
+	// decoupling_pct = aerobic HR-drift over the activity halves.
+	VariabilityIndex *float64 `json:"variability_index,omitempty"`
+	EfficiencyFactor *float64 `json:"efficiency_factor,omitempty"`
+	DecouplingPct    *float64 `json:"decoupling_pct,omitempty"`
 	AvgCadence       *int     `json:"avg_cadence,omitempty"`
 	AvgStrideM       *float64 `json:"avg_stride_m,omitempty"`
 	MaxHR            *int     `json:"max_hr,omitempty"`
