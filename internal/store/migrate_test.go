@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -117,4 +118,45 @@ func TestMigrate_UpDownUp(t *testing.T) {
 	).Scan(&recipeAllowed)
 	require.NoError(t, err)
 	require.True(t, recipeAllowed, "products_source_check should accept 'recipe' after Up")
+}
+
+// TestMigrate_DirtyStateDetectionAndRecovery simulates a half-applied migration
+// (the golang-migrate `dirty` flag set) and verifies that Migrate surfaces an
+// actionable error naming the version + `--force` recovery command, that Force
+// clears the flag, and that a subsequent Migrate then succeeds.
+func TestMigrate_DirtyStateDetectionAndRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping container-backed dirty-state test in short mode")
+	}
+	ctx := context.Background()
+	dsn := startPostgres(t)
+	require.NoError(t, Migrate(dsn), "initial Up")
+
+	pool, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+
+	var head int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&head))
+
+	// Simulate a migration that failed partway: the version row is marked dirty.
+	_, err = pool.Exec(ctx, `UPDATE schema_migrations SET dirty = true`)
+	require.NoError(t, err)
+
+	// Detection: Migrate must fail with an actionable, named message.
+	err = Migrate(dsn)
+	require.Error(t, err)
+	msg := err.Error()
+	require.Contains(t, msg, "DIRTY")
+	require.Contains(t, msg, strconv.Itoa(head), "error should name the dirty version")
+	require.Contains(t, msg, "--force", "error should name the recovery command")
+
+	// Recovery: Force clears the dirty flag at the head version.
+	require.NoError(t, Force(dsn, head))
+	var dirty bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT dirty FROM schema_migrations`).Scan(&dirty))
+	require.False(t, dirty, "Force should clear the dirty flag")
+
+	// A subsequent Migrate now succeeds (no pending migrations to apply).
+	require.NoError(t, Migrate(dsn), "re-migrate after force should succeed")
 }

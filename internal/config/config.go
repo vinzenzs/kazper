@@ -75,6 +75,16 @@ type Config struct {
 	MigrateOnStart        bool          `mapstructure:"MIGRATE_ON_START"`
 	SwaggerEnabled        bool          `mapstructure:"SWAGGER_ENABLED"`
 
+	// Server hardening (harden-server-baseline). HTTPRequestTimeout bounds every
+	// /api/v1 request (streaming/long routes exempt); parsed from the duration
+	// string HTTP_REQUEST_TIMEOUT (default 30s). MaxRequestBodyBytes caps request
+	// bodies on /api/v1 (self-capped routes exempt). MetricsEnabled gates the
+	// opt-in /metrics endpoint (default off — root is ingress-exposed).
+	HTTPRequestTimeout    time.Duration `mapstructure:"-"`
+	HTTPRequestTimeoutStr string        `mapstructure:"HTTP_REQUEST_TIMEOUT"`
+	MaxRequestBodyBytes   int64         `mapstructure:"MAX_REQUEST_BODY_BYTES"`
+	MetricsEnabled        bool          `mapstructure:"METRICS_ENABLED"`
+
 	// MCP server
 	NutritionAPIURL          string        `mapstructure:"NUTRITION_API_URL"`
 	MCPRequestTimeout        time.Duration `mapstructure:"-"`
@@ -126,6 +136,9 @@ var envKeys = []string{
 	"IDEMPOTENCY_TTL_HOURS",
 	"MIGRATE_ON_START",
 	"SWAGGER_ENABLED",
+	"HTTP_REQUEST_TIMEOUT",
+	"MAX_REQUEST_BODY_BYTES",
+	"METRICS_ENABLED",
 	"NUTRITION_API_URL",
 	"MCP_REQUEST_TIMEOUT_SECONDS",
 	"ANTHROPIC_API_KEY",
@@ -150,6 +163,9 @@ func New() *viper.Viper {
 	v.SetDefault("IDEMPOTENCY_TTL_HOURS", 24)
 	v.SetDefault("MIGRATE_ON_START", true)
 	v.SetDefault("SWAGGER_ENABLED", false)
+	v.SetDefault("HTTP_REQUEST_TIMEOUT", "30s")
+	v.SetDefault("MAX_REQUEST_BODY_BYTES", 1<<20) // 1 MiB
+	v.SetDefault("METRICS_ENABLED", false)
 	v.SetDefault("NUTRITION_API_URL", "http://localhost:8080"+APIBasePath)
 	v.SetDefault("MCP_REQUEST_TIMEOUT_SECONDS", 10)
 	v.SetDefault("CLAUDE_VISION_MODEL", "claude-sonnet-4-6")
@@ -185,6 +201,13 @@ func Load(v *viper.Viper) (*Config, error) {
 	c.VisionTimeout = time.Duration(c.VisionTimeoutSeconds) * time.Second
 	c.CookidooTimeout = time.Duration(c.CookidooTimeoutSeconds) * time.Second
 	c.ChatRequestTimeout = time.Duration(c.ChatRequestTimeoutSecs) * time.Second
+	if c.HTTPRequestTimeoutStr != "" {
+		d, err := time.ParseDuration(c.HTTPRequestTimeoutStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid HTTP_REQUEST_TIMEOUT %q: %w", c.HTTPRequestTimeoutStr, err)
+		}
+		c.HTTPRequestTimeout = d
+	}
 	return &c, nil
 }
 

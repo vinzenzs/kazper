@@ -44,6 +44,11 @@ tasks:
     cmds:
       - go test ./...
 
+  test:race:
+    desc: Run the full test suite with the race detector (slower — boots a Postgres container per package)
+    cmds:
+      - go test -race ./...
+
   vet:
     desc: Run go vet across the module
     cmds:
@@ -60,12 +65,16 @@ tasks:
     cmds:
       - mkdir -p "$(dirname {{.INSTALL_PATH}})"
       - cp {{.BIN}} {{.INSTALL_PATH}}
-      # Re-sign in place. macOS kills binaries whose ad-hoc signature has been
-      # invalidated by post-build mutation — `cp` across some volumes drops the
-      # xattrs the signature relies on, which manifests as the MCP supervisor
-      # silently restarting forever (Code Signature Invalid in Console.app).
-      # Cheap insurance; idempotent.
-      - codesign --force --sign - {{.INSTALL_PATH}}
+      # Re-sign in place on macOS only. macOS kills binaries whose ad-hoc
+      # signature has been invalidated by post-build mutation — `cp` across some
+      # volumes drops the xattrs the signature relies on, which manifests as the
+      # MCP supervisor silently restarting forever (Code Signature Invalid in
+      # Console.app). Cheap insurance; idempotent. `codesign` doesn't exist on
+      # Linux, so guard it behind an OS check.
+      - |
+        if [ "$(uname)" = "Darwin" ]; then
+          codesign --force --sign - {{.INSTALL_PATH}}
+        fi
       - echo "installed {{.INSTALL_PATH}}"
 
   mcp:install:

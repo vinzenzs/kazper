@@ -38,6 +38,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/vinzenzs/kazper/internal/config"
 	"github.com/vinzenzs/kazper/internal/store"
 )
 
@@ -53,7 +54,11 @@ func TestMCPServer_E2E(t *testing.T) {
 	t.Cleanup(cancel)
 	cmd := exec.CommandContext(ctx, binPath, "mcp")
 	cmd.Env = append(os.Environ(),
-		"NUTRITION_API_URL="+apiURL,
+		// NUTRITION_API_URL is the full base the MCP client appends tool paths to —
+		// it must carry the /api/v1 prefix (per add-api-versioning), matching the
+		// production default. Passing the bare origin here is what made every tool
+		// call 404 (the known-red create_workout_template → not_found).
+		"NUTRITION_API_URL="+apiURL+config.APIBasePath,
 		"AGENT_API_TOKEN="+e2eToken,
 		"MCP_REQUEST_TIMEOUT_SECONDS=15",
 	)

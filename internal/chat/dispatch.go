@@ -9,6 +9,7 @@ import (
 
 	"github.com/vinzenzs/kazper/internal/agenttools"
 	"github.com/vinzenzs/kazper/internal/config"
+	"github.com/vinzenzs/kazper/internal/reqid"
 )
 
 // dispatcher executes a tool's REST call in-process against the server's own
@@ -71,6 +72,12 @@ func (d *dispatcher) execute(ctx context.Context, toolName string, input json.Ra
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Content-Type", "application/json")
+	// Forward the parent /chat turn's request id so the tool subrequest's log
+	// line correlates to the turn that spawned it (the middleware honors an
+	// inbound X-Request-ID rather than generating a fresh one).
+	if id := reqid.FromContext(ctx); id != "" {
+		req.Header.Set(reqid.HeaderName, id)
+	}
 	// Write tools carry a derived Idempotency-Key so a replayed turn replays
 	// rather than duplicates — except PUT (full-replace), which the idempotency
 	// middleware rejects with 400 idempotency_unsupported_for_put.

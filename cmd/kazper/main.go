@@ -41,8 +41,6 @@ func rootCmd() *cobra.Command {
 			return fmt.Errorf("a subcommand is required")
 		},
 	}
-	// Reserved for future config-file support; today it's accepted but unused.
-	root.PersistentFlags().String("config", "", "path to config file (reserved; not yet used)")
 
 	root.AddCommand(serveCmd())
 	root.AddCommand(mcpCmd())

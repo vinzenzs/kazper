@@ -308,6 +308,14 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := BuildEngine()
+	// Opt-in Prometheus metrics (default off). Registered before routes so the
+	// middleware wraps every request; /metrics is a root infra route outside
+	// bearer auth (sibling of /healthz) — enable only behind a private scrape.
+	if cfg.MetricsEnabled {
+		mtx := newMetrics()
+		r.Use(mtx.middleware())
+		r.GET("/metrics", gin.WrapH(mtx.handler()))
+	}
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	r.GET("/readyz", func(c *gin.Context) {
 		rctx, rcancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
@@ -326,7 +334,16 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// config.APIBasePath is the shared source of truth (also used by the MCP client
 	// default and the chat loopback dispatcher).
 	api := r.Group(config.APIBasePath)
+	// Streaming/long routes are exempt from the per-request deadline (they own
+	// their own budgets); self-capped upload routes are exempt from the global
+	// body cap. Prefixes are full /api/v1 paths.
+	base := config.APIBasePath
+	timeoutExempt := []string{base + "/chat", base + "/meals/from_photo", base + "/garmin"}
+	bodyExempt := []string{base + "/meals/from_photo", base + "/garmin"}
+	api.Use(requestIDMiddleware())
 	api.Use(requestLogger(logger))
+	api.Use(requestTimeout(cfg.HTTPRequestTimeout, timeoutExempt))
+	api.Use(bodyLimit(cfg.MaxRequestBodyBytes, bodyExempt))
 	api.Use(auth.Middleware(authCfg))
 	api.Use(idempotency.Middleware(idempRepo, cfg.IdempotencyTTL))
 
@@ -454,6 +471,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Bound slow-loris header/body reads and idle keep-alives. WriteTimeout is
+		// deliberately left unset so SSE streams (/chat) stay open — per-request
+		// deadlines are handled by the requestTimeout middleware instead.
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
 	listenErr := make(chan error, 1)

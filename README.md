@@ -109,6 +109,9 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `IDEMPOTENCY_TTL_HOURS`  | `24`                                          | How long idempotency records are retained before cleanup             |
 | `MIGRATE_ON_START`       | `true`                                        | Run schema migrations at startup                                     |
 | `SWAGGER_ENABLED`        | `false`                                       | Serve `/swagger/*` in release mode (always served in debug mode)     |
+| `HTTP_REQUEST_TIMEOUT`   | `30s`                                         | Per-request deadline on `/api/v1` (Go duration). Streaming/long routes — `/chat`, `/meals/from_photo`, the Garmin proxy group — are exempt. A hung request returns `504 request_timeout` |
+| `MAX_REQUEST_BODY_BYTES` | `1048576`                                     | Request-body cap on `/api/v1` (1 MiB). Over-cap bodies get `413 body_too_large`. `/meals/from_photo` and the Garmin proxy keep their own larger caps |
+| `METRICS_ENABLED`        | `false`                                       | Serve Prometheus metrics at `GET /metrics` (root, no auth). Enable **only** with a private scrape path — `/metrics` is otherwise ingress-exposed |
 | `ANTHROPIC_API_KEY`      | _unset_                                       | Enables `POST /meals/from_photo`; when blank the endpoint returns 503 |
 | `CLAUDE_VISION_MODEL`    | `claude-sonnet-4-6`                           | Model used by `/meals/from_photo`                                    |
 | `VISION_TIMEOUT_SECONDS` | `15`                                          | Per-request timeout for the Anthropic call                           |
