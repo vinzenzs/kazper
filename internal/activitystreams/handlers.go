@@ -26,6 +26,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/workouts/:id/streams", h.retrieve)
 	rg.POST("/workouts/:id/streams/recompute", h.recompute)
 	rg.GET("/workouts/:id/w-prime-balance", h.wPrimeBalance)
+	rg.GET("/workouts/:id/intervals", h.intervals)
 }
 
 // ingest godoc
@@ -166,6 +167,50 @@ func (h *Handlers) wPrimeBalance(c *gin.Context) {
 	}
 	roundWPrime(res)
 	c.JSON(http.StatusOK, res)
+}
+
+// intervals godoc
+// @Summary      Detect work intervals from a stored power stream
+// @Description  Detects sustained work efforts in the workout's stored 1 Hz power stream with a deterministic, parameter-free procedure: a 30-second centered rolling mean, a work/rest threshold derived from the ride's own smoothed power distribution by Otsu's method (reported as `threshold_w`), merging of work spans separated by ≤ 30 s, and discarding of assembled spans shorter than 60 s. Returns each interval's `n`/`start_s`/`end_s`/`duration_s`/`avg_w`/`max_w`/`kj` (avg/max/kj over the raw stream), the rest gaps between them, and a summary. A ride whose smoothed power isn't meaningfully bimodal returns `200` with `threshold_w: null`, `intervals: []`, and `reason: "no_distinct_efforts"`. Cycling power only. Compute-on-read; nothing persisted.
+// @Tags         workouts
+// @Produce      json
+// @Param        id  path  string  true  "Workout UUID"
+// @Success      200  {object}  IntervalsResult
+// @Failure      404  {object}  map[string]string  "workout_not_found | streams_not_found | power_stream_missing"
+// @Security     BearerAuth
+// @Router       /workouts/{id}/intervals [get]
+func (h *Handlers) intervals(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
+		return
+	}
+	res, err := h.svc.DetectIntervals(c.Request.Context(), id)
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	roundIntervals(res)
+	c.JSON(http.StatusOK, res)
+}
+
+// roundIntervals rounds the response at the boundary: watts to whole numbers,
+// kJ to 1dp. Detection runs at full precision.
+func roundIntervals(res *IntervalsResult) {
+	if res.ThresholdW != nil {
+		t := math.Round(*res.ThresholdW)
+		res.ThresholdW = &t
+	}
+	for i := range res.Intervals {
+		res.Intervals[i].AvgW = math.Round(res.Intervals[i].AvgW)
+		res.Intervals[i].MaxW = math.Round(res.Intervals[i].MaxW)
+		res.Intervals[i].KJ = numfmt.Round1(res.Intervals[i].KJ)
+	}
+	for i := range res.Rests {
+		res.Rests[i].AvgW = math.Round(res.Rests[i].AvgW)
+	}
+	res.Summary.MeanEffortS = numfmt.Round1(res.Summary.MeanEffortS)
+	res.Summary.MeanEffortW = math.Round(res.Summary.MeanEffortW)
 }
 
 // positiveFloatParam parses a required, strictly-positive, finite float query

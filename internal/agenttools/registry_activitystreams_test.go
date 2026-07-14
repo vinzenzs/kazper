@@ -26,6 +26,20 @@ func TestBuild_WPrimeBalance(t *testing.T) {
 	assert.Empty(t, call.Body)
 }
 
+// detect_intervals → GET /workouts/{id}/intervals (read tier, full body).
+func TestBuild_DetectIntervals(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["detect_intervals"]
+	require.True(t, ok, "detect_intervals must be registered")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"workout_id":"w1"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/w1/intervals", call.Path)
+	assert.Empty(t, call.Body)
+}
+
 // recompute_workout_streams → POST /workouts/{id}/streams/recompute (write tier).
 func TestBuild_RecomputeWorkoutStreams(t *testing.T) {
 	specs := ByName(MCPRegistry())

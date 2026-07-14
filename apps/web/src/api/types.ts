@@ -289,6 +289,39 @@ export interface WPrimeBalanceResult {
   series?: number[];
 }
 
+// Mirrors internal/activitystreams interval detection. `threshold_w` is the
+// Otsu-derived work/rest split (null with reason "no_distinct_efforts" when the
+// ride isn't meaningfully bimodal). Advisory — a compute-on-read read.
+export interface DetectedInterval {
+  n: number;
+  start_s: number;
+  end_s: number;
+  duration_s: number;
+  avg_w: number;
+  max_w: number;
+  kj: number;
+}
+
+export interface IntervalRest {
+  after_n: number;
+  duration_s: number;
+  avg_w: number;
+}
+
+export interface IntervalsResult {
+  workout_id: string;
+  threshold_w: number | null;
+  intervals: DetectedInterval[];
+  rests: IntervalRest[];
+  reason?: "no_distinct_efforts";
+  summary: {
+    count: number;
+    work_total_s: number;
+    mean_effort_s: number;
+    mean_effort_w: number;
+  };
+}
+
 // Mirrors internal/pmc/types.go. The Coggan Performance Management Chart: one
 // entry per calendar day with fitness (ctl), fatigue (atl), form (tsb), and the
 // 7-day ramp rate, plus weekly overreaching flags.

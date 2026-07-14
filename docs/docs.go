@@ -10020,6 +10020,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/{id}/intervals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Detects sustained work efforts in the workout's stored 1 Hz power stream with a deterministic, parameter-free procedure: a 30-second centered rolling mean, a work/rest threshold derived from the ride's own smoothed power distribution by Otsu's method (reported as ` + "`" + `threshold_w` + "`" + `), merging of work spans separated by ≤ 30 s, and discarding of assembled spans shorter than 60 s. Returns each interval's ` + "`" + `n` + "`" + `/` + "`" + `start_s` + "`" + `/` + "`" + `end_s` + "`" + `/` + "`" + `duration_s` + "`" + `/` + "`" + `avg_w` + "`" + `/` + "`" + `max_w` + "`" + `/` + "`" + `kj` + "`" + ` (avg/max/kj over the raw stream), the rest gaps between them, and a summary. A ride whose smoothed power isn't meaningfully bimodal returns ` + "`" + `200` + "`" + ` with ` + "`" + `threshold_w: null` + "`" + `, ` + "`" + `intervals: []` + "`" + `, and ` + "`" + `reason: \"no_distinct_efforts\"` + "`" + `. Cycling power only. Compute-on-read; nothing persisted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Detect work intervals from a stored power stream",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.IntervalsResult"
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found | power_stream_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/program": {
             "get": {
                 "security": [
@@ -10429,6 +10472,78 @@ const docTemplate = `{
                 }
             }
         },
+        "activitystreams.Interval": {
+            "type": "object",
+            "properties": {
+                "avg_w": {
+                    "type": "number"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "end_s": {
+                    "type": "integer"
+                },
+                "kj": {
+                    "type": "number"
+                },
+                "max_w": {
+                    "type": "number"
+                },
+                "n": {
+                    "type": "integer"
+                },
+                "start_s": {
+                    "type": "integer"
+                }
+            }
+        },
+        "activitystreams.IntervalSummary": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "mean_effort_s": {
+                    "type": "number"
+                },
+                "mean_effort_w": {
+                    "type": "number"
+                },
+                "work_total_s": {
+                    "type": "integer"
+                }
+            }
+        },
+        "activitystreams.IntervalsResult": {
+            "type": "object",
+            "properties": {
+                "intervals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/activitystreams.Interval"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "rests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/activitystreams.Rest"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/activitystreams.IntervalSummary"
+                },
+                "threshold_w": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
         "activitystreams.RecomputeResult": {
             "type": "object",
             "properties": {
@@ -10436,6 +10551,20 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "streams_used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "activitystreams.Rest": {
+            "type": "object",
+            "properties": {
+                "after_n": {
+                    "type": "integer"
+                },
+                "avg_w": {
+                    "type": "number"
+                },
+                "duration_s": {
                     "type": "integer"
                 }
             }

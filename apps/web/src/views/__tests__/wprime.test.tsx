@@ -11,7 +11,11 @@ import {
   populatedTrend,
   populatedWorkoutDetail,
 } from "../../test/fixtures";
-import type { CPModelResult, WPrimeBalanceResult } from "../../api/types";
+import type {
+  CPModelResult,
+  WPrimeBalanceResult,
+  IntervalsResult,
+} from "../../api/types";
 
 // The workout-detail W′-balance strip: present only when the critical-power fit
 // yields cp/W′ AND the workout has a power stream. These tests drive the two
@@ -44,6 +48,17 @@ const wpResult: WPrimeBalanceResult = {
   series: [21.5, 18.2, 12.7, 7.9, 5.1, 3.4, 5.0, 6.6, 8.1],
 };
 
+const detectedIntervals: IntervalsResult = {
+  workout_id: "w1",
+  threshold_w: 210,
+  intervals: [
+    { n: 1, start_s: 120, end_s: 360, duration_s: 240, avg_w: 305, max_w: 320, kj: 73.2 },
+    { n: 2, start_s: 480, end_s: 720, duration_s: 240, avg_w: 298, max_w: 315, kj: 71.5 },
+  ],
+  rests: [{ after_n: 1, duration_s: 120, avg_w: 120 }],
+  summary: { count: 2, work_total_s: 480, mean_effort_s: 240, mean_effort_w: 301 },
+};
+
 function mockHooks(over: Record<string, unknown>) {
   vi.doMock("../../api/hooks", () => ({
     useTrainingContext: () => ok(populatedTraining),
@@ -55,6 +70,7 @@ function mockHooks(over: Record<string, unknown>) {
     useWorkout: () => ok(populatedWorkoutDetail),
     useCPModel: () => ok(null),
     useWPrimeBalance: () => ok(undefined),
+    useDetectedIntervals: () => ok(undefined),
     ...over,
   }));
 }
@@ -94,5 +110,34 @@ describe("workout-detail W′ balance strip", () => {
     // The detail view still renders (title present) but no W′bal panel.
     expect(screen.getByText("Threshold 4x8")).toBeInTheDocument();
     expect(screen.queryByText("W′ balance")).not.toBeInTheDocument();
+  });
+
+  it("renders the detected-intervals table when efforts are found", async () => {
+    vi.resetModules();
+    mockHooks({ useDetectedIntervals: () => ok(detectedIntervals) });
+    await renderDetail();
+    expect(screen.getByText("Detected intervals")).toBeInTheDocument();
+    expect(screen.getByTestId("intervals-table")).toBeInTheDocument();
+    // Two effort rows + the header row.
+    expect(screen.getByTestId("intervals-table").querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(screen.getByText("threshold 210 W")).toBeInTheDocument();
+  });
+
+  it("omits the intervals table on a no_distinct_efforts result", async () => {
+    vi.resetModules();
+    mockHooks({
+      useDetectedIntervals: () =>
+        ok({
+          workout_id: "w1",
+          threshold_w: null,
+          intervals: [],
+          rests: [],
+          reason: "no_distinct_efforts",
+          summary: { count: 0, work_total_s: 0, mean_effort_s: 0, mean_effort_w: 0 },
+        }),
+    });
+    await renderDetail();
+    expect(screen.getByText("Threshold 4x8")).toBeInTheDocument();
+    expect(screen.queryByText("Detected intervals")).not.toBeInTheDocument();
   });
 });

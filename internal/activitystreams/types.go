@@ -107,6 +107,46 @@ type WPrimeBalanceResult struct {
 	Series     []float64     `json:"series,omitempty"`
 }
 
+// Interval is one detected work effort: its ordinal, span (seconds from ride
+// start), duration, and average/max/total power/work over the RAW stream (the
+// smoothed series only sets the boundaries).
+type Interval struct {
+	N         int     `json:"n"`
+	StartS    int     `json:"start_s"`
+	EndS      int     `json:"end_s"`
+	DurationS int     `json:"duration_s"`
+	AvgW      float64 `json:"avg_w"`
+	MaxW      float64 `json:"max_w"`
+	KJ        float64 `json:"kj"`
+}
+
+// Rest is the recovery gap after interval AfterN.
+type Rest struct {
+	AfterN    int     `json:"after_n"`
+	DurationS int     `json:"duration_s"`
+	AvgW      float64 `json:"avg_w"`
+}
+
+// IntervalSummary is the headline structure of the detected efforts.
+type IntervalSummary struct {
+	Count       int     `json:"count"`
+	WorkTotalS  int     `json:"work_total_s"`
+	MeanEffortS float64 `json:"mean_effort_s"`
+	MeanEffortW float64 `json:"mean_effort_w"`
+}
+
+// IntervalsResult is the GET /workouts/{id}/intervals body. ThresholdW is the
+// Otsu-derived work/rest split (null when the ride isn't meaningfully bimodal,
+// with Reason "no_distinct_efforts"). Compute-on-read; nothing persisted.
+type IntervalsResult struct {
+	WorkoutID  string          `json:"workout_id"`
+	ThresholdW *float64        `json:"threshold_w"`
+	Intervals  []Interval      `json:"intervals"`
+	Rests      []Rest          `json:"rests"`
+	Reason     string          `json:"reason,omitempty"`
+	Summary    IntervalSummary `json:"summary"`
+}
+
 // ExecutionMetrics are the stream-derived quality signals stored back onto the
 // workout. Any field may be nil when its inputs are absent (e.g. no power → no
 // VI; insufficient HR coverage → no decoupling).

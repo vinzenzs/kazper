@@ -30,6 +30,7 @@ vi.mock("../../api/hooks", () => ({
   // fit the strip is absent, which is the default for these routing tests.
   useCPModel: () => ok(null),
   useWPrimeBalance: () => ok(undefined),
+  useDetectedIntervals: () => ok(undefined),
 }));
 
 function renderAt(path: string) {

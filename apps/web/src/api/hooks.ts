@@ -14,6 +14,7 @@ import type {
   PowerCurve,
   CPModelResult,
   PowerProfileResult,
+  IntervalsResult,
   WPrimeBalanceResult,
   Workout,
   WorkoutStats,
@@ -151,6 +152,19 @@ export function usePowerProfile(from: string, to: string) {
     queryKey: ["power-profile", from, to],
     queryFn: () =>
       apiGet<PowerProfileResult>(`/workouts/power-profile?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
+  });
+}
+
+// Detected work intervals for a workout's stored power stream. A 404 (no
+// power/no streams) or a `no_distinct_efforts` result both leave the detail-page
+// table absent; retry is off so a persistent 404 doesn't spin.
+export function useDetectedIntervals(workoutId: string | undefined) {
+  return useQuery({
+    queryKey: ["detected-intervals", workoutId],
+    enabled: !!workoutId,
+    queryFn: () => apiGet<IntervalsResult>(`/workouts/${workoutId}/intervals`),
     refetchInterval: SLOW_INTERVAL_MS,
     retry: false,
   });

@@ -29,6 +29,11 @@ type WPrimeBalanceArgs struct {
 	WPrimeKJ  float64 `json:"w_prime_kj" jsonschema:"anaerobic work capacity W′ in kJ, from the cp_model fit (> 0)"`
 }
 
+// DetectIntervalsArgs is the input to detect_intervals.
+type DetectIntervalsArgs struct {
+	WorkoutID string `json:"workout_id" jsonschema:"the workout id (must have a stored power stream) to detect work intervals in"`
+}
+
 func activityStreamsSpecs() []Spec {
 	return []Spec{
 		{
@@ -80,6 +85,32 @@ func activityStreamsSpecs() []Spec {
 					Method: "GET",
 					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/w-prime-balance",
 					Query:  q,
+				}, nil
+			},
+		},
+		{
+			Name: "detect_intervals",
+			Description: "Detect the WORK INTERVALS actually done in a ride from its stored power stream — for " +
+				"unstructured / non-lap-buttoned sessions where only the athlete's legs know the structure. A " +
+				"deterministic, parameter-free procedure (30 s smoothing → an Otsu work/rest threshold derived from " +
+				"the ride's own power distribution → gap-merge ≤ 30 s → discard efforts < 60 s) returns the derived " +
+				"threshold_w, each interval's {n, start_s, end_s, duration_s, avg_w, max_w, kj}, the rest gaps, and a " +
+				"summary (count, work_total_s, mean_effort_s, mean_effort_w) — the compact structure to describe what " +
+				"was done ('5 efforts averaging 4:10 at 305 W'). A genuinely steady ride returns intervals: [] with " +
+				"threshold_w: null and reason 'no_distinct_efforts' — absence of intervals is a real finding, not an " +
+				"error. Unlike the raw series this list IS returned in full (compact reasoning data). Needs a stored " +
+				"power stream: power_stream_missing if none, streams_not_found if nothing is stored. Cycling power " +
+				"only. Read-only.",
+			SchemaType: DetectIntervalsArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a DetectIntervalsArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				return HTTPCall{
+					Method: "GET",
+					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/intervals",
 				}, nil
 			},
 		},

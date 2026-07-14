@@ -47,11 +47,67 @@ definitions:
       streams_stored:
         type: integer
     type: object
+  activitystreams.Interval:
+    properties:
+      avg_w:
+        type: number
+      duration_s:
+        type: integer
+      end_s:
+        type: integer
+      kj:
+        type: number
+      max_w:
+        type: number
+      "n":
+        type: integer
+      start_s:
+        type: integer
+    type: object
+  activitystreams.IntervalSummary:
+    properties:
+      count:
+        type: integer
+      mean_effort_s:
+        type: number
+      mean_effort_w:
+        type: number
+      work_total_s:
+        type: integer
+    type: object
+  activitystreams.IntervalsResult:
+    properties:
+      intervals:
+        items:
+          $ref: '#/definitions/activitystreams.Interval'
+        type: array
+      reason:
+        type: string
+      rests:
+        items:
+          $ref: '#/definitions/activitystreams.Rest'
+        type: array
+      summary:
+        $ref: '#/definitions/activitystreams.IntervalSummary'
+      threshold_w:
+        type: number
+      workout_id:
+        type: string
+    type: object
   activitystreams.RecomputeResult:
     properties:
       records_written:
         type: integer
       streams_used:
+        type: integer
+    type: object
+  activitystreams.Rest:
+    properties:
+      after_n:
+        type: integer
+      avg_w:
+        type: number
+      duration_s:
         type: integer
     type: object
   activitystreams.StreamPayload:
@@ -10484,6 +10540,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Fulfill a planned workout with a completed activity
+      tags:
+      - workouts
+  /workouts/{id}/intervals:
+    get:
+      description: 'Detects sustained work efforts in the workout''s stored 1 Hz power
+        stream with a deterministic, parameter-free procedure: a 30-second centered
+        rolling mean, a work/rest threshold derived from the ride''s own smoothed
+        power distribution by Otsu''s method (reported as `threshold_w`), merging
+        of work spans separated by ≤ 30 s, and discarding of assembled spans shorter
+        than 60 s. Returns each interval''s `n`/`start_s`/`end_s`/`duration_s`/`avg_w`/`max_w`/`kj`
+        (avg/max/kj over the raw stream), the rest gaps between them, and a summary.
+        A ride whose smoothed power isn''t meaningfully bimodal returns `200` with
+        `threshold_w: null`, `intervals: []`, and `reason: "no_distinct_efforts"`.
+        Cycling power only. Compute-on-read; nothing persisted.'
+      parameters:
+      - description: Workout UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/activitystreams.IntervalsResult'
+        "404":
+          description: workout_not_found | streams_not_found | power_stream_missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Detect work intervals from a stored power stream
       tags:
       - workouts
   /workouts/{id}/program:

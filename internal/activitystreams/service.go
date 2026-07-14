@@ -205,6 +205,29 @@ func (s *Service) WPrimeBalance(ctx context.Context, id uuid.UUID, cpWatts, wPri
 	return res, nil
 }
 
+// DetectIntervals finds sustained work efforts in the workout's stored power
+// stream with the deterministic, parameter-free procedure in intervals.go.
+// Compute-on-read; reads no athlete-config and persists nothing. Sentinels:
+// ErrWorkoutNotFound / ErrStreamsNotFound / ErrPowerStreamMissing.
+func (s *Service) DetectIntervals(ctx context.Context, id uuid.UUID) (*IntervalsResult, error) {
+	if _, err := s.resolve(ctx, id); err != nil {
+		return nil, err
+	}
+	series, _, err := s.streams.LoadForWorkout(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, ErrStreamsNotFound
+	}
+	power := series[StreamPower]
+	if len(power) == 0 {
+		return nil, ErrPowerStreamMissing
+	}
+	res := detectIntervals(id.String(), power)
+	return &res, nil
+}
+
 func (s *Service) resolve(ctx context.Context, id uuid.UUID) (*workouts.Workout, error) {
 	w, err := s.workout.GetByID(ctx, id)
 	if err != nil {

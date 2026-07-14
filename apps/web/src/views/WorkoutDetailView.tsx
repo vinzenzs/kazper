@@ -5,7 +5,13 @@ import { Stat } from "../components/Stat";
 import { SplitsTable } from "../components/SplitsTable";
 import { ZoneTimeStrip } from "../components/ZoneTimeStrip";
 import { WPrimeBalanceStrip } from "../components/WPrimeBalanceStrip";
-import { useWorkout, useCPModel, useWPrimeBalance } from "../api/hooks";
+import { DetectedIntervalsTable } from "../components/DetectedIntervalsTable";
+import {
+  useWorkout,
+  useCPModel,
+  useWPrimeBalance,
+  useDetectedIntervals,
+} from "../api/hooks";
 import { ApiError } from "../api/client";
 import type { Workout } from "../api/types";
 import {
@@ -33,6 +39,10 @@ export function WorkoutDetailView() {
   // nothing — it is supplementary detail here, not a primary metric.
   const cp = useCPModel(daysAgoISO(90), daysAgoISO(0));
   const wp = useWPrimeBalance(id, cp.data?.model?.cp_watts, cp.data?.model?.w_prime_kj);
+  // Detected work intervals — shown only when ≥1 effort is found; a
+  // no_distinct_efforts result, a workout with no power, or a fetch error all
+  // render nothing (absence, not an error state).
+  const intervals = useDetectedIntervals(id);
 
   const notFound =
     isError && error instanceof ApiError && error.status === 404;
@@ -74,6 +84,12 @@ export function WorkoutDetailView() {
       {wp.data && (
         <Panel title="W′ balance">
           <WPrimeBalanceStrip result={wp.data} />
+        </Panel>
+      )}
+
+      {intervals.data && intervals.data.intervals.length > 0 && (
+        <Panel title="Detected intervals">
+          <DetectedIntervalsTable result={intervals.data} />
         </Panel>
       )}
 
