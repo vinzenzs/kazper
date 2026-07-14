@@ -64,13 +64,12 @@ openspec/
   specs/<capability>/spec.md # authoritative current state (one per capability)
   changes/<slug>/            # in-flight: proposal.md / design.md / specs/ (deltas) / tasks.md
   changes/archive/YYYY-MM-DD-<slug>/  # implemented
-  priorities.md              # tier/triage framing — "why does this matter"
 ```
 
 **Every non-trivial change is proposed before it's built.** The flow is `/opsx:propose <slug>` (write artifacts) → `/opsx:apply <slug>` (implement, ticking task boxes) → `/opsx:archive <slug>` (sync delta specs into `openspec/specs/` and move to archive). Most code changes that touch the REST/MCP surface should land via this flow rather than ad-hoc.
 
 **Commit after every `/opsx:apply`.** When an apply finishes (tasks ticked, tests green, docs regenerated), propose a commit before moving to archive or the next change — don't pile multiple changes into one squash. Convention: `feat(<scope>): <one-line summary>` with the OpenSpec change directory included alongside the code/test/doc files (the tasks.md state belongs in the same commit as the implementation it describes). The archive `mv` is its own subsequent commit. Skipping this leaves `roadmap.md` showing `_uncommitted_` for the change.
 
-`continuity.md` (operational queue: in-progress + up-next + backlog) and `roadmap.md` (historical) are derived companion docs maintained by the `continuity` and `roadmap` skills respectively. `openspec/priorities.md` is hand-maintained tier-based triage.
+`continuity.md` (operational queue: in-progress + up-next + backlog) and `roadmap.md` (historical) are derived companion docs maintained by the `continuity` and `roadmap` skills respectively.
 
-When reviewing what to build next: read `openspec/priorities.md` for the framing, `continuity.md` for the operational state, and the `archive/` for precedent on shape decisions (e.g. unit isolation, tri-state PATCH, empty-string-clear).
+When reviewing what to build next: read `continuity.md` for the operational state (Up next + Backlog carry the triage framing) and the `archive/` for precedent on shape decisions (e.g. unit isolation, tri-state PATCH, empty-string-clear).
