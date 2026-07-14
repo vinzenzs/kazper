@@ -240,6 +240,28 @@ export interface CPModelResult {
   points: CPPoint[];
 }
 
+// Mirrors internal/activitystreams W′-balance. The anaerobic-battery story of a
+// ride, computed from its stored power stream + explicit CP/W′ params.
+// `min_w_prime_kj` can be negative / `max_depletion_pct` over 100 when the
+// supplied W′ is too low. `series` is kJ per (downsampled) point; absent when
+// requested summary-only.
+export interface WPrimeSummary {
+  min_w_prime_kj: number;
+  min_at_s: number;
+  end_w_prime_kj: number;
+  max_depletion_pct: number;
+  time_below_25_pct_s: number;
+}
+
+export interface WPrimeBalanceResult {
+  workout_id: string;
+  params: { cp_watts: number; w_prime_kj: number };
+  duration_s: number;
+  summary: WPrimeSummary;
+  downsample?: number;
+  series?: number[];
+}
+
 // Mirrors internal/pmc/types.go. The Coggan Performance Management Chart: one
 // entry per calendar day with fitness (ctl), fatigue (atl), form (tsb), and the
 // 7-day ramp rate, plus weekly overreaching flags.

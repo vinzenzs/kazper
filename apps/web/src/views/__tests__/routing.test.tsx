@@ -26,6 +26,10 @@ vi.mock("../../api/hooks", () => ({
   useAchievements: () => ok({ achievements: populatedAchievements }),
   useGear: () => ok({ gear: populatedGear }),
   useWorkout: () => ok(populatedWorkoutDetail),
+  // The workout-detail W′bal strip is gated on a critical-power fit; with no
+  // fit the strip is absent, which is the default for these routing tests.
+  useCPModel: () => ok(null),
+  useWPrimeBalance: () => ok(undefined),
 }));
 
 function renderAt(path: string) {

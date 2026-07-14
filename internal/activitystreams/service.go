@@ -13,9 +13,10 @@ import (
 
 // Sentinel errors mapping 1:1 to API error codes.
 var (
-	ErrWorkoutNotFound  = errors.New("workout not found")   // workout_not_found
-	ErrStreamsNotFound  = errors.New("streams not found")   // streams_not_found
-	ErrDownsampleInvalid = errors.New("downsample invalid") // downsample_invalid
+	ErrWorkoutNotFound   = errors.New("workout not found")    // workout_not_found
+	ErrStreamsNotFound   = errors.New("streams not found")    // streams_not_found
+	ErrDownsampleInvalid = errors.New("downsample invalid")   // downsample_invalid
+	ErrPowerStreamMissing = errors.New("power stream missing") // power_stream_missing
 )
 
 const (
@@ -155,6 +156,53 @@ func (s *Service) Recompute(ctx context.Context, id uuid.UUID) (RecomputeResult,
 		return RecomputeResult{}, err
 	}
 	return RecomputeResult{RecordsWritten: records, StreamsUsed: len(series)}, nil
+}
+
+// WPrimeBalance computes the differential W′-balance over the workout's stored
+// power stream given caller-supplied CP/W′. Compute-on-read; reads no
+// athlete-config and persists nothing. summaryOnly omits the (optionally
+// downsampled) series. Sentinels: ErrWorkoutNotFound / ErrStreamsNotFound /
+// ErrPowerStreamMissing / ErrDownsampleInvalid.
+func (s *Service) WPrimeBalance(ctx context.Context, id uuid.UUID, cpWatts, wPrimeKJ float64, downsample *int, summaryOnly bool) (*WPrimeBalanceResult, error) {
+	if downsample != nil && (*downsample < downsampleMin || *downsample > downsampleMax) {
+		return nil, ErrDownsampleInvalid
+	}
+	if _, err := s.resolve(ctx, id); err != nil {
+		return nil, err
+	}
+	series, _, err := s.streams.LoadForWorkout(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, ErrStreamsNotFound
+	}
+	power := series[StreamPower]
+	if len(power) == 0 {
+		return nil, ErrPowerStreamMissing
+	}
+
+	wPrimeJ := wPrimeKJ * 1000
+	bal := wPrimeBalance(power, cpWatts, wPrimeJ)
+	res := &WPrimeBalanceResult{
+		WorkoutID: id.String(),
+		Params:    WPrimeParams{CPWatts: cpWatts, WPrimeKJ: wPrimeKJ},
+		DurationS: len(power),
+		Summary:   wPrimeSummarize(bal, wPrimeJ),
+	}
+	if !summaryOnly {
+		vals := bal
+		if downsample != nil {
+			vals = bucketMean(bal, *downsample)
+		}
+		series := make([]float64, len(vals))
+		for i, v := range vals {
+			series[i] = v / 1000 // kJ; rounded at the handler boundary
+		}
+		res.Series = series
+		res.Downsample = downsample
+	}
+	return res, nil
 }
 
 func (s *Service) resolve(ctx context.Context, id uuid.UUID) (*workouts.Workout, error) {

@@ -12,6 +12,7 @@ import type {
   PMCSeries,
   PowerCurve,
   CPModelResult,
+  WPrimeBalanceResult,
   Workout,
   WorkoutStats,
 } from "./types";
@@ -123,6 +124,26 @@ export function useCPModel(from: string, to: string) {
   return useQuery({
     queryKey: ["cp-model", from, to],
     queryFn: () => apiGet<CPModelResult>(`/workouts/cp-model?from=${from}&to=${to}`),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// Per-workout W′ balance over the stored power stream. Disabled until the CP/W′
+// params are known (from the cp-model fit); the series is downsampled for the
+// chart while the exact minimum stays in the summary.
+export function useWPrimeBalance(
+  workoutId: string | undefined,
+  cpWatts: number | undefined,
+  wPrimeKj: number | undefined,
+) {
+  const enabled = !!workoutId && !!cpWatts && cpWatts > 0 && !!wPrimeKj && wPrimeKj > 0;
+  return useQuery({
+    queryKey: ["w-prime-balance", workoutId, cpWatts, wPrimeKj],
+    enabled,
+    queryFn: () =>
+      apiGet<WPrimeBalanceResult>(
+        `/workouts/${workoutId}/w-prime-balance?cp_watts=${cpWatts}&w_prime_kj=${wPrimeKj}&downsample=200`,
+      ),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

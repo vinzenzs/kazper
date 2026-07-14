@@ -4,7 +4,8 @@ import { Panel } from "../components/Panel";
 import { Stat } from "../components/Stat";
 import { SplitsTable } from "../components/SplitsTable";
 import { ZoneTimeStrip } from "../components/ZoneTimeStrip";
-import { useWorkout } from "../api/hooks";
+import { WPrimeBalanceStrip } from "../components/WPrimeBalanceStrip";
+import { useWorkout, useCPModel, useWPrimeBalance } from "../api/hooks";
 import { ApiError } from "../api/client";
 import type { Workout } from "../api/types";
 import {
@@ -24,6 +25,14 @@ import {
 export function WorkoutDetailView() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, isError, error } = useWorkout(id);
+
+  // W′-balance parameters come from the athlete's critical-power fit over a
+  // trailing-90-day window (the same model the stats page shows). The W′bal
+  // fetch stays disabled until that fit yields cp/W′; when the window can't
+  // support a fit, or the workout has no power stream, the strip renders
+  // nothing — it is supplementary detail here, not a primary metric.
+  const cp = useCPModel(daysAgoISO(90), daysAgoISO(0));
+  const wp = useWPrimeBalance(id, cp.data?.model?.cp_watts, cp.data?.model?.w_prime_kj);
 
   const notFound =
     isError && error instanceof ApiError && error.status === 404;
@@ -59,6 +68,12 @@ export function WorkoutDetailView() {
               data.secs_in_zone_5,
             ]}
           />
+        </Panel>
+      )}
+
+      {wp.data && (
+        <Panel title="W′ balance">
+          <WPrimeBalanceStrip result={wp.data} />
         </Panel>
       )}
 
@@ -115,6 +130,14 @@ function hasZoneTime(w: Workout): boolean {
     w.secs_in_zone_4,
     w.secs_in_zone_5,
   ].some((v) => (v ?? 0) > 0);
+}
+
+// daysAgoISO returns a YYYY-MM-DD string n days before today, in local time —
+// used to frame the trailing-90-day critical-power window.
+function daysAgoISO(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
 }
 
 // Elapsed minutes between two ISO timestamps; null when either is unparseable.

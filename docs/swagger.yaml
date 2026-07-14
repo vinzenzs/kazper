@@ -86,6 +86,43 @@ definitions:
       workout_id:
         type: string
     type: object
+  activitystreams.WPrimeBalanceResult:
+    properties:
+      downsample:
+        type: integer
+      duration_s:
+        type: integer
+      params:
+        $ref: '#/definitions/activitystreams.WPrimeParams'
+      series:
+        items:
+          type: number
+        type: array
+      summary:
+        $ref: '#/definitions/activitystreams.WPrimeSummary'
+      workout_id:
+        type: string
+    type: object
+  activitystreams.WPrimeParams:
+    properties:
+      cp_watts:
+        type: number
+      w_prime_kj:
+        type: number
+    type: object
+  activitystreams.WPrimeSummary:
+    properties:
+      end_w_prime_kj:
+        type: number
+      max_depletion_pct:
+        type: number
+      min_at_s:
+        type: integer
+      min_w_prime_kj:
+        type: number
+      time_below_25_pct_s:
+        type: integer
+    type: object
   agenttools.ProposalCall:
     properties:
       name:
@@ -10310,6 +10347,67 @@ paths:
       security:
       - BearerAuth: []
       summary: Reverse a fulfilled workout back to planned
+      tags:
+      - workouts
+  /workouts/{id}/w-prime-balance:
+    get:
+      description: 'Computes the differential (Froncioni–Clarke–Skiba) W′-balance
+        time series over the workout''s stored 1 Hz power stream, given caller-supplied
+        critical-power model parameters `cp_watts` and `w_prime_kj` (typically from
+        GET /workouts/cp-model). Returns `params` (echoed), `duration_s`, a `summary`
+        (minimum balance + when, end balance, max depletion %, seconds below 25% W′),
+        and the `series` (W′bal in kJ per point). `summary_only=true` omits the series;
+        `downsample=N` (10..5000) bucket-means the series for charting (the exact
+        minimum always lives in the summary). The balance is NOT clamped at zero —
+        a negative floor / >100% depletion means the supplied W′ is too low (re-fit
+        via cp-model). Advisory: reads no athlete-config. Compute-on-read; nothing
+        persisted.'
+      parameters:
+      - description: Workout id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Critical power (W), > 0
+        in: query
+        name: cp_watts
+        required: true
+        type: number
+      - description: Anaerobic work capacity W′ (kJ), > 0
+        in: query
+        name: w_prime_kj
+        required: true
+        type: number
+      - description: Omit the series, return params + summary only
+        in: query
+        name: summary_only
+        type: boolean
+      - description: Bucket-mean the series down to N points (10..5000)
+        in: query
+        name: downsample
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/activitystreams.WPrimeBalanceResult'
+        "400":
+          description: cp_invalid | w_prime_invalid | downsample_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: workout_not_found | streams_not_found | power_stream_missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Per-workout W′ balance over the stored power stream
       tags:
       - workouts
   /workouts/adherence:

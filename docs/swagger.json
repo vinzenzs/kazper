@@ -9951,6 +9951,84 @@
                     }
                 }
             }
+        },
+        "/workouts/{id}/w-prime-balance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Computes the differential (Froncioni–Clarke–Skiba) W′-balance time series over the workout's stored 1 Hz power stream, given caller-supplied critical-power model parameters `cp_watts` and `w_prime_kj` (typically from GET /workouts/cp-model). Returns `params` (echoed), `duration_s`, a `summary` (minimum balance + when, end balance, max depletion %, seconds below 25% W′), and the `series` (W′bal in kJ per point). `summary_only=true` omits the series; `downsample=N` (10..5000) bucket-means the series for charting (the exact minimum always lives in the summary). The balance is NOT clamped at zero — a negative floor / \u003e100% depletion means the supplied W′ is too low (re-fit via cp-model). Advisory: reads no athlete-config. Compute-on-read; nothing persisted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Per-workout W′ balance over the stored power stream",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Critical power (W), \u003e 0",
+                        "name": "cp_watts",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Anaerobic work capacity W′ (kJ), \u003e 0",
+                        "name": "w_prime_kj",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Omit the series, return params + summary only",
+                        "name": "summary_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Bucket-mean the series down to N points (10..5000)",
+                        "name": "downsample",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.WPrimeBalanceResult"
+                        }
+                    },
+                    "400": {
+                        "description": "cp_invalid | w_prime_invalid | downsample_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found | power_stream_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -10082,6 +10160,63 @@
                 },
                 "workout_id": {
                     "type": "string"
+                }
+            }
+        },
+        "activitystreams.WPrimeBalanceResult": {
+            "type": "object",
+            "properties": {
+                "downsample": {
+                    "type": "integer"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "params": {
+                    "$ref": "#/definitions/activitystreams.WPrimeParams"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/activitystreams.WPrimeSummary"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "activitystreams.WPrimeParams": {
+            "type": "object",
+            "properties": {
+                "cp_watts": {
+                    "type": "number"
+                },
+                "w_prime_kj": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.WPrimeSummary": {
+            "type": "object",
+            "properties": {
+                "end_w_prime_kj": {
+                    "type": "number"
+                },
+                "max_depletion_pct": {
+                    "type": "number"
+                },
+                "min_at_s": {
+                    "type": "integer"
+                },
+                "min_w_prime_kj": {
+                    "type": "number"
+                },
+                "time_below_25_pct_s": {
+                    "type": "integer"
                 }
             }
         },

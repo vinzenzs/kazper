@@ -75,6 +75,38 @@ type StreamsResponse struct {
 	Streams      map[StreamType][]float64 `json:"streams"`
 }
 
+// WPrimeParams echoes the (caller-supplied) critical-power model parameters the
+// W′bal series was computed with — reproducibility: same params, same answer.
+type WPrimeParams struct {
+	CPWatts  float64 `json:"cp_watts"`
+	WPrimeKJ float64 `json:"w_prime_kj"`
+}
+
+// WPrimeSummary is the anaerobic-battery story of the ride. MinWPrimeKJ can be
+// negative (the ride showed more anaerobic work than the supplied W′ allows —
+// stale params), and MaxDepletionPct can accordingly exceed 100. The minimum is
+// taken at full stream resolution, so downsampling the series loses nothing.
+type WPrimeSummary struct {
+	MinWPrimeKJ     float64 `json:"min_w_prime_kj"`
+	MinAtS          int     `json:"min_at_s"`
+	EndWPrimeKJ     float64 `json:"end_w_prime_kj"`
+	MaxDepletionPct float64 `json:"max_depletion_pct"`
+	TimeBelow25PctS int     `json:"time_below_25_pct_s"`
+}
+
+// WPrimeBalanceResult is the GET /workouts/{id}/w-prime-balance body. Series is
+// the W′bal (kJ) per (optionally downsampled) point; omitted when summary_only.
+// DurationS is the full-resolution stream length. Compute-on-read, nothing
+// persisted; no athlete-config read (params are explicit).
+type WPrimeBalanceResult struct {
+	WorkoutID  string        `json:"workout_id"`
+	Params     WPrimeParams  `json:"params"`
+	DurationS  int           `json:"duration_s"`
+	Summary    WPrimeSummary `json:"summary"`
+	Downsample *int          `json:"downsample,omitempty"`
+	Series     []float64     `json:"series,omitempty"`
+}
+
 // ExecutionMetrics are the stream-derived quality signals stored back onto the
 // workout. Any field may be nil when its inputs are absent (e.g. no power → no
 // VI; insufficient HR coverage → no decoupling).
