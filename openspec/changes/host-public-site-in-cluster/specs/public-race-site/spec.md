@@ -22,7 +22,7 @@ than publish a page with missing data.
 - **WHEN** the site is built while the feed returns `{"race": {"name": "...", "race_date": "YYYY-MM-DD"}, "days_remaining": N}`
 - **THEN** the output contains a page with the race name, the race date, and a prerendered countdown of `N` days
 
-#### Scenario: Neither the static output nor the image layers leak the secret, and the page never calls Kazper
+#### Scenario: Shipped assets leak no secret and never call Kazper
 
 - **WHEN** the built static output and every layer (and the build history) of the
   produced container image are searched for the configured secret value and for
