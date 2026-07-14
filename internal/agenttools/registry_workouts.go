@@ -61,6 +61,10 @@ type WorkoutAdherenceArgs struct {
 	PlanID *string `json:"plan_id,omitempty" jsonschema:"optional: restrict to workouts whose plan slot belongs to this training-plan id (off-plan completed work is excluded)"`
 }
 
+type WorkoutComplianceArgs struct {
+	WorkoutID string `json:"workout_id" jsonschema:"the completed, template-linked workout id to score per-step execution compliance for"`
+}
+
 type PatchWorkoutArgs struct {
 	ID         string   `json:"id" jsonschema:"the workout id to update"`
 	Name       *string  `json:"name,omitempty" jsonschema:"new label"`
@@ -414,6 +418,30 @@ func workoutsSpecs() []Spec {
 					q.Set("plan_id", *a.PlanID)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/adherence", Query: q}, nil
+			},
+		},
+		{
+			Name: "workout_compliance",
+			Description: "Per-STEP execution compliance for one completed workout — how well it was executed " +
+				"INSIDE, vs the template it was compiled from (adherence answers 'did it happen'; compliance " +
+				"answers 'was it executed as written'). Expands the effective program's repeat groups into a flat " +
+				"step sequence, matches laps to steps positionally, and for each step reports the resolved target " +
+				"vs the lap's actual (in_band/under/over with a signed `delta` and `deviation_pct` — '20W under " +
+				"target' is delta -20), planned-vs-actual duration, and a 0–100 step score, plus an overall " +
+				"planned-duration-weighted `score` and steps_scored/steps_in_band. Targets are judged against the " +
+				"ATHLETE-CONFIG-RESOLVED bands (a zone that couldn't resolve is reported unscorable, not an error). " +
+				"When the lap count does not equal the expanded step count it returns `status:\"unavailable\"` with " +
+				"`reason:\"lap_count_mismatch\"` and the two counts instead of guessing an alignment. Errors: 409 " +
+				"workout_not_completed / multisport_unsupported / no_template_link / splits_missing, 404 not_found. " +
+				"Read-only; computed on read, nothing persisted.",
+			SchemaType: WorkoutComplianceArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a WorkoutComplianceArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/" + url.PathEscape(a.WorkoutID) + "/compliance"}, nil
 			},
 		},
 		{

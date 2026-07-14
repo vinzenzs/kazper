@@ -9238,6 +9238,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/{id}/compliance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Scores how a completed, template-linked workout was executed against its effective program (template steps + slot overrides + athlete-config zone→absolute resolution), step by step. Expands repeat groups into a flat executed-step sequence and matches laps (splits) to steps positionally; each step reports its resolved target vs the lap's actual (in_band/under/over with a signed delta + deviation_pct), planned-vs-actual duration, and a 0–100 step score, aggregated into an overall planned-duration-weighted score. Returns ` + "`" + `status:\"unavailable\"` + "`" + ` (200) when the lap count does not equal the expanded step count. Compute-on-read — nothing is persisted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Per-step execution compliance for a completed workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout id (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/workoutcompliance.Result"
+                        }
+                    },
+                    "400": {
+                        "description": "workout_id_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "workout_not_completed | multisport_unsupported | no_template_link | splits_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/fueling": {
             "get": {
                 "security": [
@@ -13661,6 +13722,176 @@ const docTemplate = `{
                 },
                 "week": {
                     "type": "integer"
+                }
+            }
+        },
+        "workoutcompliance.ActualLap": {
+            "type": "object",
+            "properties": {
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_power_w": {
+                    "type": "integer"
+                },
+                "avg_speed_mps": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_s": {
+                    "type": "number"
+                }
+            }
+        },
+        "workoutcompliance.DurationResult": {
+            "type": "object",
+            "properties": {
+                "actual": {
+                    "type": "number"
+                },
+                "classification": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "planned": {
+                    "type": "number"
+                },
+                "ratio": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                }
+            }
+        },
+        "workoutcompliance.PlannedStep": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "$ref": "#/definitions/workouttemplates.Duration"
+                },
+                "secondary_target": {
+                    "$ref": "#/definitions/workouttemplates.Target"
+                },
+                "target": {
+                    "$ref": "#/definitions/workouttemplates.Target"
+                }
+            }
+        },
+        "workoutcompliance.Result": {
+            "type": "object",
+            "properties": {
+                "executed_laps": {
+                    "type": "integer"
+                },
+                "planned_steps": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workoutcompliance.StepResult"
+                    }
+                },
+                "steps_in_band": {
+                    "type": "integer"
+                },
+                "steps_scored": {
+                    "type": "integer"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "workoutcompliance.StepResult": {
+            "type": "object",
+            "properties": {
+                "actual": {
+                    "$ref": "#/definitions/workoutcompliance.ActualLap"
+                },
+                "duration": {
+                    "$ref": "#/definitions/workoutcompliance.DurationResult"
+                },
+                "intent": {
+                    "type": "string"
+                },
+                "iteration": {
+                    "type": "integer"
+                },
+                "of": {
+                    "type": "integer"
+                },
+                "planned": {
+                    "$ref": "#/definitions/workoutcompliance.PlannedStep"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "secondary": {
+                    "$ref": "#/definitions/workoutcompliance.TargetResult"
+                },
+                "step_index": {
+                    "type": "integer"
+                },
+                "target": {
+                    "description": "Target/Secondary/Duration are each present only when that dimension applies\nto the step (a step may have a scorable duration but an unscorable target).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/workoutcompliance.TargetResult"
+                        }
+                    ]
+                }
+            }
+        },
+        "workoutcompliance.TargetResult": {
+            "type": "object",
+            "properties": {
+                "actual": {
+                    "type": "number"
+                },
+                "classification": {
+                    "type": "string"
+                },
+                "delta": {
+                    "type": "number"
+                },
+                "deviation_pct": {
+                    "type": "number"
+                },
+                "high": {
+                    "type": "number"
+                },
+                "low": {
+                    "type": "number"
+                },
+                "metric": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "scorable": {
+                    "type": "boolean"
+                },
+                "score": {
+                    "type": "number"
                 }
             }
         },

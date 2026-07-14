@@ -58,6 +58,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/trainingplan"
 	"github.com/vinzenzs/kazper/internal/vision"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
+	"github.com/vinzenzs/kazper/internal/workoutcompliance"
 	"github.com/vinzenzs/kazper/internal/workoutfueling"
 	"github.com/vinzenzs/kazper/internal/workouts"
 	"github.com/vinzenzs/kazper/internal/workoutstats"
@@ -401,6 +402,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// multisport workout's per-segment programs (each by its own sport).
 	trainingPlanSvc.SetMultisportRepo(multisportRepo)
 	trainingplan.NewHandlers(trainingPlanSvc).Register(api)
+	// Per-step execution compliance (add-step-compliance): compares a completed
+	// workout's splits against its effective program. Leaf package (no repo),
+	// wired after trainingPlanSvc since it is the program provider.
+	workoutcompliance.NewHandlers(workoutcompliance.NewService(workoutsRepo, trainingPlanSvc)).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
