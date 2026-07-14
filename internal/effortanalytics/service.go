@@ -3,6 +3,7 @@ package effortanalytics
 import (
 	"context"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 type BestEffortsStore interface {
 	Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time.Time, recs []Record) error
 	Curve(ctx context.Context, from, to time.Time, metric Metric) ([]CurvePoint, error)
+	DurabilityBests(ctx context.Context, from, to time.Time) ([]TierBest, error)
 }
 
 // Service computes best efforts from streams and serves the aggregated curve.
@@ -41,10 +43,58 @@ func (s *Service) ComputeAndReplace(ctx context.Context, w *workouts.Workout, po
 	var recs []Record
 	recs = append(recs, meanMaximal(power, MetricPower)...)
 	recs = append(recs, meanMaximal(speed, MetricSpeed)...)
+	recs = append(recs, tieredEfforts(power)...)
 	if err := s.store.Replace(ctx, w.ID, w.StartedAt, recs); err != nil {
 		return 0, err
 	}
 	return len(recs), nil
+}
+
+// tieredEfforts computes the kJ-tiered mean-maximal power best efforts: for each
+// durability tier, the best rolling-window average at each durability duration
+// whose window STARTS at or after the point where cumulative work (∫power dt, at
+// 1 Hz a running sum) reaches the tier. Rows are produced only for tiers the ride
+// actually reaches, and only when the ride has a full window after the tier.
+// Power only; an empty series yields nothing. Values rounded at the boundary.
+func tieredEfforts(power []float64) []Record {
+	n := len(power)
+	if n == 0 {
+		return nil
+	}
+	prefix := make([]float64, n+1) // prefix[i] = work (J) done before sample i
+	for i, v := range power {
+		prefix[i+1] = prefix[i] + v
+	}
+
+	var out []Record
+	for _, tierKJ := range DurabilityTiers {
+		threshold := float64(tierKJ) * 1000
+		// prefix is non-decreasing (power ≥ 0), so the first index at/after the
+		// tier is a binary search. minStart == n+1 means the ride never reached it.
+		minStart := sort.Search(n+1, func(i int) bool { return prefix[i] >= threshold })
+		if minStart > n {
+			continue // tier never reached
+		}
+		for _, d := range DurabilityDurations {
+			best := math.Inf(-1)
+			for i := minStart; i+d <= n; i++ {
+				mean := (prefix[i+d] - prefix[i]) / float64(d)
+				if mean > best {
+					best = mean
+				}
+			}
+			if math.IsInf(best, -1) || best < 0 {
+				continue // no full window after the tier
+			}
+			out = append(out, Record{
+				Metric:    MetricPower,
+				DurationS: d,
+				Value:     numfmt.Round1(best),
+				KJTier:    tierKJ,
+			})
+		}
+	}
+	return out
 }
 
 // CurveFor returns the windowed mean-maximal curve for the metric.
@@ -74,6 +124,67 @@ func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult
 	}
 	m := fitCPModel(pts)
 	res.Model = &m
+	return res, nil
+}
+
+// DurabilityFor assembles the fresh-vs-tier fade table over the window: for each
+// durability duration, the fresh (tier-0) best and each tier's best with
+// fade_pct = (fresh − tier)/fresh × 100. Tiers absent in the window are omitted;
+// a window with only fresh rows carries reason "no_tiered_data". Compute-on-read
+// over stored rows; the caller sets From/To/TZ. fade rounded at the boundary.
+func (s *Service) DurabilityFor(ctx context.Context, p CurveParams) (*DurabilityResult, error) {
+	fromDay := time.Date(p.From.Year(), p.From.Month(), p.From.Day(), 0, 0, 0, 0, p.Loc)
+	toDay := time.Date(p.To.Year(), p.To.Month(), p.To.Day(), 0, 0, 0, 0, p.Loc)
+	upper := toDay.Add(24 * time.Hour).Add(-time.Nanosecond)
+
+	bests, err := s.store.DurabilityBests(ctx, fromDay, upper)
+	if err != nil {
+		return nil, err
+	}
+
+	// Index by duration → tier → best.
+	byDur := map[int]map[int]TierBest{}
+	anyTiered := false
+	for _, b := range bests {
+		if byDur[b.DurationS] == nil {
+			byDur[b.DurationS] = map[int]TierBest{}
+		}
+		byDur[b.DurationS][b.KJTier] = b
+		if b.KJTier > 0 {
+			anyTiered = true
+		}
+	}
+
+	res := &DurabilityResult{Durations: []DurabilityDuration{}}
+	for _, d := range DurabilityDurations {
+		tiers := byDur[d]
+		if len(tiers) == 0 {
+			continue // no data at this duration in the window
+		}
+		col := DurabilityDuration{DurationS: d, Tiers: []DurabilityTierPoint{}}
+		fresh, hasFresh := tiers[0]
+		if hasFresh {
+			col.Fresh = &DurabilityPoint{Watts: fresh.Watts, WorkoutID: fresh.WorkoutID, Date: fresh.Date}
+		}
+		for _, tierKJ := range DurabilityTiers {
+			tb, ok := tiers[tierKJ]
+			if !ok {
+				continue
+			}
+			tp := DurabilityTierPoint{
+				KJTier: tierKJ, Watts: tb.Watts, WorkoutID: tb.WorkoutID, Date: tb.Date,
+			}
+			if hasFresh && fresh.Watts > 0 {
+				tp.FadePct = numfmt.Round1((fresh.Watts - tb.Watts) / fresh.Watts * 100)
+			}
+			col.Tiers = append(col.Tiers, tp)
+		}
+		res.Durations = append(res.Durations, col)
+	}
+
+	if !anyTiered {
+		res.Reason = "no_tiered_data"
+	}
 	return res, nil
 }
 

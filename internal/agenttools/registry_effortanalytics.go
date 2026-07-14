@@ -29,6 +29,13 @@ type CPModelArgs struct {
 	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
 }
 
+// DurabilityArgs is the input to durability. from/to are inclusive calendar dates.
+type DurabilityArgs struct {
+	From string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; up to 400 days from 'from'"`
+	TZ   string `json:"tz,omitempty" jsonschema:"IANA timezone for calendar-day boundaries (e.g. Europe/Berlin). If omitted, the REST server uses DEFAULT_USER_TZ."`
+}
+
 // PowerProfileArgs is the input to power_profile. `weight_kg` overrides the W/kg
 // denominator; omitted, the endpoint uses the latest stored body weight.
 type PowerProfileArgs struct {
@@ -130,6 +137,34 @@ func effortAnalyticsSpecs() []Spec {
 					q.Set("tz", a.TZ)
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/power-profile", Query: q}, nil
+			},
+		},
+		{
+			Name: "durability",
+			Description: "Fatigue-resistance (durability): how much the athlete's power fades DEEP into a ride, not " +
+				"just what they can produce fresh. For each duration (1m/5m/20m) it returns the fresh (tier-0) best " +
+				"power over the window vs the best power whose window starts AFTER 500/1000/1500/2000 kJ of " +
+				"accumulated work, with fade_pct = (fresh − tier)/fresh × 100 and each entry's contributing " +
+				"workout/date — the Ironman-bike / late-attack question ('does my 20-min power hold after 2000 kJ'). " +
+				"Tiers with no data in the window are omitted; a window with only fresh rows returns reason " +
+				"'no_tiered_data'. IMPORTANT: historical rides gain tiered rows only after their stored streams are " +
+				"re-run through recompute_workout_streams — a no_tiered_data result on old data usually means the " +
+				"backfill hasn't run, not that the efforts don't exist. Cycling power only. Read-only; no idempotency " +
+				"key.",
+			SchemaType: DurabilityArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a DurabilityArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/durability", Query: q}, nil
 			},
 		},
 	}

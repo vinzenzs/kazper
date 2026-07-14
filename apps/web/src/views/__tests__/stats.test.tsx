@@ -13,6 +13,8 @@ import {
   populatedPowerCurve,
   populatedPowerProfile,
   populatedTargetTrajectory,
+  populatedDurability,
+  noTieredDurability,
   populatedWorkoutStats,
   targetsMissingTrajectory,
 } from "../../test/fixtures";
@@ -33,6 +35,7 @@ const h = vi.hoisted(() => ({
   ppError: false as boolean,
   trajData: undefined as unknown,
   trajError: false as boolean,
+  durData: undefined as unknown,
   intensityData: undefined as unknown,
 }));
 
@@ -68,6 +71,7 @@ vi.mock("../../api/hooks", () => ({
     isError: h.trajError,
     error: null,
   }),
+  useDurability: () => ({ data: h.durData, isLoading: false, isError: false, error: null }),
   useIntensityDistribution: (from: string, to: string) => {
     h.intensityCalls.push({ from, to });
     return { data: h.intensityData, isLoading: false, isError: false, error: null };
@@ -91,6 +95,7 @@ beforeEach(() => {
   h.ppError = false;
   h.trajData = populatedTargetTrajectory;
   h.trajError = false;
+  h.durData = populatedDurability;
   h.intensityData = populatedDistribution;
 });
 afterEach(() => cleanup());
@@ -204,10 +209,10 @@ describe("StatsView", () => {
   it("re-queries the CP model when its window selector changes", () => {
     render(<StatsView />);
     const first = h.cpCalls[h.cpCalls.length - 1].from;
-    // 90/180/365 toggles, in page order: PMC, CP, Power profile. The CP panel's
-    // is the second-to-last 365d button.
+    // 90/180/365 toggles, in page order: PMC (0), CP (1), Power profile (2),
+    // Durability (3). The CP panel's is index 1.
     const buttons = screen.getAllByRole("button", { name: "365d" });
-    fireEvent.click(buttons[buttons.length - 2]);
+    fireEvent.click(buttons[1]);
     const wider = h.cpCalls[h.cpCalls.length - 1].from;
     expect(new Date(wider).getTime()).toBeLessThan(new Date(first).getTime());
   });
@@ -261,6 +266,25 @@ describe("StatsView", () => {
     expect(screen.getByText("Power profile (Coggan)")).toBeInTheDocument();
     expect(screen.getByText(/add a body-weight entry/i)).toBeInTheDocument();
     expect(screen.queryByTestId("power-profile-anchors")).not.toBeInTheDocument();
+  });
+
+  it("renders the durability fade grid with tiers", () => {
+    render(<StatsView />);
+    expect(screen.getByText("Durability (fatigue resistance)")).toBeInTheDocument();
+    const grid = screen.getByTestId("durability-grid");
+    expect(grid).toBeInTheDocument();
+    // Two duration rows (5 min, 20 min).
+    expect(grid.querySelectorAll("tbody tr")).toHaveLength(2);
+    // A fade cell.
+    expect(screen.getByText(/−16.3%/)).toBeInTheDocument();
+  });
+
+  it("shows the durability empty state when no tiered data exists", () => {
+    h.durData = noTieredDurability;
+    render(<StatsView />);
+    expect(screen.getByText("Durability (fatigue resistance)")).toBeInTheDocument();
+    expect(screen.queryByTestId("durability-grid")).not.toBeInTheDocument();
+    expect(screen.getByText(/no fatigue-resistance data yet/i)).toBeInTheDocument();
   });
 
   it("omits the phenotype label when the profile is incomplete", () => {

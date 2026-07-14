@@ -9433,6 +9433,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/durability": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "For each durability duration (1m/5m/20m), the fresh (tier-0) windowed best power vs the best power whose window starts after 500/1000/1500/2000 kJ of accumulated work, with ` + "`" + `fade_pct = (fresh − tier)/fresh × 100` + "`" + ` and each entry's contributing workout/date. Tiers with no data in the window are omitted; a window holding only fresh rows returns ` + "`" + `reason: \"no_tiered_data\"` + "`" + ` (historical rides gain tiers only after their streams are re-run through the recompute path). Cycling power only. Compute-on-read over stored best-effort rows (no stream scans); nothing persisted. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Fatigue-resistance (durability) fade table over a window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/effortanalytics.DurabilityResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/intensity-distribution": {
             "get": {
                 "security": [
@@ -11778,6 +11832,80 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "value": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.DurabilityDuration": {
+            "type": "object",
+            "properties": {
+                "duration_s": {
+                    "type": "integer"
+                },
+                "fresh": {
+                    "$ref": "#/definitions/effortanalytics.DurabilityPoint"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.DurabilityTierPoint"
+                    }
+                }
+            }
+        },
+        "effortanalytics.DurabilityPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "watts": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.DurabilityResult": {
+            "type": "object",
+            "properties": {
+                "durations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/effortanalytics.DurabilityDuration"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
+        "effortanalytics.DurabilityTierPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "fade_pct": {
+                    "type": "number"
+                },
+                "kj_tier": {
+                    "type": "integer"
+                },
+                "watts": {
                     "type": "number"
                 },
                 "workout_id": {

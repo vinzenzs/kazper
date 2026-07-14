@@ -240,6 +240,37 @@ export interface CPModelResult {
   points: CPPoint[];
 }
 
+// Mirrors internal/effortanalytics durability. Per duration (1m/5m/20m): the
+// fresh (tier-0) best power and each kJ-tier's best with `fade_pct`. `reason` is
+// "no_tiered_data" when the window holds only fresh rows (recompute backfill).
+export interface DurabilityPoint {
+  watts: number;
+  workout_id: string;
+  date: string;
+}
+
+export interface DurabilityTierPoint {
+  kj_tier: number;
+  watts: number;
+  fade_pct: number;
+  workout_id: string;
+  date: string;
+}
+
+export interface DurabilityDuration {
+  duration_s: number;
+  fresh: DurabilityPoint | null;
+  tiers: DurabilityTierPoint[];
+}
+
+export interface DurabilityResult {
+  from: string;
+  to: string;
+  tz: string;
+  durations: DurabilityDuration[];
+  reason?: "no_tiered_data";
+}
+
 // Mirrors internal/effortanalytics power-profile ranking. Each anchor ranks a
 // benchmark duration's W/kg against the Coggan tables: `category` is the
 // authoritative band, `percentile` an interpolated estimate. `phenotype` is null

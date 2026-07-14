@@ -101,7 +101,9 @@ func TestIngest_PersistsStreamsBestEffortsAndMetrics(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out activitystreams.IngestResult
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, len(effortanalytics.Ladder), out.RecordsWritten)
+	// 9 fresh ladder rungs + kJ-tiered rows: 3600 s @ 200 W = 720 kJ reaches the
+	// 500 kJ tier where 1m + 5m windows fit (20-min does not) → +2.
+	assert.Equal(t, len(effortanalytics.Ladder)+2, out.RecordsWritten)
 	assert.Equal(t, 2, out.StreamsStored)
 
 	// Streams persisted (retrievable).
@@ -240,7 +242,10 @@ func TestRecompute_HappyPath(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out activitystreams.RecomputeResult
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, len(effortanalytics.Ladder), out.RecordsWritten)
+	// Fresh ladder + kJ-tiered rows (add-durability-analysis): the 3600 s @ 200 W
+	// ride is 720 kJ, reaching the 500 kJ tier where the 1m + 5m windows fit
+	// (the 20-min window does not: 2500 + 1200 > 3600) → 9 fresh + 2 tiered.
+	assert.Equal(t, len(effortanalytics.Ladder)+2, out.RecordsWritten)
 	assert.Equal(t, 2, out.StreamsUsed)
 }
 

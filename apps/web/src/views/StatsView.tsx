@@ -7,6 +7,7 @@ import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PMCChart, PMCSummary, TargetReadout } from "../components/PMCChart";
 import { CPModelChart } from "../components/CPModelChart";
 import { PowerProfilePanel } from "../components/PowerProfilePanel";
+import { DurabilityPanel } from "../components/DurabilityPanel";
 import { IntensityDistributionPanel } from "../components/IntensityDistribution";
 import {
   useCPModel,
@@ -14,6 +15,7 @@ import {
   usePMC,
   usePowerCurve,
   usePowerProfile,
+  useDurability,
   useTargetTrajectory,
   useWorkoutStats,
 } from "../api/hooks";
@@ -92,6 +94,9 @@ export function StatsView() {
   const [ppWindow, setPpWindow] = useState<PMCWindow>("90");
   const ppRange = trailingDays(Number(ppWindow) - 1);
   const pp = usePowerProfile(ppRange.from, ppRange.to);
+  const [durWindow, setDurWindow] = useState<PMCWindow>("365");
+  const durRange = trailingDays(Number(durWindow) - 1);
+  const durability = useDurability(durRange.from, durRange.to);
   const intensity = useIntensityDistribution(from, to);
 
   const total = data?.total;
@@ -218,6 +223,18 @@ export function StatsView() {
                 : "Loading power profile…"}
             </div>
           )}
+        </div>
+      </Panel>
+
+      <Panel
+        title="Durability (fatigue resistance)"
+        isLoading={durability.isLoading}
+        isError={durability.isError}
+        error={durability.error}
+      >
+        <div className="flex flex-col gap-3">
+          <Toggle options={PMC_WINDOWS} value={durWindow} onChange={setDurWindow} />
+          {durability.data && <DurabilityPanel result={durability.data} />}
         </div>
       </Panel>
     </div>

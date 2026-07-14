@@ -23,12 +23,23 @@ const (
 var Ladder = []int{5, 15, 30, 60, 300, 600, 1200, 1800, 3600}
 
 // Record is one stored best-effort row (before persistence): the best mean of a
-// metric over duration_s seconds anywhere in the activity.
+// metric over duration_s seconds. KJTier is 0 for the fresh ladder (the best
+// anywhere in the activity) and 500/1000/1500/2000 for a durability tier (the
+// best whose window starts after that much accumulated work).
 type Record struct {
 	Metric    Metric
 	DurationS int
 	Value     float64
+	KJTier    int
 }
+
+// Durability tiers (kJ of accumulated work) and the durations they're computed
+// at — where fatigue resistance shows (sprint fade is neuromuscular noise;
+// 20-min-after-2000kJ is the Ironman question). Constants, not parameters.
+var (
+	DurabilityTiers     = []int{500, 1000, 1500, 2000}
+	DurabilityDurations = []int{60, 300, 1200}
+)
 
 // CurvePoint is one duration's best across the window: the max mean value and
 // the workout + date it came from.
@@ -97,6 +108,40 @@ type CPModelResult struct {
 	Model  *CPModel  `json:"model"`
 	Reason string    `json:"reason,omitempty"`
 	Points []CPPoint `json:"points"`
+}
+
+// DurabilityPoint is the fresh (tier-0) windowed best power for a duration.
+type DurabilityPoint struct {
+	Watts     float64 `json:"watts"`
+	WorkoutID string  `json:"workout_id"`
+	Date      string  `json:"date"`
+}
+
+// DurabilityTierPoint is one tier's windowed best plus its fade vs fresh.
+type DurabilityTierPoint struct {
+	KJTier    int     `json:"kj_tier"`
+	Watts     float64 `json:"watts"`
+	FadePct   float64 `json:"fade_pct"`
+	WorkoutID string  `json:"workout_id"`
+	Date      string  `json:"date"`
+}
+
+// DurabilityDuration is the fresh-vs-tier fade column for one duration.
+type DurabilityDuration struct {
+	DurationS int                   `json:"duration_s"`
+	Fresh     *DurabilityPoint      `json:"fresh"`
+	Tiers     []DurabilityTierPoint `json:"tiers"`
+}
+
+// DurabilityResult is the GET /workouts/durability response. Reason is
+// "no_tiered_data" when the window holds only fresh rows (recompute needed to
+// backfill tiers). Compute-on-read; nothing persisted.
+type DurabilityResult struct {
+	From      string               `json:"from"`
+	To        string               `json:"to"`
+	TZ        string               `json:"tz"`
+	Durations []DurabilityDuration `json:"durations"`
+	Reason    string               `json:"reason,omitempty"`
 }
 
 // Sex selects the Coggan reference table. Athlete-config has no sex field (the

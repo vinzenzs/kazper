@@ -44,6 +44,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/workouts/power-curve", h.curve)
 	rg.GET("/workouts/cp-model", h.cpModel)
 	rg.GET("/workouts/power-profile", h.powerProfile)
+	rg.GET("/workouts/durability", h.durability)
 }
 
 // curve godoc
@@ -195,6 +196,34 @@ func roundPowerProfile(res *PowerProfileResult) {
 		res.Anchors[i].WPerKg = numfmt.Round1(res.Anchors[i].WPerKg)
 		res.Anchors[i].Percentile = numfmt.Round1(res.Anchors[i].Percentile)
 	}
+}
+
+// durability godoc
+// @Summary      Fatigue-resistance (durability) fade table over a window
+// @Description  For each durability duration (1m/5m/20m), the fresh (tier-0) windowed best power vs the best power whose window starts after 500/1000/1500/2000 kJ of accumulated work, with `fade_pct = (fresh − tier)/fresh × 100` and each entry's contributing workout/date. Tiers with no data in the window are omitted; a window holding only fresh rows returns `reason: "no_tiered_data"` (historical rides gain tiers only after their streams are re-run through the recompute path). Cycling power only. Compute-on-read over stored best-effort rows (no stream scans); nothing persisted. Range capped at 400 days.
+// @Tags         workouts
+// @Produce      json
+// @Param        from  query  string  true   "Inclusive start date YYYY-MM-DD"
+// @Param        to    query  string  true   "Inclusive end date YYYY-MM-DD"
+// @Param        tz    query  string  false  "IANA timezone (defaults to DEFAULT_USER_TZ)"
+// @Success      200  {object}  DurabilityResult
+// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | tz_invalid"
+// @Security     BearerAuth
+// @Router       /workouts/durability [get]
+func (h *Handlers) durability(c *gin.Context) {
+	from, to, loc, ok := h.parseWindow(c)
+	if !ok {
+		return
+	}
+	res, err := h.svc.DurabilityFor(c.Request.Context(), CurveParams{From: from, To: to, Loc: loc})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "durability_failed"})
+		return
+	}
+	res.From = from.Format("2006-01-02")
+	res.To = to.Format("2006-01-02")
+	res.TZ = loc.String()
+	c.JSON(http.StatusOK, res)
 }
 
 // parseWindow parses the shared from/to/tz window contract, writing the 400 and

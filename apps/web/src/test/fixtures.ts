@@ -8,6 +8,7 @@ import type {
   TrainingContext,
   PMCSeries,
   TargetTrajectory,
+  DurabilityResult,
   PowerCurve,
   CPModelResult,
   PowerProfileResult,
@@ -429,6 +430,38 @@ export const populatedTargetTrajectory: TargetTrajectory = {
     projected_end_ctl_current: 46.5,
   },
   missing_tss_workouts: 1,
+};
+
+export const populatedDurability: DurabilityResult = {
+  from: "2026-01-01",
+  to: "2026-07-14",
+  tz: "Europe/Vienna",
+  durations: [
+    {
+      duration_s: 300,
+      fresh: { watts: 320, workout_id: "w1", date: "2026-05-02" },
+      tiers: [
+        { kj_tier: 500, watts: 305, fade_pct: 4.7, workout_id: "w2", date: "2026-05-10" },
+        { kj_tier: 1500, watts: 268, fade_pct: 16.3, workout_id: "w3", date: "2026-06-01" },
+      ],
+    },
+    {
+      duration_s: 1200,
+      fresh: { watts: 285, workout_id: "w1", date: "2026-05-02" },
+      tiers: [{ kj_tier: 1000, watts: 262, fade_pct: 8.1, workout_id: "w4", date: "2026-06-10" }],
+    },
+  ],
+};
+
+// The no-tiered-data state: fresh columns only, degradation reason set.
+export const noTieredDurability: DurabilityResult = {
+  from: "2026-01-01",
+  to: "2026-07-14",
+  tz: "Europe/Vienna",
+  durations: [
+    { duration_s: 300, fresh: { watts: 300, workout_id: "w1", date: "2026-05-02" }, tiers: [] },
+  ],
+  reason: "no_tiered_data",
 };
 
 // The targets-missing degradation: 200 with a null trajectory.

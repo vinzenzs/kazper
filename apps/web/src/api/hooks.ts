@@ -14,6 +14,7 @@ import type {
   PowerCurve,
   CPModelResult,
   PowerProfileResult,
+  DurabilityResult,
   IntervalsResult,
   WPrimeBalanceResult,
   Workout,
@@ -186,6 +187,16 @@ export function useWPrimeBalance(
       apiGet<WPrimeBalanceResult>(
         `/workouts/${workoutId}/w-prime-balance?cp_watts=${cpWatts}&w_prime_kj=${wPrimeKj}&downsample=200`,
       ),
+    refetchInterval: SLOW_INTERVAL_MS,
+  });
+}
+
+// The durability (fatigue-resistance) fade table over the window. Empty
+// durations / a no_tiered_data reason render the panel's explanatory empty state.
+export function useDurability(from: string, to: string) {
+  return useQuery({
+    queryKey: ["durability", from, to],
+    queryFn: () => apiGet<DurabilityResult>(`/workouts/durability?from=${from}&to=${to}`),
     refetchInterval: SLOW_INTERVAL_MS,
   });
 }

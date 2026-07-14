@@ -32,9 +32,9 @@ func (r *Repo) Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time
 		}
 		for _, rec := range recs {
 			if _, err := tx.Exec(ctx, `
-                INSERT INTO workout_best_efforts (id, workout_id, metric, duration_s, value, achieved_at)
-                VALUES ($1, $2, $3, $4, $5, $6)`,
-				uuid.New(), workoutID, string(rec.Metric), rec.DurationS, rec.Value, achievedAt,
+                INSERT INTO workout_best_efforts (id, workout_id, metric, duration_s, value, achieved_at, kj_tier)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+				uuid.New(), workoutID, string(rec.Metric), rec.DurationS, rec.Value, achievedAt, rec.KJTier,
 			); err != nil {
 				return fmt.Errorf("insert best effort: %w", err)
 			}
@@ -45,7 +45,9 @@ func (r *Repo) Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time
 
 // Curve returns, per duration, the best (max) value of `metric` across completed
 // workouts whose started_at falls in [from, to], plus the contributing workout
-// and day. DISTINCT ON picks the top value per duration.
+// and day. DISTINCT ON picks the top value per duration. Pinned to kj_tier = 0 —
+// the FRESH ladder — so durability tiers never leak into the power/CP/profile
+// curves (add-durability-analysis).
 func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric) ([]CurvePoint, error) {
 	const q = `
         SELECT DISTINCT ON (be.duration_s)
@@ -53,6 +55,7 @@ func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric) ([]
         FROM workout_best_efforts be
         JOIN workouts w ON w.id = be.workout_id
         WHERE be.metric = $1
+          AND be.kj_tier = 0
           AND w.status = 'completed'
           AND w.started_at >= $2
           AND w.started_at <= $3
@@ -80,6 +83,55 @@ func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric) ([]
 			WorkoutID: workoutID.String(),
 			Date:      achieved.Format("2006-01-02"),
 		})
+	}
+	return out, rows.Err()
+}
+
+// TierBest is one windowed best at a (duration, kj_tier): the MAX watts and the
+// contributing workout/day. Tier 0 is the fresh ladder.
+type TierBest struct {
+	DurationS int
+	KJTier    int
+	Watts     float64
+	WorkoutID string
+	Date      string
+}
+
+// DurabilityBests returns, per (duration, kj_tier) over the window, the best
+// (max) POWER value with its contributing workout — the fresh (tier 0) and every
+// tiered best in one pass, restricted to the durability durations. Compute-on-
+// read over stored rows only (no stream scans).
+func (r *Repo) DurabilityBests(ctx context.Context, from, to time.Time) ([]TierBest, error) {
+	const q = `
+        SELECT DISTINCT ON (be.duration_s, be.kj_tier)
+            be.duration_s, be.kj_tier, be.value, be.workout_id, be.achieved_at
+        FROM workout_best_efforts be
+        JOIN workouts w ON w.id = be.workout_id
+        WHERE be.metric = 'power'
+          AND be.duration_s = ANY($1)
+          AND w.status = 'completed'
+          AND w.started_at >= $2
+          AND w.started_at <= $3
+        ORDER BY be.duration_s, be.kj_tier, be.value DESC`
+	rows, err := r.pool.Query(ctx, q, DurabilityDurations, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query durability: %w", err)
+	}
+	defer rows.Close()
+
+	var out []TierBest
+	for rows.Next() {
+		var (
+			t         TierBest
+			workoutID uuid.UUID
+			achieved  time.Time
+		)
+		if err := rows.Scan(&t.DurationS, &t.KJTier, &t.Watts, &workoutID, &achieved); err != nil {
+			return nil, fmt.Errorf("scan durability row: %w", err)
+		}
+		t.WorkoutID = workoutID.String()
+		t.Date = achieved.Format("2006-01-02")
+		out = append(out, t)
 	}
 	return out, rows.Err()
 }

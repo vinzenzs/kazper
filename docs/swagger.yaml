@@ -946,6 +946,54 @@ definitions:
       workout_id:
         type: string
     type: object
+  effortanalytics.DurabilityDuration:
+    properties:
+      duration_s:
+        type: integer
+      fresh:
+        $ref: '#/definitions/effortanalytics.DurabilityPoint'
+      tiers:
+        items:
+          $ref: '#/definitions/effortanalytics.DurabilityTierPoint'
+        type: array
+    type: object
+  effortanalytics.DurabilityPoint:
+    properties:
+      date:
+        type: string
+      watts:
+        type: number
+      workout_id:
+        type: string
+    type: object
+  effortanalytics.DurabilityResult:
+    properties:
+      durations:
+        items:
+          $ref: '#/definitions/effortanalytics.DurabilityDuration'
+        type: array
+      from:
+        type: string
+      reason:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+    type: object
+  effortanalytics.DurabilityTierPoint:
+    properties:
+      date:
+        type: string
+      fade_pct:
+        type: number
+      kj_tier:
+        type: integer
+      watts:
+        type: number
+      workout_id:
+        type: string
+    type: object
   effortanalytics.Metric:
     enum:
     - power
@@ -10952,6 +11000,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Critical-power (CP2) model over a window
+      tags:
+      - workouts
+  /workouts/durability:
+    get:
+      description: 'For each durability duration (1m/5m/20m), the fresh (tier-0) windowed
+        best power vs the best power whose window starts after 500/1000/1500/2000
+        kJ of accumulated work, with `fade_pct = (fresh − tier)/fresh × 100` and each
+        entry''s contributing workout/date. Tiers with no data in the window are omitted;
+        a window holding only fresh rows returns `reason: "no_tiered_data"` (historical
+        rides gain tiers only after their streams are re-run through the recompute
+        path). Cycling power only. Compute-on-read over stored best-effort rows (no
+        stream scans); nothing persisted. Range capped at 400 days.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/effortanalytics.DurabilityResult'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Fatigue-resistance (durability) fade table over a window
       tags:
       - workouts
   /workouts/intensity-distribution:

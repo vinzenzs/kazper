@@ -37,3 +37,19 @@ func TestBuild_PowerProfile_OmitsDefaults(t *testing.T) {
 	assert.Empty(t, call.Query.Get("weight_kg"))
 	assert.Empty(t, call.Query.Get("sex"))
 }
+
+// durability → GET /workouts/durability with from/to/tz (read tier).
+func TestBuild_Durability(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["durability"]
+	require.True(t, ok, "durability must be registered")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"from":"2026-04-15","to":"2026-07-14","tz":"Europe/Berlin"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/durability", call.Path)
+	assert.Equal(t, "2026-04-15", call.Query.Get("from"))
+	assert.Equal(t, "Europe/Berlin", call.Query.Get("tz"))
+	assert.Empty(t, call.Body)
+}

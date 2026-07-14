@@ -90,7 +90,9 @@ func TestComputeAndReplace_CurveReflectsStoredEfforts(t *testing.T) {
 
 	n, err := f.svc.ComputeAndReplace(context.Background(), w, constSlice(3600, 250), nil)
 	require.NoError(t, err)
-	assert.Equal(t, len(effortanalytics.Ladder), n)
+	// 9 fresh ladder rungs + kJ-tiered rows: 3600 s @ 250 W = 900 kJ reaches the
+	// 500 kJ tier where all three durations (1m/5m/20m) fit → +3.
+	assert.Equal(t, len(effortanalytics.Ladder)+3, n)
 
 	crec := get(t, f.r, "/workouts/power-curve?from=2026-03-10&to=2026-03-10&sport=bike&tz=UTC")
 	require.Equal(t, http.StatusOK, crec.Code)
