@@ -143,3 +143,32 @@ empty.
 {{- end -}}
 {{- printf "%s/api/v1" (trimSuffix "/" $base) -}}
 {{- end }}
+
+{{/*
+public-site — the opt-in static "road to race" page container
+(host-public-site-in-cluster). Its objects carry a "-public-site" suffix and
+their own selector so they never collide with the backend or the bridge.
+*/}}
+{{- define "public-site.fullname" -}}
+{{- printf "%s-public-site" (include "kazper.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "public-site.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kazper.name" . }}-public-site
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- define "public-site.labels" -}}
+helm.sh/chart: {{ include "kazper.chart" . }}
+{{ include "public-site.selectorLabels" . }}
+app.kubernetes.io/component: public-site
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+public-site image. tag defaults to "latest" (the mutable tag the CI publishes).
+*/}}
+{{- define "public-site.image" -}}
+{{- $tag := default "latest" .Values.publicSite.image.tag }}
+{{- printf "%s:%s" .Values.publicSite.image.repository $tag }}
+{{- end }}

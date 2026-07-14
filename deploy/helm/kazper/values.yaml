@@ -271,3 +271,36 @@ backup:
     size: 5Gi
     # -- Optional StorageClass. Empty uses the cluster default.
     storageClassName: ""
+
+# ---------------------------------------------------------------------------
+# Public "road to race" site (host-public-site-in-cluster). Opt-in, default
+# OFF: when disabled the chart renders no public-site objects. It is served as
+# a static nginx container built from the race feed at IMAGE-BUILD time (the
+# feed secret is a build secret — it never enters the image or the running pod)
+# and exposed on its OWN public ingress host with NO route to the API.
+publicSite:
+  # -- Set true to render the public-site Deployment + Service + Ingress.
+  enabled: false
+  image:
+    # -- Image published by the public-site CI workflow.
+    repository: ghcr.io/vinzenzs/kazper-public-site
+    # -- Mutable tag the workflow rolls; Always pull picks up nightly rebuilds.
+    tag: "latest"
+    pullPolicy: Always
+  # -- Replicas. One is plenty for a static file server.
+  replicas: 1
+  # -- Public hostname the page is served at, e.g. race.example.com. Required
+  #    when publicSite.enabled.
+  host: ""
+  ingress:
+    # -- Ingress class; defaults to the same nginx the API ingress assumes.
+    className: nginx
+    tls:
+      # -- When true, the Ingress carries tls: + the cert-manager annotation.
+      enabled: true
+      # -- cert-manager ClusterIssuer that mints the cert.
+      issuer: letsencrypt-prod
+      # -- TLS secret name. Empty defaults to <fullname>-public-site-tls.
+      secretName: ""
+  # -- Resource requests/limits. Tiny; static nginx.
+  resources: {}

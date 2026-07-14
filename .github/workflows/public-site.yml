@@ -1,11 +1,13 @@
 name: public-site
 
-# Builds the static "road to race" page (apps/public) against the live race feed
-# and deploys it to GitHub Pages. The feed is read once, at build time, with the
-# X-Feed-Key from the Actions secret store — the shipped assets carry no secret
-# and make no runtime call to Kazper. A failed run leaves the previous deploy
-# serving (a stale page recomputes the countdown client-side, so it degrades to
-# stale, never broken).
+# Builds the static "road to race" page (apps/public) into a container image and
+# publishes it to GHCR, then rolls the in-cluster Deployment onto the new image.
+# The feed is read ONCE, at image-build time, with the X-Feed-Key from the Actions
+# secret store passed as a BuildKit secret — it never enters an image layer, and
+# the shipped image is nginx serving static files with no path to Kazper. A failed
+# build never pushes or rolls: the previously-deployed image keeps serving (the
+# page recomputes its countdown client-side, so it degrades to stale, never
+# broken). Supersedes the earlier GitHub Pages deploy (host-public-site-in-cluster).
 
 on:
   # Nightly, shortly after midnight in the athlete's timezone (Europe/Berlin) so
@@ -15,65 +17,77 @@ on:
     - cron: '15 23 * * *'
   # Rebuild on demand — e.g. after re-anchoring the season's macrocycle/race.
   workflow_dispatch:
-  # Rebuild when the site itself changes.
+  # Rebuild when the site or this workflow changes.
   push:
     branches: [main]
     paths:
       - 'apps/public/**'
       - '.github/workflows/public-site.yml'
 
-# Pages deploy needs these; contents:read for checkout.
+# Push the image to GHCR; contents:read for checkout.
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  packages: write
 
-# One deploy at a time; don't cancel an in-flight publish.
+# One publish at a time; don't cancel an in-flight build/roll.
 concurrency:
   group: public-site
   cancel-in-progress: false
 
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/kazper-public-site
+
 jobs:
-  build-deploy:
-    name: Build + deploy to Pages
+  build-publish:
+    name: Build image + publish + roll
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: 22
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Pages
-        id: pages
-        uses: actions/configure-pages@v5
+      # Build the site into the image and push. FEED_SECRET is a BuildKit secret
+      # (never a layer); FEED_URL / SITE_URL are build args. A non-200 feed fails
+      # the build here, so nothing is pushed and the roll below is skipped.
+      - name: Build + push image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/public
+          file: apps/public/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          secrets: |
+            feed_secret=${{ secrets.FEED_SECRET }}
+          build-args: |
+            FEED_URL=${{ vars.FEED_URL }}
+            SITE_URL=${{ vars.PUBLIC_SITE_URL }}
+            BASE_PATH=/
 
-      - name: Install dependencies
-        working-directory: apps/public
-        run: npm ci
-
-      - name: Build site
-        working-directory: apps/public
+      # Roll the in-cluster Deployment onto the freshly-pushed image. Mechanism is
+      # operator-choice (D3): this default does a `rollout restart` (works with a
+      # mutable :latest tag + imagePullPolicy Always), gated on a kubeconfig
+      # secret so the workflow stays valid without cluster creds — when absent,
+      # the image is published and a GitOps tool / the next `helm upgrade` picks
+      # it up. Only runs after a successful build+push.
+      - name: Roll Deployment
+        if: ${{ secrets.KUBECONFIG_B64 != '' }}
         env:
-          # Full feed URL (repo variable) + secret (Actions secret). A missing
-          # or non-200 feed fails the build, leaving the last deploy serving.
-          FEED_URL: ${{ vars.FEED_URL }}
-          FEED_SECRET: ${{ secrets.FEED_SECRET }}
-          # Absolute URLs for the og:image tag, from the Pages config.
-          SITE_URL: ${{ steps.pages.outputs.origin }}
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: npm run build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: apps/public/dist
-
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          NAMESPACE: ${{ vars.PUBLIC_SITE_NAMESPACE || 'default' }}
+          DEPLOYMENT: ${{ vars.PUBLIC_SITE_DEPLOYMENT || 'kazper-public-site' }}
+        run: |
+          echo "$KUBECONFIG_B64" | base64 -d > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
+          kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=120s

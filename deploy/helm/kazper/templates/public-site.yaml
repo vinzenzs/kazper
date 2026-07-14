@@ -1,0 +1,108 @@
+{{- if .Values.publicSite.enabled -}}
+{{- /*
+  public-site: the opt-in static "road to race" page (host-public-site-in-cluster).
+  Everything here is gated on publicSite.enabled, so a default install renders
+  none of it. The pod is a static nginx container built from the race feed at
+  image-build time — it holds NO feed secret and has no env coupling to Kazper.
+  Its Ingress is a separate public host whose ONLY backend is this Service; it
+  never routes to the API.
+*/ -}}
+{{- $name := include "public-site.fullname" . -}}
+{{- $host := required "publicSite.host is required when publicSite.enabled" .Values.publicSite.host -}}
+{{- $tlsSecret := default (printf "%s-tls" $name) .Values.publicSite.ingress.tls.secretName -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "public-site.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.publicSite.replicas }}
+  selector:
+    matchLabels:
+      {{- include "public-site.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "public-site.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # nginx-unprivileged runs as uid 101 on 8080, so runAsNonRoot is satisfied
+      # without the API's readOnlyRootFilesystem (which stock nginx can't take).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+      containers:
+        - name: public-site
+          image: {{ include "public-site.image" . }}
+          imagePullPolicy: {{ .Values.publicSite.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # No env: a static file server with NO feed secret and no Kazper coupling.
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.publicSite.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "public-site.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "public-site.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "public-site.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.publicSite.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.publicSite.ingress.tls.issuer | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.publicSite.ingress.className }}
+  {{- if .Values.publicSite.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $tlsSecret }}
+  {{- end }}
+  rules:
+    # The only backend is the public-site Service — never the API.
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: 80
+{{- end }}

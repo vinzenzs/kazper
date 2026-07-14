@@ -93,6 +93,42 @@ helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
 > endpoint. When using `existingSecret`, put `WEB_USER` / `WEB_PASSWORD` in
 > that Secret.
 
+## Public race site (opt-in)
+
+The public "road to race" page (`apps/public`) can be served in-cluster as a
+static `nginx` container, gated on `publicSite.enabled` (default **off** → the
+chart renders no public-site objects). It is deliberately **isolated**: its own
+public Ingress host with **no route to the API**, and the pod holds **no feed
+secret** (the page is baked from the race feed at image-build time — the secret
+is a BuildKit build secret, never in the image or the running pod).
+
+| Value | What it is |
+|---|---|
+| `publicSite.enabled` | Render the public-site Deployment + Service + Ingress |
+| `publicSite.host` | Public hostname (e.g. `race.example.com`); **required** when enabled |
+| `publicSite.image.repository` / `.tag` | The image the `public-site` CI workflow publishes (default `:latest`, `pullPolicy: Always`) |
+| `publicSite.ingress.className` / `.tls.enabled` / `.tls.issuer` | Ingress class + cert-manager TLS (same assumptions as the API `ingress`) |
+
+```bash
+helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
+    --version v0.1.0 --namespace kazper \
+    --set publicSite.enabled=true \
+    --set publicSite.host=race.example.com \
+    # ...required token values...
+```
+
+Then point a public DNS record for `publicSite.host` at the cluster ingress. The
+image is (re)built + pushed and the Deployment rolled by
+`.github/workflows/public-site.yml` (nightly + on-demand + on `apps/public/**`
+push); supply `FEED_SECRET` (Actions secret) and `FEED_URL` (Actions variable)
+to the build. A failed build never rolls — the previous image keeps serving, and
+the countdown recomputes client-side, so the page degrades to stale, never
+broken.
+
+> The public workload is a static file server on its own host; hardening beyond
+> `runAsNonRoot` (rate-limit annotations, a WAF) is a follow-up if abuse ever
+> appears.
+
 ## Install a tagged release (OCI from GHCR)
 
 ```bash

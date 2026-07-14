@@ -132,15 +132,18 @@ non-PII projection of the active macrocycle's A-race:
 ```
 
 It is **not** consumed by browsers directly. The topology is
-`GitHub Actions (cron) → (X-Feed-Key) → Kazper → static build → GitHub Pages → friends`:
+`GitHub Actions (cron) → (X-Feed-Key) → Kazper → static build → nginx image → in-cluster Deployment → friends`:
 the static "road to race" page in [`apps/public/`](apps/public/) fetches this
-slice **once, at CI build time**, with `FEED_SECRET` held only in the Actions
-secret store, and ships pure static files to Pages. At serve time there is no
-server, no secret, and no path from public traffic to Kazper — and the countdown
-recomputes client-side from the embedded `race_date`, so a stale build is only
-ever wrong about *which* race, never *how many days*. (This CI-as-shield topology
-supersedes the earlier Strapi-shield sketch — a rebuilt-on-schedule static site
-is less machinery and a stronger shield; see [`apps/public/README.md`](apps/public/README.md).)
+slice **once, at image-build time**, with `FEED_SECRET` supplied as a BuildKit
+build secret (never an image layer), and the baked static files are served by a
+tiny `nginx` container via the Helm chart's opt-in `publicSite` block (its own
+public Ingress host, no route to the API). At serve time the feed secret is not
+in the cluster and public traffic reaches only a static file server — and the
+countdown recomputes client-side from the embedded `race_date`, so a stale build
+is only ever wrong about *which* race, never *how many days*. (This supersedes
+the earlier Strapi-shield sketch and the interim GitHub Pages topology — one
+deploy surface, the cluster the athlete already runs; see
+[`apps/public/README.md`](apps/public/README.md).)
 The endpoint is disabled (`503 feed_disabled`) until `FEED_SECRET` is set; a
 missing/wrong key is `401`. When there is no active anchored race the body
 degrades to `{"race": null, "days_remaining": null}`, which builds a designed
