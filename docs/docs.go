@@ -179,6 +179,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/athlete-config/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the dated snapshots of the athlete-config state, ascending by ` + "`" + `effective_from` + "`" + `, so threshold progression (e.g. \"FTP 240 → 255 → 270 this season\") is answerable from data. A snapshot is recorded only when a PUT changes physiology; the daily Garmin re-PUT of an unchanged config records nothing. The seed baseline uses ` + "`" + `effective_from = 1970-01-01` + "`" + ` (the oldest known state). Optional inclusive ` + "`" + `from` + "`" + `/` + "`" + `to` + "`" + ` bounds filter on ` + "`" + `effective_from` + "`" + `. Empty history returns ` + "`" + `{\"history\":[]}` + "`" + ` (no 404). Pace floats are rounded to 1dp; storage keeps full precision.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "athlete-config"
+                ],
+                "summary": "Dated history of the athlete physiology configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive lower bound on effective_from (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive upper bound on effective_from (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"history\\\": [ThresholdSnapshot]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | range_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/chat": {
             "post": {
                 "security": [

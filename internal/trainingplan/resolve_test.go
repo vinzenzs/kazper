@@ -29,7 +29,7 @@ func setupResolve(t *testing.T, wireConfig bool) *gin.Engine {
 	wr := workouts.NewRepo(pool)
 	workouts.NewHandlers(workouts.NewService(wr, pool, "UTC")).Register(g)
 	acRepo := athleteconfig.NewRepo(pool)
-	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo)).Register(g)
+	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo, pool)).Register(g)
 	tpSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, wr, tr, "UTC")
 	if wireConfig {
 		tpSvc.SetAthleteConfigRepo(acRepo)

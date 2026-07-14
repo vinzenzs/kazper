@@ -34,7 +34,7 @@ func setupMultisport(t *testing.T) (*gin.Engine, *pgxpool.Pool) {
 	wr := workouts.NewRepo(pool)
 	workouts.NewHandlers(workouts.NewService(wr, pool, "UTC")).Register(g)
 	acRepo := athleteconfig.NewRepo(pool)
-	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo)).Register(g)
+	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo, pool)).Register(g)
 	msRepo := multisport.NewRepo(pool)
 	multisport.NewHandlers(multisport.NewService(msRepo)).Register(g)
 	tpSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, wr, tr, "UTC")

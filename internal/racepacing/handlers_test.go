@@ -34,7 +34,7 @@ func setup(t *testing.T) *fixture {
 	racesRepo := races.NewRepo(pool)
 	races.NewHandlers(races.NewService(pool, racesRepo)).Register(g)
 	acRepo := athleteconfig.NewRepo(pool)
-	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo)).Register(g)
+	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo, pool)).Register(g)
 	racepacing.NewHandlers(racepacing.NewService(racesRepo, acRepo, racepacing.NewRepo(pool))).Register(g)
 	return &fixture{r: r}
 }

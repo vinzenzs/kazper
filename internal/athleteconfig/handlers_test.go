@@ -24,7 +24,7 @@ func init() { gin.SetMode(gin.TestMode) }
 func setup(t *testing.T) *gin.Engine {
 	t.Helper()
 	pool := storetest.NewPool(t)
-	svc := athleteconfig.NewService(athleteconfig.NewRepo(pool))
+	svc := athleteconfig.NewService(athleteconfig.NewRepo(pool), pool)
 	r := gin.New()
 	api := r.Group("/")
 	api.Use(idempotency.Middleware(idempotency.NewRepo(pool), time.Hour))

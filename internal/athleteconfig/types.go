@@ -34,3 +34,15 @@ type AthleteConfig struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// ThresholdSnapshot is one dated row of athlete_config_history — the full
+// physiology state (the 16 fields, embedded and inlined into the JSON) that was
+// in effect from EffectiveFrom onward. CreatedAt/UpdatedAt on the embedded config
+// carry the history ROW's timestamps (when the snapshot was written/replaced),
+// not the singleton's. The seed baseline uses effective_from 1970-01-01.
+type ThresholdSnapshot struct {
+	EffectiveFrom string `json:"effective_from"` // YYYY-MM-DD
+	AthleteConfig
+}
+
+const dateLayout = "2006-01-02"

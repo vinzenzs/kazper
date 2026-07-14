@@ -233,7 +233,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	coachMemoryRepo := coachmemory.NewRepo(pool)
 	coachMemorySvc := coachmemory.NewService(coachMemoryRepo)
 	athleteConfigRepo := athleteconfig.NewRepo(pool)
-	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo)
+	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo, pool)
 	// Cross-inject athlete-config so the workouts service can derive a bike
 	// workout's intensity_factor from ftp_watts (mirrors the same optional-setter
 	// convention as trainingPlanSvc.SetAthleteConfigRepo).

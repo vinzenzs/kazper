@@ -22,6 +22,13 @@ type ListGearArgs struct {
 // GetAthleteConfigArgs is the (empty) input to athlete_config_get.
 type GetAthleteConfigArgs struct{}
 
+// AthleteConfigHistoryGetArgs is the input to athlete_config_history_get:
+// optional inclusive date bounds on the snapshots' effective_from.
+type AthleteConfigHistoryGetArgs struct {
+	From *string `json:"from,omitempty" jsonschema:"optional inclusive lower bound on effective_from (YYYY-MM-DD)"`
+	To   *string `json:"to,omitempty" jsonschema:"optional inclusive upper bound on effective_from (YYYY-MM-DD)"`
+}
+
 // AthleteConfigUpdateArgs is the full PUT /athlete-config body. Every field is
 // optional; an omitted field is CLEARED on the server (full-replace, PUT not
 // PATCH), mirroring the AthleteConfig REST shape. The json tags match the REST
@@ -83,6 +90,32 @@ func garminInventorySpecs() []Spec {
 			Tier:       TierRead,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				return HTTPCall{Method: "GET", Path: "/athlete-config"}, nil
+			},
+		},
+		{
+			Name: "athlete_config_history_get",
+			Description: "Fetch the DATED history of the athlete's physiology configuration — the snapshots " +
+				"recorded each time a PUT changed FTP / thresholds / zone boundaries — ascending by " +
+				"effective_from. Use this to answer 'how has my FTP developed this season' from data instead " +
+				"of memory. A snapshot exists only per change (the daily Garmin re-PUT of an unchanged config " +
+				"records nothing); the seed baseline is dated 1970-01-01 (the oldest known state). Optional " +
+				"from/to (YYYY-MM-DD) filter inclusively on effective_from. Empty history returns an empty " +
+				"list, not an error. Read-only.",
+			SchemaType: AthleteConfigHistoryGetArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a AthleteConfigHistoryGetArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				if a.From != nil {
+					q.Set("from", *a.From)
+				}
+				if a.To != nil {
+					q.Set("to", *a.To)
+				}
+				return HTTPCall{Method: "GET", Path: "/athlete-config/history", Query: q}, nil
 			},
 		},
 		{

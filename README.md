@@ -1311,6 +1311,7 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `delete_plan_slot`            | `DELETE /training-plans/{id}/slots/{slotId}` | Delete a slot.                                          |
 | `materialize_training_plan`   | `POST /training-plans/{id}/materialize` | Expand a scope (all / week / range) into dated planned workouts; idempotent, slot-keyed. |
 | `get_workout_program`         | `GET /workouts/{id}/program`           | A planned workout's effective program — template steps with the slot's per-intent target *and* duration overrides applied (e.g. the interval at pace 7:15, the active block at 80min). |
+| `athlete_config_history_get`  | `GET /athlete-config/history?from=…&to=…` | Dated snapshots of the athlete-config state (FTP/thresholds/zones), ascending by `effective_from` — answers "how has my FTP developed this season". A snapshot is recorded only on a change (the daily Garmin re-PUT of an unchanged config records nothing); the seed baseline is dated `1970-01-01`. Optional inclusive `from`/`to`. |
 | `log_weight`                  | `POST /weight`                         | Record a body-weight measurement, optionally with body-fat %. |
 | `list_weights`                | `GET /weight?from=…&to=…`              | List body-weight entries in a 92-day window.                  |
 | `patch_weight`                | `PATCH /weight/{id}`                   | Edit weight / body-fat % / logged_at / note.                  |

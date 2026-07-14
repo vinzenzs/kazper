@@ -43,7 +43,7 @@ func setup(t *testing.T) *fixture {
 	acRepo := athleteconfig.NewRepo(pool)
 	// Full training-plan wiring (HTTP + athlete-config cross-inject) so plan/slot
 	// creation and zone resolution work for the override test.
-	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo)).Register(g)
+	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo, pool)).Register(g)
 	workouttemplates.NewHandlers(workouttemplates.NewService(trepo)).Register(g)
 	workouts.NewHandlers(workouts.NewService(wrepo, pool, "UTC")).Register(g)
 	tpSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, wrepo, trepo, "UTC")
