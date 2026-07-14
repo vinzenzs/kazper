@@ -120,7 +120,7 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `FCM_SERVICE_ACCOUNT_JSON` | _unset_                                     | Google service-account credential (inline JSON or a path to the key file) for FCM; required when `FCM_PROJECT_ID` is set |
 | `WEB_USER`               | _unset_                                       | HTTP Basic username for the browser coach dashboard (`client_id=web`, full access). The web identity is recognized only when set together with `WEB_PASSWORD` |
 | `WEB_PASSWORD`           | _unset_                                       | HTTP Basic password for the dashboard. Basic auth is base64, not encryption — only expose the dashboard over TLS or Tailscale |
-| `FEED_SECRET`            | _unset_                                       | Shared secret gating the public race feed `GET /public/race-feed` (header `X-Feed-Key`). Unset ⇒ the endpoint is disabled (`503`). Held only by the external Strapi shield — never shipped to a browser. Not a bearer identity; gates that one route only |
+| `FEED_SECRET`            | _unset_                                       | Shared secret gating the public race feed `GET /public/race-feed` (header `X-Feed-Key`). Unset ⇒ the endpoint is disabled (`503`). Held server-side and in the `apps/public` site's CI secret store (used only at build time) — never shipped to a browser. Not a bearer identity; gates that one route only |
 
 ## Public race feed
 
@@ -132,14 +132,19 @@ non-PII projection of the active macrocycle's A-race:
 ```
 
 It is **not** consumed by browsers directly. The topology is
-`friends → public frontend → Strapi → (X-Feed-Key) → Kazper`: an external Strapi
-instance holds `FEED_SECRET`, pulls this slice on a schedule, caches it, and
-re-serves it publicly, so the personal backend stays fully private and the secret
-never reaches a browser. The Strapi content model and the public frontend are
-**separate projects, out of scope for this repo.** The endpoint is disabled
-(`503 feed_disabled`) until `FEED_SECRET` is set; a missing/wrong key is `401`.
-When there is no active anchored race the body degrades to
-`{"race": null, "days_remaining": null}`.
+`GitHub Actions (cron) → (X-Feed-Key) → Kazper → static build → GitHub Pages → friends`:
+the static "road to race" page in [`apps/public/`](apps/public/) fetches this
+slice **once, at CI build time**, with `FEED_SECRET` held only in the Actions
+secret store, and ships pure static files to Pages. At serve time there is no
+server, no secret, and no path from public traffic to Kazper — and the countdown
+recomputes client-side from the embedded `race_date`, so a stale build is only
+ever wrong about *which* race, never *how many days*. (This CI-as-shield topology
+supersedes the earlier Strapi-shield sketch — a rebuilt-on-schedule static site
+is less machinery and a stronger shield; see [`apps/public/README.md`](apps/public/README.md).)
+The endpoint is disabled (`503 feed_disabled`) until `FEED_SECRET` is set; a
+missing/wrong key is `401`. When there is no active anchored race the body
+degrades to `{"race": null, "days_remaining": null}`, which builds a designed
+off-season page.
 
 ## Coach dashboard (web)
 

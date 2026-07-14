@@ -1,0 +1,13 @@
+# Node toolchain
+node_modules/
+
+# Astro build cache + output. Unlike apps/web (whose dist is committed and
+# go:embed-ed into the binary), this site's dist is deployed to GitHub Pages by
+# CI and never committed or embedded — so it IS ignored.
+.astro/
+dist/
+
+# Build-time feed snapshot fetched by scripts/fetch-feed.mjs (contains only the
+# non-PII {race, days_remaining} projection — never the secret — but it is a
+# build artifact, regenerated every build).
+src/generated/

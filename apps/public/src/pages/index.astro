@@ -1,0 +1,127 @@
+---
+import { loadFeed, formatRaceDate } from '../lib/feed.js';
+
+const feed = loadFeed();
+const race = feed.race; // { name, race_date } | null
+const daysRemaining = feed.days_remaining; // number | null
+
+// Absolute URL for the share card (OG needs an absolute image URL). base +
+// og.png resolved against the configured site.
+const ogImage = new URL(import.meta.env.BASE_URL + 'og.png', Astro.site).toString();
+
+const title = race ? `Road to ${race.name}` : 'Between seasons';
+const description = race
+  ? `${daysRemaining} days to ${race.name} — ${formatRaceDate(race.race_date)}.`
+  : 'No race on the calendar right now. Back soon.';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+
+    <!-- Share card (build-time generated PNG). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b1020;
+        --fg: #f4f6fb;
+        --muted: #93a1c4;
+        --accent: #6ea8fe;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: radial-gradient(120% 120% at 50% 0%, #17203c 0%, var(--bg) 60%);
+        color: var(--fg);
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 2rem;
+      }
+      main { max-width: 40rem; }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.28em;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin: 0 0 1.5rem;
+      }
+      .count {
+        font-size: clamp(4.5rem, 22vw, 11rem);
+        font-weight: 800;
+        line-height: 0.9;
+        margin: 0;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .count-label {
+        font-size: 1.1rem;
+        color: var(--muted);
+        margin: 0.5rem 0 2.25rem;
+      }
+      .race-name {
+        font-size: clamp(1.5rem, 6vw, 2.75rem);
+        font-weight: 700;
+        margin: 0 0 0.5rem;
+      }
+      .race-date { font-size: 1.1rem; color: var(--muted); margin: 0; }
+      .offseason .headline {
+        font-size: clamp(1.75rem, 7vw, 3rem);
+        font-weight: 700;
+        margin: 0 0 0.75rem;
+      }
+      .offseason p { color: var(--muted); font-size: 1.1rem; margin: 0; }
+    </style>
+  </head>
+  <body>
+    {race ? (
+      <main>
+        <p class="eyebrow">Road to race</p>
+        <p class="count" id="countdown" data-race-date={race.race_date}>{daysRemaining}</p>
+        <p class="count-label">days to go</p>
+        <h1 class="race-name">{race.name}</h1>
+        <p class="race-date">{formatRaceDate(race.race_date)}</p>
+      </main>
+    ) : (
+      <main class="offseason">
+        <p class="eyebrow">Road to race</p>
+        <h1 class="headline">Between seasons</h1>
+        <p>No race on the calendar right now — check back soon.</p>
+      </main>
+    )}
+
+    <!--
+      Countdown island: recompute whole calendar days in the VIEWER's local
+      timezone from the embedded race_date, floored at 0, replacing the
+      prerendered build-time number. A stale build can only be wrong about which
+      race is featured, never about how many days remain. No-JS viewers keep the
+      prerendered fallback. No network request is made.
+    -->
+    <script is:inline>
+      (function () {
+        var el = document.getElementById('countdown');
+        if (!el || !el.dataset.raceDate) return;
+        var parts = el.dataset.raceDate.split('-');
+        var race = new Date(+parts[0], +parts[1] - 1, +parts[2]); // local midnight
+        var now = new Date();
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var days = Math.max(0, Math.round((race - today) / 86400000));
+        el.textContent = String(days);
+      })();
+    </script>
+  </body>
+</html>

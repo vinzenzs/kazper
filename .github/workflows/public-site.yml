@@ -1,0 +1,79 @@
+name: public-site
+
+# Builds the static "road to race" page (apps/public) against the live race feed
+# and deploys it to GitHub Pages. The feed is read once, at build time, with the
+# X-Feed-Key from the Actions secret store — the shipped assets carry no secret
+# and make no runtime call to Kazper. A failed run leaves the previous deploy
+# serving (a stale page recomputes the countdown client-side, so it degrades to
+# stale, never broken).
+
+on:
+  # Nightly, shortly after midnight in the athlete's timezone (Europe/Berlin) so
+  # the prerendered fallback and the OG card roll over daily. 23:15 UTC is
+  # 00:15 CET (winter) / 01:15 CEST (summer) — after local midnight year-round.
+  schedule:
+    - cron: '15 23 * * *'
+  # Rebuild on demand — e.g. after re-anchoring the season's macrocycle/race.
+  workflow_dispatch:
+  # Rebuild when the site itself changes.
+  push:
+    branches: [main]
+    paths:
+      - 'apps/public/**'
+      - '.github/workflows/public-site.yml'
+
+# Pages deploy needs these; contents:read for checkout.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; don't cancel an in-flight publish.
+concurrency:
+  group: public-site
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    name: Build + deploy to Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        working-directory: apps/public
+        run: npm ci
+
+      - name: Build site
+        working-directory: apps/public
+        env:
+          # Full feed URL (repo variable) + secret (Actions secret). A missing
+          # or non-200 feed fails the build, leaving the last deploy serving.
+          FEED_URL: ${{ vars.FEED_URL }}
+          FEED_SECRET: ${{ secrets.FEED_SECRET }}
+          # Absolute URLs for the og:image tag, from the Pages config.
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/public/dist
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

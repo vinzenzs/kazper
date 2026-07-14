@@ -1,0 +1,18 @@
+{
+  "name": "kazper-public-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static 'road to race' broadcast page — built from the Kazper public race feed at CI build time, served on GitHub Pages with no runtime coupling to Kazper.",
+  "scripts": {
+    "fetch-feed": "node scripts/fetch-feed.mjs",
+    "gen-og": "node scripts/gen-og.mjs",
+    "build": "npm run fetch-feed && astro build && npm run gen-og",
+    "dev": "astro dev",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^4.16.0",
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}
