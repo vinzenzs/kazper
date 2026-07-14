@@ -213,6 +213,24 @@ when you want the real dashboard embedded in the binary.
 > else, reach the dashboard over TLS or a Tailscale tailnet — never on a bare
 > HTTP LAN address.
 
+### Public race feed
+
+`GET /public/race-feed` is the only unauthenticated data route — a curated,
+non-PII countdown to the active macrocycle's A-race, meant for an external
+Strapi shield (`friends → frontend → Strapi → X-Feed-Key → Kazper`) to cache and
+re-serve publicly. It's disabled until `FEED_SECRET` is set. Try it locally:
+
+```bash
+FEED_SECRET=dev-feed-secret ./bin/kazper serve   # or add FEED_SECRET to .env.local
+# wrong/no key → 401; unset FEED_SECRET → 503
+curl -s -H "X-Feed-Key: dev-feed-secret" http://localhost:8080/public/race-feed
+# → {"race":{"name":"…","race_date":"YYYY-MM-DD"},"days_remaining":54}
+#   (or {"race":null,"days_remaining":null} when no macrocycle anchors a race today)
+```
+
+The Strapi content model and the public frontend are **separate projects**, out
+of scope for this repo.
+
 ### Importing recipes from Cookidoo
 
 A Chrome extension at [`extensions/cookidoo/`](extensions/cookidoo/) imports

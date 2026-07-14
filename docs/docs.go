@@ -6263,6 +6263,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/public/race-feed": {
+            "get": {
+                "description": "The only unauthenticated data route: a curated projection of the active macrocycle's A-race (name, date, and a computed countdown) for an external Strapi shield to cache and re-serve publicly. Requires header ` + "`" + `X-Feed-Key` + "`" + ` equal to ` + "`" + `FEED_SECRET` + "`" + ` (compared in constant time) — this is NOT a bearer identity and grants access to nothing else. Returns ` + "`" + `503 feed_disabled` + "`" + ` when ` + "`" + `FEED_SECRET` + "`" + ` is unset, ` + "`" + `401 feed_unauthorized` + "`" + ` on a missing/wrong key. When there is no active anchored race the body degrades to ` + "`" + `{\"race\": null, \"days_remaining\": null}` + "`" + `. No PII is ever returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public-feed"
+                ],
+                "summary": "Public race feed (secret-gated, non-PII)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared feed secret (equals FEED_SECRET)",
+                        "name": "X-Feed-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"race\\\": {\\\"name\\\": \\\"...\\\", \\\"race_date\\\": \\\"YYYY-MM-DD\\\"} | null, \\\"days_remaining\\\": \u003cint\u003e | null}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "feed_unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "feed_disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/push/tokens": {
             "post": {
                 "security": [

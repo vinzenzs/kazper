@@ -85,6 +85,12 @@ type Config struct {
 	MaxRequestBodyBytes   int64         `mapstructure:"MAX_REQUEST_BODY_BYTES"`
 	MetricsEnabled        bool          `mapstructure:"METRICS_ENABLED"`
 
+	// FeedSecret is the shared secret the external Strapi shield presents (header
+	// X-Feed-Key) to the public race feed (public-race-feed). When empty, the
+	// GET /public/race-feed endpoint is disabled (503 feed_disabled). It is NOT a
+	// bearer identity — it gates that one route only. Secret; redacted in dumps.
+	FeedSecret string `mapstructure:"FEED_SECRET"`
+
 	// MCP server
 	NutritionAPIURL          string        `mapstructure:"NUTRITION_API_URL"`
 	MCPRequestTimeout        time.Duration `mapstructure:"-"`
@@ -139,6 +145,7 @@ var envKeys = []string{
 	"HTTP_REQUEST_TIMEOUT",
 	"MAX_REQUEST_BODY_BYTES",
 	"METRICS_ENABLED",
+	"FEED_SECRET",
 	"NUTRITION_API_URL",
 	"MCP_REQUEST_TIMEOUT_SECONDS",
 	"ANTHROPIC_API_KEY",
@@ -355,6 +362,7 @@ func (c *Config) Redacted() Config {
 	cp.GarminTokenEncKey = redact(cp.GarminTokenEncKey)
 	cp.FCMServiceAccountJSON = redact(cp.FCMServiceAccountJSON)
 	cp.WebPassword = redact(cp.WebPassword)
+	cp.FeedSecret = redact(cp.FeedSecret)
 	return cp
 }
 

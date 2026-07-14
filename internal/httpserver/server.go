@@ -44,6 +44,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/off"
 	"github.com/vinzenzs/kazper/internal/personalrecords"
 	"github.com/vinzenzs/kazper/internal/products"
+	"github.com/vinzenzs/kazper/internal/publicfeed"
 	"github.com/vinzenzs/kazper/internal/push"
 	"github.com/vinzenzs/kazper/internal/raceprep"
 	"github.com/vinzenzs/kazper/internal/races"
@@ -328,6 +329,15 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	})
 
 	RegisterSwagger(r, cfg.SwaggerEnabled)
+
+	// Public race feed (public-race-feed): the ONLY unauthenticated data route.
+	// Registered on the root engine, OUTSIDE auth.Middleware (sibling of
+	// /healthz), gated by its own shared secret. Self-disables (503) when
+	// FEED_SECRET is unset. Returns only a curated non-PII race projection.
+	publicfeed.NewHandlers(
+		publicfeed.NewService(publicfeed.NewRepo(pool), userTZ),
+		cfg.FeedSecret,
+	).Register(r)
 
 	// Domain endpoints are versioned under /api/v1 (per add-api-versioning); the
 	// infra endpoints above (/healthz, /readyz, /swagger) stay at root, unversioned.

@@ -120,6 +120,26 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `FCM_SERVICE_ACCOUNT_JSON` | _unset_                                     | Google service-account credential (inline JSON or a path to the key file) for FCM; required when `FCM_PROJECT_ID` is set |
 | `WEB_USER`               | _unset_                                       | HTTP Basic username for the browser coach dashboard (`client_id=web`, full access). The web identity is recognized only when set together with `WEB_PASSWORD` |
 | `WEB_PASSWORD`           | _unset_                                       | HTTP Basic password for the dashboard. Basic auth is base64, not encryption — only expose the dashboard over TLS or Tailscale |
+| `FEED_SECRET`            | _unset_                                       | Shared secret gating the public race feed `GET /public/race-feed` (header `X-Feed-Key`). Unset ⇒ the endpoint is disabled (`503`). Held only by the external Strapi shield — never shipped to a browser. Not a bearer identity; gates that one route only |
+
+## Public race feed
+
+`GET /public/race-feed` is the **only unauthenticated data route** — a curated,
+non-PII projection of the active macrocycle's A-race:
+
+```json
+{ "race": { "name": "Ironman Hamburg", "race_date": "2026-09-06" }, "days_remaining": 54 }
+```
+
+It is **not** consumed by browsers directly. The topology is
+`friends → public frontend → Strapi → (X-Feed-Key) → Kazper`: an external Strapi
+instance holds `FEED_SECRET`, pulls this slice on a schedule, caches it, and
+re-serves it publicly, so the personal backend stays fully private and the secret
+never reaches a browser. The Strapi content model and the public frontend are
+**separate projects, out of scope for this repo.** The endpoint is disabled
+(`503 feed_disabled`) until `FEED_SECRET` is set; a missing/wrong key is `401`.
+When there is no active anchored race the body degrades to
+`{"race": null, "days_remaining": null}`.
 
 ## Coach dashboard (web)
 
