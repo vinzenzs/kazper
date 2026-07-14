@@ -8574,6 +8574,60 @@
                 }
             }
         },
+        "/wellness/correlation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Pairs each wellness field's daily entries with the same-day PMC value and returns the per-field Spearman rank correlation `{n, rho}`. `metric` selects the PMC value: `tsb` (default) | `ctl` | `ramp_rate`. Fields with fewer than 14 paired days return `{n, reason: \"insufficient_pairs\"}` and no rho — early sparse data can't produce confident noise. ASSOCIATION ONLY (confounders abound); interpretation stays with the coach. Compute-on-read; nothing persisted. Range capped at 92 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wellness"
+                ],
+                "summary": "Correlate wellness fields against a PMC metric",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD; max 92 days",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "tsb (default) | ctl | ramp_rate",
+                        "name": "metric",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/wellness.CorrelationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | metric_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/wellness/{date}": {
             "get": {
                 "security": [
@@ -15326,6 +15380,26 @@
                 }
             }
         },
+        "wellness.CorrelationResult": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/wellness.FieldCorrelation"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "metric": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
         "wellness.Entry": {
             "type": "object",
             "properties": {
@@ -15355,6 +15429,20 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "wellness.FieldCorrelation": {
+            "type": "object",
+            "properties": {
+                "n": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "rho": {
+                    "type": "number"
                 }
             }
         },

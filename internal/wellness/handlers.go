@@ -25,6 +25,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/wellness/:date", h.get)
 	rg.DELETE("/wellness/:date", h.delete)
 	rg.GET("/wellness", h.list)
+	rg.GET("/wellness/correlation", h.correlation)
 }
 
 // putBody is the decoded PUT payload. Pointers distinguish absent from present;
@@ -174,6 +175,66 @@ func (h *Handlers) list(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"entries": entries})
+}
+
+// correlation godoc
+// @Summary      Correlate wellness fields against a PMC metric
+// @Description  Pairs each wellness field's daily entries with the same-day PMC value and returns the per-field Spearman rank correlation `{n, rho}`. `metric` selects the PMC value: `tsb` (default) | `ctl` | `ramp_rate`. Fields with fewer than 14 paired days return `{n, reason: "insufficient_pairs"}` and no rho — early sparse data can't produce confident noise. ASSOCIATION ONLY (confounders abound); interpretation stays with the coach. Compute-on-read; nothing persisted. Range capped at 92 days.
+// @Tags         wellness
+// @Produce      json
+// @Param        from    query  string  true   "Inclusive start date YYYY-MM-DD"
+// @Param        to      query  string  true   "Inclusive end date YYYY-MM-DD; max 92 days"
+// @Param        metric  query  string  false  "tsb (default) | ctl | ramp_rate"
+// @Success      200  {object}  CorrelationResult
+// @Failure      400  {object}  map[string]interface{}  "range_required | date_invalid | range_invalid | range_too_large | metric_invalid"
+// @Security     BearerAuth
+// @Router       /wellness/correlation [get]
+func (h *Handlers) correlation(c *gin.Context) {
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+	if fromStr == "" || toStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "range_required"})
+		return
+	}
+	from, err := time.Parse(dateFormat, fromStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date_invalid", "field": "from"})
+		return
+	}
+	to, err := time.Parse(dateFormat, toStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date_invalid", "field": "to"})
+		return
+	}
+	if from.After(to) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "range_invalid"})
+		return
+	}
+	if days := int(to.Sub(from).Hours()/24) + 1; days > maxRangeDays {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "range_too_large", "max_days": maxRangeDays})
+		return
+	}
+	loc := time.UTC
+	if tz := c.Query("tz"); tz != "" {
+		l, err := time.LoadLocation(tz)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tz_invalid"})
+			return
+		}
+		loc = l
+	}
+	res, err := h.svc.CorrelationFor(c.Request.Context(), from, to, loc, c.Query("metric"))
+	if err != nil {
+		if errors.Is(err, ErrMetricInvalid) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "metric_invalid"})
+			return
+		}
+		writeErr(c, err)
+		return
+	}
+	res.From = from.Format(dateFormat)
+	res.To = to.Format(dateFormat)
+	c.JSON(http.StatusOK, res)
 }
 
 // writeErr maps a service/repo sentinel to its API status + code.

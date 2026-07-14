@@ -3247,6 +3247,19 @@ definitions:
       week:
         type: integer
     type: object
+  wellness.CorrelationResult:
+    properties:
+      fields:
+        additionalProperties:
+          $ref: '#/definitions/wellness.FieldCorrelation'
+        type: object
+      from:
+        type: string
+      metric:
+        type: string
+      to:
+        type: string
+    type: object
   wellness.Entry:
     properties:
       created_at:
@@ -3267,6 +3280,15 @@ definitions:
         type: integer
       updated_at:
         type: string
+    type: object
+  wellness.FieldCorrelation:
+    properties:
+      "n":
+        type: integer
+      reason:
+        type: string
+      rho:
+        type: number
     type: object
   wellness.putBody:
     properties:
@@ -10054,6 +10076,48 @@ paths:
       security:
       - BearerAuth: []
       summary: Upsert the wellness entry for a date
+      tags:
+      - wellness
+  /wellness/correlation:
+    get:
+      description: 'Pairs each wellness field''s daily entries with the same-day PMC
+        value and returns the per-field Spearman rank correlation `{n, rho}`. `metric`
+        selects the PMC value: `tsb` (default) | `ctl` | `ramp_rate`. Fields with
+        fewer than 14 paired days return `{n, reason: "insufficient_pairs"}` and no
+        rho — early sparse data can''t produce confident noise. ASSOCIATION ONLY (confounders
+        abound); interpretation stays with the coach. Compute-on-read; nothing persisted.
+        Range capped at 92 days.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD; max 92 days
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: tsb (default) | ctl | ramp_rate
+        in: query
+        name: metric
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/wellness.CorrelationResult'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | metric_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Correlate wellness fields against a PMC metric
       tags:
       - wellness
   /workout-fuel:

@@ -32,6 +32,14 @@ type ListWellnessArgs struct {
 	To   string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; max 92 days from from"`
 }
 
+// WellnessCorrelationArgs is the input to wellness_correlation.
+type WellnessCorrelationArgs struct {
+	From   string `json:"from" jsonschema:"inclusive start date YYYY-MM-DD"`
+	To     string `json:"to" jsonschema:"inclusive end date YYYY-MM-DD; max 92 days from from"`
+	Metric string `json:"metric,omitempty" jsonschema:"PMC metric to correlate against: tsb (default) | ctl | ramp_rate"`
+	TZ     string `json:"tz,omitempty" jsonschema:"IANA timezone for the PMC day bucketing; defaults to UTC"`
+}
+
 func wellnessSpecs() []Spec {
 	return []Spec{
 		{
@@ -93,6 +101,35 @@ func wellnessSpecs() []Spec {
 				q.Set("from", a.From)
 				q.Set("to", a.To)
 				return HTTPCall{Method: "GET", Path: "/wellness", Query: q}, nil
+			},
+		},
+		{
+			Name: "wellness_correlation",
+			Description: "Correlate the athlete's subjective wellness fields against an objective PMC metric over a " +
+				"window: for each field (fatigue/soreness/stress/mood/motivation) the Spearman rank correlation with " +
+				"that day's `metric` — `tsb` (default; the 'does form feel like something' question) | `ctl` | " +
+				"`ramp_rate`. Returns per field `{n, rho}`; a field with fewer than 14 paired days returns " +
+				"`{n, reason: 'insufficient_pairs'}` and no rho (early sparse data can't produce a confident number). " +
+				"IMPORTANT: this is ASSOCIATION, not causation — confounders (illness, life stress) abound, and rho on " +
+				"5-level data saturates, so read direction + rough magnitude, not the third decimal. Read-only; no " +
+				"idempotency key. Max 92-day window.",
+			SchemaType: WellnessCorrelationArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a WellnessCorrelationArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("from", a.From)
+				q.Set("to", a.To)
+				if a.Metric != "" {
+					q.Set("metric", a.Metric)
+				}
+				if a.TZ != "" {
+					q.Set("tz", a.TZ)
+				}
+				return HTTPCall{Method: "GET", Path: "/wellness/correlation", Query: q}, nil
 			},
 		},
 	}

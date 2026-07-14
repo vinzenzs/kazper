@@ -6,7 +6,10 @@
 // per-date singleton with PUT full-replace upsert (the goals-overrides pattern).
 package wellness
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Entry mirrors a wellness_entries row. Every score is nullable — absent means
 // "not reported", never defaulted — and serializes with omitempty. Symptom-like
@@ -22,4 +25,39 @@ type Entry struct {
 	Note       *string   `json:"note,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// PMCDayValue is one day's PMC metrics — the narrow slice the correlation read
+// needs from the performance-management capability.
+type PMCDayValue struct {
+	Date     string // YYYY-MM-DD (the PMC's tz bucketing)
+	TSB      float64
+	CTL      float64
+	RampRate float64
+}
+
+// PMCProvider supplies the daily PMC series for correlation. Implemented by the
+// pmc service, injected at wiring so internal/wellness carries no pmc import
+// (the cross-injection precedent) — no package cycle, no duplicate EWMA.
+type PMCProvider interface {
+	PMCValues(ctx context.Context, from, to time.Time, loc *time.Location) ([]PMCDayValue, error)
+}
+
+// FieldCorrelation is one wellness field's association with the chosen PMC
+// metric over the window. Rho is present only when n meets the minimum; below it
+// Reason is "insufficient_pairs" (visible progress toward usefulness).
+type FieldCorrelation struct {
+	N      int      `json:"n"`
+	Rho    *float64 `json:"rho,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// CorrelationResult is the GET /wellness/correlation response: per wellness field
+// its Spearman rank correlation with the metric. Compute-on-read; nothing
+// persisted.
+type CorrelationResult struct {
+	Metric string                      `json:"metric"`
+	From   string                      `json:"from"`
+	To     string                      `json:"to"`
+	Fields map[string]FieldCorrelation `json:"fields"`
 }

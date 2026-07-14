@@ -29,6 +29,25 @@ func TestBuild_LogWellness(t *testing.T) {
 	assert.False(t, hasFatigue, "unset score must be omitted from the PUT body")
 }
 
+// wellness_correlation → GET /wellness/correlation; metric forwarded when set.
+func TestBuild_WellnessCorrelation(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["wellness_correlation"]
+	require.True(t, ok, "wellness_correlation must be registered")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"from":"2026-06-01","to":"2026-06-30","metric":"ctl"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/wellness/correlation", call.Path)
+	assert.Equal(t, "ctl", call.Query.Get("metric"))
+
+	// Omitted metric is not forwarded (server default tsb applies).
+	call2, err := spec.Build(json.RawMessage(`{"from":"2026-06-01","to":"2026-06-30"}`))
+	require.NoError(t, err)
+	assert.Empty(t, call2.Query.Get("metric"))
+}
+
 // list_wellness → GET /wellness with from/to query params (read tier).
 func TestBuild_ListWellness(t *testing.T) {
 	specs := ByName(MCPRegistry())
