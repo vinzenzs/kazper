@@ -1,12 +1,13 @@
 # Project Roadmap
 
 _Generated from OpenSpec changes. Last refreshed: 2026-07-14 by the `roadmap` skill._
-_111 implemented · 0 planned. Historical record; forward plan lives in [`continuity.md`](continuity.md)._
+_112 implemented · 0 planned. Historical record; forward plan lives in [`continuity.md`](continuity.md)._
 
 ## Implemented
 
 | Date | Change | Summary | Implementer(s) | Commit |
 |---|---|---|---|---|
+| 2026-07-14 | add-public-race-site | A static "road to race" broadcast page (`apps/public`, Astro) built from the secret-gated race feed at CI build time and deployed to GitHub Pages — CI-as-shield (no runtime server/secret/traffic path to Kazper), client-side countdown freshness, off-season null state, build-time OG card, nightly rebuild workflow. Frontend/ops only; supersedes the Strapi-shield topology. | Vinzenz Stadtmueller | [`74c6005`](https://github.com/vinzenzs/kazper/commit/74c6005) |
 | 2026-07-14 | add-threshold-history | An append-only `athlete_config_history` (migration 059, epoch-seeded) versioning the athlete-config singleton on change — `GET /athlete-config/history`, a transactional snapshot hook with no-op/same-day/revert dedup, a `ConfigAsOf` resolution primitive, and the `athlete_config_history_get` MCP tool. | Vinzenz Stadtmueller | [`11c3c2e`](https://github.com/vinzenzs/kazper/commit/11c3c2e) |
 | 2026-07-14 | add-race-priority | An optional A/B/C TrainingPeaks triage `priority` on the race resource (migration 058, tri-state PATCH, `GET /races?priority=A` filter), advisory metadata the coach agent reasons over — no macrocycle-anchor coupling. MCP create/update/list race args updated. | Vinzenz Stadtmueller | [`e5fdb4f`](https://github.com/vinzenzs/kazper/commit/e5fdb4f) |
 | 2026-07-14 | add-race-pacing-plan | A compute-on-read `GET /races/{id}/pacing-plan` deriving per-leg intensity bands from athlete-config thresholds (bike %FTP, run vs threshold pace, swim vs CSS, duration-banded), per-leg IF/estimated TSS + race total, with persisted per-leg overrides (migration 057). New race-pacing-plan capability + 3 MCP tools. | Vinzenz Stadtmueller | [`aad7286`](https://github.com/vinzenzs/kazper/commit/aad7286) |
