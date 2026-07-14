@@ -17,7 +17,7 @@ const FormatVersion = 1
 // exportedTables lists every user-data table, in the fixed order they appear in
 // the export document. Ordering is part of the format's determinism contract —
 // do not reorder without bumping FormatVersion. Verified against migration head
-// 059 (39 exported tables; workout_streams from 056 is excluded — see below).
+// 060 (40 exported tables; workout_streams from 056 is excluded — see below).
 // A future migration that adds a table forces a classification decision here via
 // the drift guard (see Drift).
 var exportedTables = []string{
@@ -60,6 +60,7 @@ var exportedTables = []string{
 	"chat_sessions",
 	"chat_messages",
 	"coach_memory",
+	"wellness_entries",
 }
 
 // excludedTables lists tables deliberately kept out of the export: secrets,

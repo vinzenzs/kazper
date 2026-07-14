@@ -16,6 +16,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/summary"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
+	"github.com/vinzenzs/kazper/internal/wellness"
 )
 
 // DailyContext is the top-level response shape. Each sub-block re-uses the
@@ -44,6 +45,10 @@ type DailyContext struct {
 	// Garmin's daily water-balance estimate (sweat out, activity intake in, goal).
 	// Same-day-or-null. Distinct from the Hydration block (logged intake).
 	HydrationBalance *hydrationbalance.Snapshot `json:"hydration_balance"`
+	// Today's subjective wellness entry (self-reported scores + note), beside the
+	// objective recovery snapshot. Omitted entirely when unlogged — never an empty
+	// object. History stays behind the wellness endpoints (add-wellness-diary).
+	Wellness *wellness.Entry `json:"wellness,omitempty"`
 }
 
 // AdherenceBlock mirrors the summary.Daily adherence + source fields.

@@ -647,6 +647,13 @@ definitions:
         allOf:
         - $ref: '#/definitions/dailycontext.WeightBlock'
         description: nil when no entry ever logged
+      wellness:
+        allOf:
+        - $ref: '#/definitions/wellness.Entry'
+        description: |-
+          Today's subjective wellness entry (self-reported scores + note), beside the
+          objective recovery snapshot. Omitted entirely when unlogged — never an empty
+          object. History stays behind the wellness endpoints (add-wellness-diary).
       workout_fuel:
         description: never nil; empty array on quiet days
         items:
@@ -2957,6 +2964,42 @@ definitions:
       to:
         type: string
       week:
+        type: integer
+    type: object
+  wellness.Entry:
+    properties:
+      created_at:
+        type: string
+      date:
+        type: string
+      fatigue:
+        type: integer
+      mood:
+        type: integer
+      motivation:
+        type: integer
+      note:
+        type: string
+      soreness:
+        type: integer
+      stress:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  wellness.putBody:
+    properties:
+      fatigue:
+        type: integer
+      mood:
+        type: integer
+      motivation:
+        type: integer
+      note:
+        type: string
+      soreness:
+        type: integer
+      stress:
         type: integer
     type: object
   workoutcompliance.ActualLap:
@@ -9546,6 +9589,140 @@ paths:
       summary: Rolling-average body-weight trend
       tags:
       - body-weight
+  /wellness:
+    get:
+      description: Returns entries whose `date` falls within `[from, to]` (inclusive)
+        in ascending date order. `200` with an empty array when none exist. The range
+        is capped at 92 days.
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD; max 92 days from `from`
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"entries\": [Entry]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List wellness entries in a date range
+      tags:
+      - wellness
+  /wellness/{date}:
+    delete:
+      parameters:
+      - description: Entry date in YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "400":
+          description: date_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete the wellness entry for a date
+      tags:
+      - wellness
+    get:
+      parameters:
+      - description: Entry date in YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"wellness\": Entry}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: date_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the wellness entry for a date
+      tags:
+      - wellness
+    put:
+      consumes:
+      - application/json
+      description: 'Full-replace semantics: fields absent from the body are cleared
+        (stored NULL). Five optional 1–5 scores (fatigue/soreness/stress: 1=none→5=severe;
+        mood/motivation: 1=low→5=high) plus an optional note (≤2000 chars); at least
+        one field must be present. `Idempotency-Key` is NOT accepted on PUT — supplying
+        it returns `400 idempotency_unsupported_for_put`.'
+      parameters:
+      - description: Entry date in YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Wellness scores + note
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/wellness.putBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"wellness\": Entry}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: date_invalid | wellness_empty | wellness_score_invalid | note_too_long
+            | invalid_json | idempotency_unsupported_for_put
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert the wellness entry for a date
+      tags:
+      - wellness
   /workout-fuel:
     get:
       parameters:

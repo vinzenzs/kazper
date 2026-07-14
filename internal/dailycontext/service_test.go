@@ -2,6 +2,7 @@ package dailycontext_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/store/storetest"
 	"github.com/vinzenzs/kazper/internal/summary"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
+	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workouts"
 )
@@ -42,6 +44,7 @@ type fix struct {
 	fitness          *fitnessmetrics.Repo
 	hydrationBalance *hydrationbalance.Repo
 	coachMemory      *coachmemory.Repo
+	wellness         *wellness.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -66,11 +69,12 @@ func setup(t *testing.T) *fix {
 	fitnessRepo := fitnessmetrics.NewRepo(pool)
 	hydrationBalRepo := hydrationbalance.NewRepo(pool)
 	coachMemoryRepo := coachmemory.NewRepo(pool)
+	wellnessRepo := wellness.NewRepo(pool)
 	svc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, overridesRepo, phRepo,
 		recoveryRepo, fitnessRepo, hydrationBalRepo,
-		coachMemoryRepo,
+		coachMemoryRepo, wellnessRepo,
 	)
 	return &fix{
 		svc:              svc,
@@ -87,6 +91,7 @@ func setup(t *testing.T) *fix {
 		templates:        tplRepo,
 		phases:           phRepo,
 		coachMemory:      coachMemoryRepo,
+		wellness:         wellnessRepo,
 	}
 }
 
@@ -504,4 +509,54 @@ func TestBuildFor_HydrationBalanceNullWhenAbsentNoCarryover(t *testing.T) {
 	out, err := f.svc.BuildFor(ctx, time.Date(2026, 7, 15, 0, 0, 0, 0, loc), loc)
 	require.NoError(t, err)
 	assert.Nil(t, out.HydrationBalance, "hydration_balance is same-day-or-null, never carried over")
+}
+
+// TestBuildFor_WellnessPresent covers add-wellness-diary: today's subjective
+// entry surfaces verbatim in its own block, beside the objective recovery
+// snapshot, and the rest of the payload is unaffected.
+func TestBuildFor_WellnessPresent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	require.NoError(t, f.wellness.Upsert(ctx, date, &wellness.Entry{
+		Fatigue: ptr(3), Note: ptr("legs heavy despite good TSB"),
+	}))
+	// An objective recovery snapshot on the same day — subjective + objective
+	// must read side by side.
+	_, err := f.recovery.Upsert(ctx, &recoverymetrics.Snapshot{Date: "2026-07-15", RestingHR: ptr(48)})
+	require.NoError(t, err)
+
+	out, err := f.svc.BuildFor(ctx, date, loc)
+	require.NoError(t, err)
+
+	require.NotNil(t, out.Wellness)
+	require.NotNil(t, out.Wellness.Fatigue)
+	assert.Equal(t, 3, *out.Wellness.Fatigue)
+	require.NotNil(t, out.Wellness.Note)
+	assert.Equal(t, "legs heavy despite good TSB", *out.Wellness.Note)
+	assert.Nil(t, out.Wellness.Mood, "unreported score stays nil")
+	// Rest of the payload unaffected.
+	require.NotNil(t, out.Recovery)
+	require.NotNil(t, out.Recovery.RestingHR)
+	assert.Equal(t, 48, *out.Recovery.RestingHR)
+}
+
+func TestBuildFor_WellnessOmittedWhenUnlogged(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+
+	// An entry exists for the PRIOR day only — today omits the field (no carryover).
+	require.NoError(t, f.wellness.Upsert(ctx, time.Date(2026, 7, 14, 0, 0, 0, 0, loc), &wellness.Entry{Mood: ptr(4)}))
+
+	out, err := f.svc.BuildFor(ctx, time.Date(2026, 7, 15, 0, 0, 0, 0, loc), loc)
+	require.NoError(t, err)
+	assert.Nil(t, out.Wellness, "wellness is same-day-or-omitted, never carried over")
+
+	// Confirm the JSON payload has no `wellness` key at all (omitempty).
+	raw, err := json.Marshal(out)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `"wellness"`)
 }

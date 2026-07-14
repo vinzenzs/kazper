@@ -18,6 +18,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/summary"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
+	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workouts"
 )
@@ -36,6 +37,7 @@ type Service struct {
 	fitnessRepo       *fitnessmetrics.Repo
 	hydrationBalRepo  *hydrationbalance.Repo
 	coachMemoryRepo   *coachmemory.Repo
+	wellnessRepo      *wellness.Repo
 	summarySvc        *summary.Service
 }
 
@@ -53,6 +55,7 @@ func NewService(
 	fitnessRepo *fitnessmetrics.Repo,
 	hydrationBalRepo *hydrationbalance.Repo,
 	coachMemoryRepo *coachmemory.Repo,
+	wellnessRepo *wellness.Repo,
 ) *Service {
 	return &Service{
 		summarySvc:        summarySvc,
@@ -66,6 +69,7 @@ func NewService(
 		fitnessRepo:       fitnessRepo,
 		hydrationBalRepo:  hydrationBalRepo,
 		coachMemoryRepo:   coachMemoryRepo,
+		wellnessRepo:      wellnessRepo,
 	}
 }
 
@@ -266,6 +270,23 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 			if mem != nil {
 				out.Memory = mem
 			}
+			return nil
+		})
+	}
+
+	// Today's subjective wellness entry (same-day-or-omitted, no carryover) —
+	// subjective state beside the objective recovery snapshot. nil repo (unit
+	// tests) leaves out.Wellness nil. History stays behind list_wellness.
+	if s.wellnessRepo != nil {
+		g.Go(func() error {
+			entry, err := s.wellnessRepo.Get(gctx, date)
+			if err != nil {
+				if errors.Is(err, wellness.ErrNotFound) {
+					return nil // out.Wellness stays nil (field omitted)
+				}
+				return fmt.Errorf("wellness entry: %w", err)
+			}
+			out.Wellness = entry
 			return nil
 		})
 	}

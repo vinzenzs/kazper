@@ -8471,6 +8471,204 @@ const docTemplate = `{
                 }
             }
         },
+        "/wellness": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns entries whose ` + "`" + `date` + "`" + ` falls within ` + "`" + `[from, to]` + "`" + ` (inclusive) in ascending date order. ` + "`" + `200` + "`" + ` with an empty array when none exist. The range is capped at 92 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wellness"
+                ],
+                "summary": "List wellness entries in a date range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD; max 92 days from ` + "`" + `from` + "`" + `",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"entries\\\": [Entry]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wellness/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wellness"
+                ],
+                "summary": "Get the wellness entry for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry date in YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"wellness\\\": Entry}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full-replace semantics: fields absent from the body are cleared (stored NULL). Five optional 1–5 scores (fatigue/soreness/stress: 1=none→5=severe; mood/motivation: 1=low→5=high) plus an optional note (≤2000 chars); at least one field must be present. ` + "`" + `Idempotency-Key` + "`" + ` is NOT accepted on PUT — supplying it returns ` + "`" + `400 idempotency_unsupported_for_put` + "`" + `.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wellness"
+                ],
+                "summary": "Upsert the wellness entry for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry date in YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Wellness scores + note",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/wellness.putBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"wellness\\\": Entry}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid | wellness_empty | wellness_score_invalid | note_too_long | invalid_json | idempotency_unsupported_for_put",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "wellness"
+                ],
+                "summary": "Delete the wellness entry for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry date in YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "400": {
+                        "description": "date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workout-fuel": {
             "get": {
                 "security": [
@@ -10965,6 +11163,14 @@ const docTemplate = `{
                     "allOf": [
                         {
                             "$ref": "#/definitions/dailycontext.WeightBlock"
+                        }
+                    ]
+                },
+                "wellness": {
+                    "description": "Today's subjective wellness entry (self-reported scores + note), beside the\nobjective recovery snapshot. Omitted entirely when unlogged — never an empty\nobject. History stays behind the wellness endpoints (add-wellness-diary).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/wellness.Entry"
                         }
                     ]
                 },
@@ -14330,6 +14536,61 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "week": {
+                    "type": "integer"
+                }
+            }
+        },
+        "wellness.Entry": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "fatigue": {
+                    "type": "integer"
+                },
+                "mood": {
+                    "type": "integer"
+                },
+                "motivation": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "soreness": {
+                    "type": "integer"
+                },
+                "stress": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "wellness.putBody": {
+            "type": "object",
+            "properties": {
+                "fatigue": {
+                    "type": "integer"
+                },
+                "mood": {
+                    "type": "integer"
+                },
+                "motivation": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "soreness": {
+                    "type": "integer"
+                },
+                "stress": {
                     "type": "integer"
                 }
             }

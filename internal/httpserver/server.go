@@ -58,6 +58,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/trainingplan"
 	"github.com/vinzenzs/kazper/internal/vision"
+	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workoutcompliance"
 	"github.com/vinzenzs/kazper/internal/workoutfueling"
@@ -222,6 +223,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	fuelingSvc := workoutfueling.NewService(workoutsRepo, mealsRepo, hydrationRepo, workoutFuelRepo)
 	bodyWeightRepo := bodyweight.NewRepo(pool)
 	bodyWeightSvc := bodyweight.NewService(bodyWeightRepo)
+	wellnessSvc := wellness.NewService(wellness.NewRepo(pool))
 	recoveryMetricsRepo := recoverymetrics.NewRepo(pool)
 	recoveryMetricsSvc := recoverymetrics.NewService(recoveryMetricsRepo)
 	dailySummaryRepo := dailysummary.NewRepo(pool)
@@ -397,6 +399,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Performance Management Chart (add-performance-management): compute-on-read
 	// CTL/ATL/TSB over completed-workout TSS. Read-only; own read repo.
 	pmc.NewHandlers(pmc.NewService(pmc.NewRepo(pool)), cfg.DefaultUserTZ, logger).Register(api)
+	wellness.NewHandlers(wellnessSvc).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
 	multisportRepo := multisport.NewRepo(pool)
@@ -455,7 +458,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
-		coachMemoryRepo,
+		coachMemoryRepo, wellness.NewRepo(pool),
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)
