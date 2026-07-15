@@ -16,7 +16,7 @@ _Nothing in flight. `extend-plan-adherence-detail` archived 2026-07-08._
 
 Ordered queue — top is next to pick up. _(**To take the public race site live, do the k8s cutover operator step — see the `host-public-site-in-cluster` note.**)_
 
-_(empty — every proposed change has been applied and archived. Next work starts from the Backlog seams below or a new proposal.)_
+1. **separate-garmin-threshold-detection** — `Why:` **Production data-corruption bug (user-reported 2026-07-15, most urgent):** the bridge's daily sync builds a config body purely from Garmin and PUTs the full-replace `/athlete-config` — silently overwriting confirmed values (MaxHR 196 clobbered), **clearing** fields Garmin lacks (CSS), polluting `threshold_history` per clobber, and NULLing TSS derived while thresholds were gone. Fix per user direction (**"store both and let the coach set which one to use"**): bridge writes a new garmin-only `PUT /athlete-config/garmin-detected` advisory singleton and is 403-banned from the config PUT; a per-field **source selector** (`garmin_sourced_fields`, default all-manual — behavior-identical until flipped; zones flip as groups) + `EffectiveConfig()` resolution consumed by TSS/zones/pacing/compliance via one wiring-trunk adapter; `GET .../effective` with per-field source annotations; context bundle carries configured+detected+sources+effective; `set_threshold_sources` MCP write tool. Migration (verify head). **Deploy backend→bridge, then the recovery runbook: re-PUT confirmed config (MaxHR 196, FTP 278), set sources, `recompute-tss`.** _Proposed 2026-07-15; valid, uncommitted._
 
 ## Backlog
 
