@@ -1,7 +1,9 @@
-# nutrition-chat Specification
+# coach-chat Specification
 
 ## Purpose
-TBD - created by archiving change add-chat-backend. Update Purpose after archive.
+
+The coach chat backend: a session-persisted, streaming conversation with the in-app Kazper coach. `POST /chat` runs a server-side agent loop over the same REST surface the mobile client uses, streaming `text`/`tool`/`proposal`/`done`/`error` events as Server-Sent Events. Read tools dispatch immediately; mutating tools pause the turn for an explicit user `write-confirm` (accept/reject) before running. Every user, assistant, and `tool_result` turn is persisted to the session so history survives across requests, with typed SSE error and persistence-failure codes. Named `coach-chat` (not the historical `nutrition-chat`) since the capability spans nutrition and endurance-training coaching.
+
 ## Requirements
 ### Requirement: POST /chat runs a server-side agent loop and streams SSE
 

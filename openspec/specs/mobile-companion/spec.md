@@ -9,7 +9,7 @@ A focused Flutter Android companion app that supplements — not replaces — th
 The mobile companion app SHALL implement exactly five screens (Today, Train,
 Camera, Recent, Chat) plus a Settings sheet and a shopping list screen reachable
 from the Today header. The Chat screen is the in-app coach backed by the server's
-`nutrition-chat` capability — it spans nutrition planning and endurance-training
+`coach-chat` capability — it spans nutrition planning and endurance-training
 coaching, including the full write surface, with consequential (training/goal/
 destructive) writes gated behind an in-app confirmation. The **Train** screen is
 the structured, glanceable view of training **as a fueling lens** (see the Train
