@@ -749,6 +749,14 @@ definitions:
         description: |-
           Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
           reading is misleading). nil when no snapshot exists for the date.
+      supplements:
+        description: |-
+          Today's supplement intakes (creatine, iron, …), ascending. Omitted entirely
+          when none were logged today. Unit-isolated — feeds no macro total
+          (add-supplement-log).
+        items:
+          $ref: '#/definitions/supplements.Entry'
+        type: array
       tz:
         type: string
       weight:
@@ -2956,6 +2964,38 @@ definitions:
         type: number
       zinc_mg:
         type: number
+    type: object
+  supplements.Entry:
+    properties:
+      created_at:
+        type: string
+      dose:
+        type: number
+      dose_unit:
+        type: string
+      id:
+        type: string
+      logged_at:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  supplements.createBody:
+    properties:
+      dose:
+        type: number
+      dose_unit:
+        type: string
+      logged_at:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
     type: object
   trainingphases.PhaseType:
     enum:
@@ -9593,6 +9633,125 @@ paths:
       summary: Rolling-window nutrition average
       tags:
       - summary
+  /supplements:
+    get:
+      description: Returns entries whose `logged_at` falls within `[from, to]` (inclusive)
+        ascending. `200` with an empty array when none. Range capped at 92 days.
+      parameters:
+      - description: Inclusive RFC3339 lower bound
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive RFC3339 upper bound; max 92 days from from
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"entries\": [Entry]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List supplement intakes in a window
+      tags:
+      - supplements
+    post:
+      consumes:
+      - application/json
+      description: Records a timestamped supplement event. `name` is required; `dose`
+        + `dose_unit` are paired (both or neither); `note` optional. Multiple entries
+        per day are allowed. `Idempotency-Key` is supported. Supplements feed no nutrition/hydration/energy
+        total. No PATCH — corrections are delete + re-log.
+      parameters:
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Supplement event
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/supplements.createBody'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: '{\"supplement\": Entry}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: name_required | dose_pair_required | dose_invalid | note_too_long
+            | logged_at_required | invalid_json
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a supplement intake
+      tags:
+      - supplements
+  /supplements/{id}:
+    delete:
+      parameters:
+      - description: Entry UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a supplement entry
+      tags:
+      - supplements
+    get:
+      parameters:
+      - description: Entry UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"supplement\": Entry}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a supplement entry
+      tags:
+      - supplements
   /training-plans:
     get:
       produces:

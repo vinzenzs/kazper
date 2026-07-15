@@ -55,12 +55,13 @@ import (
 	"github.com/vinzenzs/kazper/internal/shoppinglist"
 	"github.com/vinzenzs/kazper/internal/store"
 	"github.com/vinzenzs/kazper/internal/summary"
+	"github.com/vinzenzs/kazper/internal/supplements"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/trainingplan"
 	"github.com/vinzenzs/kazper/internal/vision"
 	"github.com/vinzenzs/kazper/internal/wellness"
-	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workoutcompliance"
+	"github.com/vinzenzs/kazper/internal/workoutfuel"
 	"github.com/vinzenzs/kazper/internal/workoutfueling"
 	"github.com/vinzenzs/kazper/internal/workouts"
 	"github.com/vinzenzs/kazper/internal/workoutstats"
@@ -224,6 +225,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	bodyWeightRepo := bodyweight.NewRepo(pool)
 	bodyWeightSvc := bodyweight.NewService(bodyWeightRepo)
 	wellnessSvc := wellness.NewService(wellness.NewRepo(pool))
+	supplementsSvc := supplements.NewService(supplements.NewRepo(pool))
 	recoveryMetricsRepo := recoverymetrics.NewRepo(pool)
 	recoveryMetricsSvc := recoverymetrics.NewService(recoveryMetricsRepo)
 	dailySummaryRepo := dailysummary.NewRepo(pool)
@@ -403,6 +405,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Cross-inject the PMC series into wellness for the correlation read.
 	wellnessSvc.SetPMCProvider(pmcWellnessAdapter{svc: pmcSvc})
 	wellness.NewHandlers(wellnessSvc).Register(api)
+	supplements.NewHandlers(supplementsSvc).Register(api)
 	workoutTemplatesRepo := workouttemplates.NewRepo(pool)
 	workouttemplates.NewHandlers(workouttemplates.NewService(workoutTemplatesRepo)).Register(api)
 	multisportRepo := multisport.NewRepo(pool)
@@ -461,7 +464,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
-		coachMemoryRepo, wellness.NewRepo(pool),
+		coachMemoryRepo, wellness.NewRepo(pool), supplements.NewRepo(pool),
 	)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)

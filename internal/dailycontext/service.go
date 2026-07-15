@@ -17,6 +17,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/numfmt"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/summary"
+	"github.com/vinzenzs/kazper/internal/supplements"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
@@ -38,6 +39,7 @@ type Service struct {
 	hydrationBalRepo  *hydrationbalance.Repo
 	coachMemoryRepo   *coachmemory.Repo
 	wellnessRepo      *wellness.Repo
+	supplementsRepo   *supplements.Repo
 	summarySvc        *summary.Service
 }
 
@@ -56,6 +58,7 @@ func NewService(
 	hydrationBalRepo *hydrationbalance.Repo,
 	coachMemoryRepo *coachmemory.Repo,
 	wellnessRepo *wellness.Repo,
+	supplementsRepo *supplements.Repo,
 ) *Service {
 	return &Service{
 		summarySvc:        summarySvc,
@@ -70,6 +73,7 @@ func NewService(
 		hydrationBalRepo:  hydrationBalRepo,
 		coachMemoryRepo:   coachMemoryRepo,
 		wellnessRepo:      wellnessRepo,
+		supplementsRepo:   supplementsRepo,
 	}
 }
 
@@ -287,6 +291,21 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 				return fmt.Errorf("wellness entry: %w", err)
 			}
 			out.Wellness = entry
+			return nil
+		})
+	}
+
+	// Today's supplement intakes (ascending), omitted when none. nil repo (unit
+	// tests) leaves out.Supplements nil. History stays behind list_supplements.
+	if s.supplementsRepo != nil {
+		g.Go(func() error {
+			entries, err := s.supplementsRepo.List(gctx, dayStart.UTC(), dayEnd.UTC())
+			if err != nil {
+				return fmt.Errorf("supplement entries: %w", err)
+			}
+			if len(entries) > 0 {
+				out.Supplements = entries
+			}
 			return nil
 		})
 	}

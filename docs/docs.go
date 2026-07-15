@@ -7984,6 +7984,185 @@ const docTemplate = `{
                 }
             }
         },
+        "/supplements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns entries whose ` + "`" + `logged_at` + "`" + ` falls within ` + "`" + `[from, to]` + "`" + ` (inclusive) ascending. ` + "`" + `200` + "`" + ` with an empty array when none. Range capped at 92 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "supplements"
+                ],
+                "summary": "List supplement intakes in a window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive RFC3339 lower bound",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive RFC3339 upper bound; max 92 days from from",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"entries\\\": [Entry]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records a timestamped supplement event. ` + "`" + `name` + "`" + ` is required; ` + "`" + `dose` + "`" + ` + ` + "`" + `dose_unit` + "`" + ` are paired (both or neither); ` + "`" + `note` + "`" + ` optional. Multiple entries per day are allowed. ` + "`" + `Idempotency-Key` + "`" + ` is supported. Supplements feed no nutrition/hydration/energy total. No PATCH — corrections are delete + re-log.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "supplements"
+                ],
+                "summary": "Log a supplement intake",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Supplement event",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/supplements.createBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "{\\\"supplement\\\": Entry}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "name_required | dose_pair_required | dose_invalid | note_too_long | logged_at_required | invalid_json",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/supplements/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "supplements"
+                ],
+                "summary": "Get a supplement entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"supplement\\\": Entry}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "supplements"
+                ],
+                "summary": "Delete a supplement entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/training-plans": {
             "get": {
                 "security": [
@@ -11815,6 +11994,13 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "supplements": {
+                    "description": "Today's supplement intakes (creatine, iron, …), ascending. Omitted entirely\nwhen none were logged today. Unit-isolated — feeds no macro total\n(add-supplement-log).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/supplements.Entry"
+                    }
+                },
                 "tz": {
                     "type": "string"
                 },
@@ -15052,6 +15238,55 @@ const docTemplate = `{
                 },
                 "zinc_mg": {
                     "type": "number"
+                }
+            }
+        },
+        "supplements.Entry": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "dose": {
+                    "type": "number"
+                },
+                "dose_unit": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "supplements.createBody": {
+            "type": "object",
+            "properties": {
+                "dose": {
+                    "type": "number"
+                },
+                "dose_unit": {
+                    "type": "string"
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
                 }
             }
         },

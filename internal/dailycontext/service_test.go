@@ -21,6 +21,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/store/storetest"
 	"github.com/vinzenzs/kazper/internal/summary"
+	"github.com/vinzenzs/kazper/internal/supplements"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
@@ -45,6 +46,7 @@ type fix struct {
 	hydrationBalance *hydrationbalance.Repo
 	coachMemory      *coachmemory.Repo
 	wellness         *wellness.Repo
+	supplements      *supplements.Repo
 }
 
 func setup(t *testing.T) *fix {
@@ -70,11 +72,12 @@ func setup(t *testing.T) *fix {
 	hydrationBalRepo := hydrationbalance.NewRepo(pool)
 	coachMemoryRepo := coachmemory.NewRepo(pool)
 	wellnessRepo := wellness.NewRepo(pool)
+	supplementsRepo := supplements.NewRepo(pool)
 	svc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, overridesRepo, phRepo,
 		recoveryRepo, fitnessRepo, hydrationBalRepo,
-		coachMemoryRepo, wellnessRepo,
+		coachMemoryRepo, wellnessRepo, supplementsRepo,
 	)
 	return &fix{
 		svc:              svc,
@@ -92,6 +95,7 @@ func setup(t *testing.T) *fix {
 		phases:           phRepo,
 		coachMemory:      coachMemoryRepo,
 		wellness:         wellnessRepo,
+		supplements:      supplementsRepo,
 	}
 }
 
@@ -559,4 +563,43 @@ func TestBuildFor_WellnessOmittedWhenUnlogged(t *testing.T) {
 	raw, err := json.Marshal(out)
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), `"wellness"`)
+}
+
+func TestBuildFor_SupplementsPresent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	// Two supplements logged today; one before the window (yesterday) must NOT show.
+	_, err := f.supplements.Insert(ctx, &supplements.Entry{
+		LoggedAt: time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), Name: "creatine", Dose: ptr(5.0), DoseUnit: ptr("g"),
+	})
+	require.NoError(t, err)
+	_, err = f.supplements.Insert(ctx, &supplements.Entry{
+		LoggedAt: time.Date(2026, 7, 15, 20, 0, 0, 0, time.UTC), Name: "magnesium",
+	})
+	require.NoError(t, err)
+	_, err = f.supplements.Insert(ctx, &supplements.Entry{
+		LoggedAt: time.Date(2026, 7, 14, 8, 0, 0, 0, time.UTC), Name: "yesterday",
+	})
+	require.NoError(t, err)
+
+	out, err := f.svc.BuildFor(ctx, date, loc)
+	require.NoError(t, err)
+	require.Len(t, out.Supplements, 2, "only today's entries")
+	assert.Equal(t, "creatine", out.Supplements[0].Name)
+	assert.Equal(t, "magnesium", out.Supplements[1].Name)
+}
+
+func TestBuildFor_SupplementsOmittedWhenNone(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	out, err := f.svc.BuildFor(ctx, time.Date(2026, 7, 15, 0, 0, 0, 0, loc), loc)
+	require.NoError(t, err)
+	assert.Nil(t, out.Supplements)
+	raw, err := json.Marshal(out)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `"supplements"`)
 }

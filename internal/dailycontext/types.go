@@ -15,6 +15,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
 	"github.com/vinzenzs/kazper/internal/recoverymetrics"
 	"github.com/vinzenzs/kazper/internal/summary"
+	"github.com/vinzenzs/kazper/internal/supplements"
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/wellness"
 )
@@ -49,6 +50,10 @@ type DailyContext struct {
 	// objective recovery snapshot. Omitted entirely when unlogged — never an empty
 	// object. History stays behind the wellness endpoints (add-wellness-diary).
 	Wellness *wellness.Entry `json:"wellness,omitempty"`
+	// Today's supplement intakes (creatine, iron, …), ascending. Omitted entirely
+	// when none were logged today. Unit-isolated — feeds no macro total
+	// (add-supplement-log).
+	Supplements []*supplements.Entry `json:"supplements,omitempty"`
 }
 
 // AdherenceBlock mirrors the summary.Daily adherence + source fields.
