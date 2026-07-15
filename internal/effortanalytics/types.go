@@ -60,12 +60,17 @@ type Curve struct {
 	Points []CurvePoint `json:"points"`
 }
 
-// CurveParams is the resolved input to the curve query.
+// CurveParams is the resolved input to the curve query. Sport scopes the
+// window to workouts of the sport the read answers for (power → bike, speed →
+// the requested run/swim): a run's running-power rows or a bike's speed rows
+// must never contribute to another sport's analytics
+// (fix-effort-ladder-sport-scoping).
 type CurveParams struct {
 	From   time.Time
 	To     time.Time
 	Loc    *time.Location
 	Metric Metric
+	Sport  string
 }
 
 // Critical-power (CP2) model validity band + fit gates. Only ladder durations
@@ -77,7 +82,15 @@ const (
 	cpBandHighS    = 1800 // 30 minutes
 	cpMinPoints    = 3    // need ≥3 distinct in-band durations to fit
 	cpMinSpanRatio = 3.0  // longest ≥ 3× shortest, else the fit extrapolates wildly
+	// Below this R² the line explains less than half the variance and CP/W′
+	// are numerology — returned (auditability) but flagged `poor_fit`. Quality
+	// is an independent axis from the point-count/span gates: a contaminated
+	// fit passed both while returning CP 56.9 W at R² 0.052.
+	cpPoorFitR2 = 0.5
 )
+
+// WarningPoorFit flags a fit whose R² is below cpPoorFitR2.
+const WarningPoorFit = "poor_fit"
 
 // CPModel is the fitted 2-parameter critical-power model: CP (asymptotic power,
 // the slope of work vs time) and W′ (the finite work above CP, the intercept),
@@ -102,12 +115,13 @@ type CPPoint struct {
 // window can't support a fit, with Reason naming the gate; Points always carries
 // whatever in-band bests were found. Nothing is persisted.
 type CPModelResult struct {
-	From   string    `json:"from"`
-	To     string    `json:"to"`
-	TZ     string    `json:"tz"`
-	Model  *CPModel  `json:"model"`
-	Reason string    `json:"reason,omitempty"`
-	Points []CPPoint `json:"points"`
+	From    string    `json:"from"`
+	To      string    `json:"to"`
+	TZ      string    `json:"tz"`
+	Model   *CPModel  `json:"model"`
+	Reason  string    `json:"reason,omitempty"`
+	Warning string    `json:"warning,omitempty"`
+	Points  []CPPoint `json:"points"`
 }
 
 // DurabilityPoint is the fresh (tier-0) windowed best power for a duration.
@@ -148,9 +162,10 @@ type DurabilityResult struct {
 // fitted model or null with the gate Reason (the anchor is kept even when the
 // window can't support a fit — the trend gaps, it doesn't zero).
 type CPHistoryAnchor struct {
-	Date   string   `json:"date"`
-	Model  *CPModel `json:"model"`
-	Reason string   `json:"reason,omitempty"`
+	Date    string   `json:"date"`
+	Model   *CPModel `json:"model"`
+	Reason  string   `json:"reason,omitempty"`
+	Warning string   `json:"warning,omitempty"`
 }
 
 // CPModelHistoryResult is the GET /workouts/cp-model/history response: the CP2

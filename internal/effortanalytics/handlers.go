@@ -50,7 +50,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 
 // curve godoc
 // @Summary      Mean-maximal power/pace curve over a window
-// @Description  Returns, per ladder duration, the best (max) mean value achieved across completed workouts in `[from, to]`, with the contributing workout id and date. Metric is derived from `sport`: cycling → power (W), run/swim → speed (m/s, rendered as pace by clients). Range capped at 400 days. Empty window returns an empty points list.
+// @Description  Returns, per ladder duration, the best (max) mean value achieved across completed workouts in `[from, to]`, with the contributing workout id and date. Metric is derived from `sport`: cycling → power (W), run/swim → speed (m/s, rendered as pace by clients). Only workouts of the requested sport contribute — a run's running-power rows never enter the bike curve, and a bike's speed rows never enter run/swim pace curves; multisport workouts match no sport-scoped window. Range capped at 400 days. Empty window returns an empty points list.
 // @Tags         workouts
 // @Produce      json
 // @Param        from   query  string  true   "Inclusive start date YYYY-MM-DD"
@@ -67,8 +67,11 @@ func (h *Handlers) curve(c *gin.Context) {
 		return
 	}
 	sport := c.Query("sport")
+	if sport == "" {
+		sport = "bike"
+	}
 	metric := metricForSport(sport)
-	points, err := h.svc.CurveFor(c.Request.Context(), CurveParams{From: from, To: to, Loc: loc, Metric: metric})
+	points, err := h.svc.CurveFor(c.Request.Context(), CurveParams{From: from, To: to, Loc: loc, Metric: metric, Sport: sport})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "curve_failed"})
 		return
@@ -88,7 +91,7 @@ func (h *Handlers) curve(c *gin.Context) {
 
 // cpModel godoc
 // @Summary      Critical-power (CP2) model over a window
-// @Description  Fits the 2-parameter critical-power model to the window's best-effort records (bike **power** only): for each ladder duration between 2 and 30 minutes it takes the windowed best (the same per-duration MAX the power curve serves) as one fit point and computes an OLS fit in work–time form, returning `model` with `cp_watts`, `w_prime_kj`, `r_squared`, `rmse_w` plus the `points` used. The model is **advisory** — this endpoint never reads or writes athlete-config; comparing CP against the configured FTP is the caller's job. When the window can't support a fit the response is still `200` with `model: null` and a `reason` (`insufficient_points` / `span_too_narrow`). Compute-on-read; nothing persisted. Range capped at 400 days.
+// @Description  Fits the 2-parameter critical-power model to the window's best-effort records (bike **power** only): for each ladder duration between 2 and 30 minutes it takes the windowed best (the same per-duration MAX the power curve serves) as one fit point and computes an OLS fit in work–time form, returning `model` with `cp_watts`, `w_prime_kj`, `r_squared`, `rmse_w` plus the `points` used. The model is **advisory** — this endpoint never reads or writes athlete-config; comparing CP against the configured FTP is the caller's job. When the window can't support a fit the response is still `200` with `model: null` and a `reason` (`insufficient_points` / `span_too_narrow`). A fit whose `r_squared` is below 0.5 is returned but flagged `warning: "poor_fit"` — treat its CP/W′ as unreliable. Only bike workouts' efforts enter the fit (running power is excluded). Compute-on-read; nothing persisted. Range capped at 400 days.
 // @Tags         workouts
 // @Produce      json
 // @Param        from  query  string  true   "Inclusive start date YYYY-MM-DD"

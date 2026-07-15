@@ -44,11 +44,14 @@ func (r *Repo) Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time
 }
 
 // Curve returns, per duration, the best (max) value of `metric` across completed
-// workouts whose started_at falls in [from, to], plus the contributing workout
-// and day. DISTINCT ON picks the top value per duration. Pinned to kj_tier = 0 —
-// the FRESH ladder — so durability tiers never leak into the power/CP/profile
-// curves (add-durability-analysis).
-func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric) ([]CurvePoint, error) {
+// workouts of `sport` whose started_at falls in [from, to], plus the contributing
+// workout and day. DISTINCT ON picks the top value per duration. Pinned to
+// kj_tier = 0 — the FRESH ladder — so durability tiers never leak into the
+// power/CP/profile curves (add-durability-analysis). The sport predicate keeps a
+// run's running-power rows out of bike windows and a bike's speed rows out of
+// run/swim windows; multisport workouts match no sport-scoped window
+// (fix-effort-ladder-sport-scoping).
+func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric, sport string) ([]CurvePoint, error) {
 	const q = `
         SELECT DISTINCT ON (be.duration_s)
             be.duration_s, be.value, be.workout_id, be.achieved_at
@@ -57,10 +60,11 @@ func (r *Repo) Curve(ctx context.Context, from, to time.Time, metric Metric) ([]
         WHERE be.metric = $1
           AND be.kj_tier = 0
           AND w.status = 'completed'
+          AND w.sport = $4
           AND w.started_at >= $2
           AND w.started_at <= $3
         ORDER BY be.duration_s, be.value DESC`
-	rows, err := r.pool.Query(ctx, q, string(metric), from, to)
+	rows, err := r.pool.Query(ctx, q, string(metric), from, to, sport)
 	if err != nil {
 		return nil, fmt.Errorf("query curve: %w", err)
 	}
@@ -110,6 +114,7 @@ func (r *Repo) DurabilityBests(ctx context.Context, from, to time.Time) ([]TierB
         WHERE be.metric = 'power'
           AND be.duration_s = ANY($1)
           AND w.status = 'completed'
+          AND w.sport = 'bike'
           AND w.started_at >= $2
           AND w.started_at <= $3
         ORDER BY be.duration_s, be.kj_tier, be.value DESC`

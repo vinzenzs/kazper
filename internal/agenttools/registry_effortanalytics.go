@@ -95,8 +95,10 @@ func effortAnalyticsSpecs() []Spec {
 				"worth re-testing'. ADVISORY ONLY: this does not read or change athlete-config; to APPLY a new " +
 				"threshold, use the athlete-config update flow (athlete_config_update). When the window lacks " +
 				"enough spread of long efforts the response is 200 with `model: null` and a `reason` " +
-				"(`insufficient_points` / `span_too_narrow`) plus whatever points were found. Read-only; no " +
-				"idempotency key. Typical call: the trailing 90 days.",
+				"(`insufficient_points` / `span_too_narrow`) plus whatever points were found. A returned fit with " +
+				"`warning: \"poor_fit\"` (r² < 0.5) means the work–time line barely explains the data — treat its " +
+				"CP/W′ as unreliable and prefer the configured FTP. Only bike workouts' efforts enter the fit " +
+				"(running power is excluded). Read-only; no idempotency key. Typical call: the trailing 90 days.",
 			SchemaType: CPModelArgs{},
 			Tier:       TierRead,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
@@ -119,7 +121,8 @@ func effortAnalyticsSpecs() []Spec {
 				"each over its trailing `window_days` (default 90; 30-365) — how CP has MOVED over the season, the " +
 				"data-derived counterpart to the configured-FTP history (athlete_config_history_get). Per anchor: the " +
 				"fitted model (cp_watts, w_prime_kj, r_squared, rmse_w) or null with the gate `reason` when that " +
-				"trailing window can't support a fit (the trend gaps, it doesn't zero). Use it to see whether training " +
+				"trailing window can't support a fit (the trend gaps, it doesn't zero). Anchors whose fit carries " +
+				"`warning: \"poor_fit\"` (r² < 0.5) are unreliable points in the trend. Use it to see whether training " +
 				"is actually raising the ceiling, and to judge how stale the configured FTP runs. ADVISORY: does not " +
 				"read or change athlete-config. Read-only; no idempotency key. Range up to 400 days.",
 			SchemaType: CPModelHistoryArgs{},

@@ -15,7 +15,7 @@ import (
 // BestEffortsStore is the persistence dependency (satisfied by *Repo).
 type BestEffortsStore interface {
 	Replace(ctx context.Context, workoutID uuid.UUID, achievedAt time.Time, recs []Record) error
-	Curve(ctx context.Context, from, to time.Time, metric Metric) ([]CurvePoint, error)
+	Curve(ctx context.Context, from, to time.Time, metric Metric, sport string) ([]CurvePoint, error)
 	DurabilityBests(ctx context.Context, from, to time.Time) ([]TierBest, error)
 }
 
@@ -97,12 +97,17 @@ func tieredEfforts(power []float64) []Record {
 	return out
 }
 
-// CurveFor returns the windowed mean-maximal curve for the metric.
+// CurveFor returns the windowed mean-maximal curve for the metric, scoped to
+// p.Sport (empty defaults to bike — the power metric's home).
 func (s *Service) CurveFor(ctx context.Context, p CurveParams) ([]CurvePoint, error) {
 	fromDay := time.Date(p.From.Year(), p.From.Month(), p.From.Day(), 0, 0, 0, 0, p.Loc)
 	toDay := time.Date(p.To.Year(), p.To.Month(), p.To.Day(), 0, 0, 0, 0, p.Loc)
 	upper := toDay.Add(24 * time.Hour).Add(-time.Nanosecond)
-	return s.store.Curve(ctx, fromDay, upper, p.Metric)
+	sport := p.Sport
+	if sport == "" {
+		sport = string(workouts.SportBike)
+	}
+	return s.store.Curve(ctx, fromDay, upper, p.Metric, sport)
 }
 
 // CPModelFor fits the critical-power model over the window's power best-efforts.
@@ -112,6 +117,7 @@ func (s *Service) CurveFor(ctx context.Context, p CurveParams) ([]CurvePoint, er
 // by the caller (they carry the resolved display strings).
 func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult, error) {
 	p.Metric = MetricPower
+	p.Sport = string(workouts.SportBike)
 	curve, err := s.CurveFor(ctx, p)
 	if err != nil {
 		return nil, err
@@ -124,6 +130,11 @@ func (s *Service) CPModelFor(ctx context.Context, p CurveParams) (*CPModelResult
 	}
 	m := fitCPModel(pts)
 	res.Model = &m
+	// Quality is an independent axis from the gates: return the fit
+	// (auditability) but flag one whose line explains <50% of the variance.
+	if m.RSquared < cpPoorFitR2 {
+		res.Warning = WarningPoorFit
+	}
 	return res, nil
 }
 
@@ -156,9 +167,10 @@ func (s *Service) CPModelHistoryFor(ctx context.Context, p CurveParams, windowDa
 			return nil, err
 		}
 		res.Anchors = append(res.Anchors, CPHistoryAnchor{
-			Date:   anchor.Format("2006-01-02"),
-			Model:  fit.Model,
-			Reason: fit.Reason,
+			Date:    anchor.Format("2006-01-02"),
+			Model:   fit.Model,
+			Reason:  fit.Reason,
+			Warning: fit.Warning,
 		})
 	}
 	return res, nil
@@ -241,6 +253,7 @@ func (s *Service) DurabilityFor(ctx context.Context, p CurveParams) (*Durability
 // the weight (param or stored) and sets From/To/TZ/WeightSource.
 func (s *Service) PowerProfileFor(ctx context.Context, p CurveParams, weightKg float64, sex string) (*PowerProfileResult, error) {
 	p.Metric = MetricPower
+	p.Sport = string(workouts.SportBike)
 	curve, err := s.CurveFor(ctx, p)
 	if err != nil {
 		return nil, err
