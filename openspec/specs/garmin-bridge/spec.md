@@ -46,7 +46,7 @@ The bridge SHALL expose `POST /sync` that reads the stored token from the backen
 
 The rolling window exists because a day's completed activities and Garmin's recomputed training-load/VO2max/race-predictor metrics are not available at the moment a same-day early-morning sync runs; re-pulling recent days lets those late-arriving signals land. Every day in the window SHALL be synced through the same per-day fetch-and-map path used for a single explicit date, so all mappings, per-capability failure tolerance, and idempotent upserts apply unchanged per day. Each day in the window SHALL be synced independently and tolerant of a single failing day — one day raising an error SHALL NOT abort the remaining days — and the response SHALL report a per-day result for the window.
 
-The mapping SHALL be: sleep/HRV/RHR/stress → `/recovery-metrics`; VO2max/training-load → `/fitness-metrics`; sweat loss → `/hydration-balance`; whole-day energy/activity totals → `/daily-summary`; weigh-ins → `/weight`; activities → `/workouts` (`source = "garmin"`), where each activity additionally carries the scalar performance and HR-zone fields plus nested `splits`/`sets` detail when Garmin provides them; gear inventory → `/gear` (upsert by Garmin gear id); personal records → `/personal-records` (upsert by Garmin PR id); the athlete's physiology configuration (FTP, thresholds, max HR, lactate-threshold HR, HR-zone and optional power-zone boundaries) → `PUT /athlete-config` as a non-date-keyed singleton refresh (in-place overwrite, Garmin source-of-truth); device inventory → `/devices`; blood pressure / all-day HR / all-day stress → `/health-vitals`; and earned badges / ad-hoc challenges → `/achievements`. Gear, personal records, devices, and achievements are slowly-changing inventory refreshed via idempotent upsert on each sync, not date-keyed snapshots; the device, health-vitals, and achievement targets are reference/coaching context only and feed no nutrition computation. Each per-capability fetch is guarded so its failure does not abort the day. Sync SHALL require no MFA or human interaction.
+The mapping SHALL be: sleep/HRV/RHR/stress → `/recovery-metrics`; VO2max/training-load → `/fitness-metrics`; sweat loss → `/hydration-balance`; whole-day energy/activity totals → `/daily-summary`; weigh-ins → `/weight`; activities → `/workouts` (`source = "garmin"`), where each activity additionally carries the scalar performance and HR-zone fields plus nested `splits`/`sets` detail when Garmin provides them; gear inventory → `/gear` (upsert by Garmin gear id); personal records → `/personal-records` (upsert by Garmin PR id); the athlete's detected physiology (FTP, thresholds, max HR, lactate-threshold HR, HR-zone and optional power-zone boundaries) → `PUT /athlete-config/garmin-detected` as a latest-detection singleton refresh — **advisory data, never `PUT /athlete-config`**: the configured physiology is a deliberate human/coach record the bridge must not write (separate-garmin-threshold-detection); device inventory → `/devices`; blood pressure / all-day HR / all-day stress → `/health-vitals`; and earned badges / ad-hoc challenges → `/achievements`. Gear, personal records, devices, and achievements are slowly-changing inventory refreshed via idempotent upsert on each sync, not date-keyed snapshots; the device, health-vitals, and achievement targets are reference/coaching context only and feed no nutrition computation. Each per-capability fetch is guarded so its failure does not abort the day. Sync SHALL require no MFA or human interaction.
 
 #### Scenario: Dateless sync syncs a rolling window of recent days
 
@@ -77,8 +77,9 @@ The mapping SHALL be: sleep/HRV/RHR/stress → `/recovery-metrics`; VO2max/train
 - **AND** each activity item carries the available scalar/zone/split/set detail
 - **AND** upserts the current gear and personal-record inventory to `/gear` and
   `/personal-records`
-- **AND** refreshes the athlete physiology config via `PUT /athlete-config` when
-  Garmin provides it
+- **AND** records Garmin's detected physiology via
+  `PUT /athlete-config/garmin-detected` when Garmin provides it — and never
+  writes `PUT /athlete-config`
 - **AND** additionally upserts the day's device inventory, health-vitals snapshot,
   and earned achievements when Garmin provides them
 
@@ -90,7 +91,7 @@ The mapping SHALL be: sleep/HRV/RHR/stress → `/recovery-metrics`; VO2max/train
   existing `/workouts` UPSERT (no new field or migration)
 - **AND** each activity's nested splits and sets are replaced (not duplicated) on the second run
 - **AND** gear and personal records are upserted by their Garmin external id, and
-  the athlete config is re-written in place via the singleton `PUT`
+  the detected-thresholds singleton is re-written in place via its `PUT`
 - **AND** devices and achievements are deduped by `external_id`, and the
   health-vitals snapshot is upserted by `date` (no duplicates on the second run)
 
