@@ -3,9 +3,7 @@
 ## Purpose
 
 Define a persisted log of in-session fueling events — gels, electrolyte drinks, salt tabs, caffeine pills, pre-race espresso — captured in their natural units (carbs in g, sodium/potassium/caffeine in mg, optional volume in ml) alongside a required free-text `name` so rehearsal data preserves WHAT was taken. Workout-fuel is the sister capability to `hydration` and `body-weight`: capture-only and deliberately unit-isolated. It is explicitly NOT an extension of `hydration_entries`, because mixing ml with grams and milligrams in a single Totals struct is the canonical footgun that the hydration capability was designed to avoid. Sodium targets during endurance work sit at 300–800 mg/hr and carb-per-hour rates dominate long-ride performance — both are invisible to a ml-only hydration log, and both belong in a structure whose schema makes its units obvious. Workout-fuel data feeds the workout-anchored fueling summary (composed in via `/workouts/{id}/fueling`), but it does NOT roll into the daily hydration or daily nutrition summaries: in-session fueling is its own protocol, distinct from food-choice macro adherence and from baseline hydration.
-
 ## Requirements
-
 ### Requirement: Workout-fuel entries are stored in a dedicated table
 
 The system SHALL persist in-session fueling events in a `workout_fuel_entries` table independent of meals, hydration, and workouts. Each row carries a free-text `name` (required), an optional `quantity_ml`, and up to four optional measurable nutriment fields (`carbs_g`, `sodium_mg`, `potassium_mg`, `caffeine_mg`), plus an optional `workout_id` link, an optional `note`, and audit timestamps. At least one of `{quantity_ml, carbs_g, sodium_mg, potassium_mg, caffeine_mg}` MUST be set per row — entries with no measurable intake are rejected.
@@ -213,3 +211,54 @@ The system SHALL NOT include workout-fuel data in `GET /summary/hydration/daily`
 - **AND** the client calls `GET /summary/daily?date=D&tz=…`
 - **THEN** the response's `totals.carbs_g` does NOT include the 80
 - **AND** macro adherence is computed without workout-fuel contributions
+
+### Requirement: A workout's sweat rate is derivable from explicit weights and logged fluid
+
+The system SHALL expose
+`GET /api/v1/workouts/{id}/sweat-rate?pre_weight_kg=&post_weight_kg=&fluid_ml_override=`
+computing the standard field test over a **completed** workout: fluid intake as the sum of the
+workout-linked hydration entries' ml and workout-fuel entries' `quantity_ml` (itemized in the
+response; a supplied `fluid_ml_override` ≥ 0 replaces the derived sum and is echoed),
+`sweat_loss_ml = (pre − post) × 1000 + fluid_ml`, and `sweat_rate_ml_per_hr` over the workout's
+elapsed duration. `pre_weight_kg`/`post_weight_kg` are REQUIRED positive numbers
+(`400 pre_weight_invalid` / `post_weight_invalid`; `400 fluid_override_invalid` on a negative
+override). A planned workout SHALL return `409 workout_not_completed`; an unknown id
+`404 not_found`. A negative loss or a rate above 5000 ml/hr SHALL still return the computed
+values with `warning: "implausible_result"`. Values SHALL round to 1 decimal at the boundary;
+the computation SHALL persist nothing and feed no daily hydration or nutrition total.
+
+#### Scenario: A field test computes loss and rate
+
+- **WHEN** a 2-hour completed ride carries 1000 ml of linked fluid and
+  `pre_weight_kg=71.0&post_weight_kg=69.8` is supplied
+- **THEN** the response reports `sweat_loss_ml = 2200`, `sweat_rate_ml_per_hr = 1100`, and the
+  fluid itemization
+
+#### Scenario: An override replaces derived fluid
+
+- **WHEN** `fluid_ml_override=1500` is supplied
+- **THEN** the computation uses 1500 ml, and the response shows both the override and the
+  derived itemization it replaced
+
+#### Scenario: Weight gain warns instead of refusing
+
+- **WHEN** `post_weight_kg` exceeds `pre_weight_kg` enough to make the loss negative
+- **THEN** the computed values return with `warning: "implausible_result"`
+
+#### Scenario: A planned workout is rejected
+
+- **WHEN** the referenced workout is not completed
+- **THEN** the response is `409` with `workout_not_completed`
+
+### Requirement: The sweat rate is readable over MCP
+
+The system SHALL expose a `sweat_rate` MCP tool (read tier) issuing a single
+`GET /api/v1/workouts/{id}/sweat-rate` and forwarding the body verbatim (`workout_id`,
+`pre_weight_kg`, `post_weight_kg` required; `fluid_ml_override` optional); the description SHALL
+frame the result as a field-test calculation whose quality follows the supplied weights.
+
+#### Scenario: Agent computes a session's sweat rate in one call
+
+- **WHEN** the agent invokes `sweat_rate` with the workout id and both weights
+- **THEN** one GET is issued and the loss, rate, and itemization return verbatim
+
