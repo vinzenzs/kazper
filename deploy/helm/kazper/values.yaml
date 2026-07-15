@@ -297,9 +297,14 @@ publicSite:
   # -- Replicas. One is plenty for a static file server.
   replicas: 1
   # -- Public hostname the page is served at, e.g. race.example.com. Required
-  #    when publicSite.enabled.
+  #    only when publicSite.ingress.enabled; a non-ingress proxy (e.g. Pangolin)
+  #    targets the ClusterIP Service directly and needs no host here.
   host: ""
   ingress:
+    # -- Set true to render an Ingress (nginx + cert-manager shaped). Defaults
+    #    off, mirroring the API's ingress.enabled: clusters fronted by Pangolin
+    #    or another proxy use the Service directly.
+    enabled: false
     # -- Ingress class; defaults to the same nginx the API ingress assumes.
     className: nginx
     tls:
@@ -324,10 +329,15 @@ docsSite:
     pullPolicy: Always
   # -- Replicas. One is plenty for a static file server.
   replicas: 1
-  # -- Hostname the guide is served at, e.g. docs.example.com. Required when
-  #    docsSite.enabled.
+  # -- Hostname the guide is served at, e.g. docs.example.com. Required only
+  #    when docsSite.ingress.enabled; a non-ingress proxy (e.g. Pangolin)
+  #    targets the ClusterIP Service directly (and brings its own auth layer).
   host: ""
   ingress:
+    # -- Set true to render an Ingress (nginx + cert-manager shaped). Defaults
+    #    off, mirroring the API's ingress.enabled: clusters fronted by Pangolin
+    #    or another proxy use the Service directly.
+    enabled: false
     # -- Ingress class; defaults to the same nginx the API ingress assumes.
     className: nginx
     tls:

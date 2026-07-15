@@ -4,12 +4,14 @@
   Everything here is gated on publicSite.enabled, so a default install renders
   none of it. The pod is a static nginx container built from the race feed at
   image-build time — it holds NO feed secret and has no env coupling to Kazper.
-  Its Ingress is a separate public host whose ONLY backend is this Service; it
-  never routes to the API.
+
+  The Ingress is additionally gated on publicSite.ingress.enabled (default off,
+  mirroring the API's ingress.enabled): clusters fronted by a non-ingress proxy
+  (e.g. Pangolin) point it at the ClusterIP Service directly and never render
+  the nginx/cert-manager objects. When enabled, the Ingress is a separate public
+  host whose ONLY backend is this Service; it never routes to the API.
 */ -}}
 {{- $name := include "public-site.fullname" . -}}
-{{- $host := required "publicSite.host is required when publicSite.enabled" .Values.publicSite.host -}}
-{{- $tlsSecret := default (printf "%s-tls" $name) .Values.publicSite.ingress.tls.secretName -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -74,6 +76,9 @@ spec:
     - name: http
       port: 80
       targetPort: http
+{{- if .Values.publicSite.ingress.enabled }}
+{{- $host := required "publicSite.host is required when publicSite.ingress.enabled" .Values.publicSite.host }}
+{{- $tlsSecret := default (printf "%s-tls" $name) .Values.publicSite.ingress.tls.secretName }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -105,4 +110,5 @@ spec:
                 name: {{ $name }}
                 port:
                   number: 80
+{{- end }}
 {{- end }}
