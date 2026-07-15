@@ -1,6 +1,6 @@
 # Project Roadmap
 
-_Generated from OpenSpec changes. Last refreshed: 2026-07-14 by the `roadmap` skill._
+_Generated from OpenSpec changes. Last refreshed: 2026-07-15 by the `roadmap` skill._
 
 ## Implemented
 
