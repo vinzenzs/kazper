@@ -1,0 +1,74 @@
+site_name: Kazper — User Guide
+site_description: >-
+  What Kazper is, how its surfaces fit together, and what every calculated
+  training / nutrition value actually means.
+repo_url: https://github.com/vinzenzs/kazper
+repo_name: vinzenzs/kazper
+
+# The swag-generated OpenAPI output owns ./docs, so the user guide lives in
+# ./userdocs. Build output (./site) is gitignored.
+docs_dir: userdocs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - tables
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Overview:
+      - What is Kazper: index.md
+      - System architecture: architecture.md
+      - Units, rounding & honesty rules: conventions.md
+  - Physiology & thresholds:
+      - Athlete config & threshold history: physiology/athlete-config.md
+      - Zones & training focus: physiology/zones.md
+  - Training load:
+      - TSS — Training Stress Score: training/tss.md
+      - PMC — fitness, fatigue & form: training/pmc.md
+      - Planned vs actual CTL: training/target-trajectory.md
+      - Intensity distribution: training/intensity-distribution.md
+  - Power analytics:
+      - Streams & execution metrics: power/streams.md
+      - Critical power & W′: power/critical-power.md
+      - W′ balance: power/w-prime-balance.md
+      - Power profile: power/power-profile.md
+      - Durability: power/durability.md
+      - Interval detection & quadrant analysis: power/intervals-quadrant.md
+  - Plans & execution:
+      - Adherence vs compliance: plans/adherence-compliance.md
+  - Nutrition & fueling:
+      - Meals, products & daily summary: nutrition/daily.md
+      - Hydration & workout fuel: nutrition/fueling.md
+      - Energy availability: nutrition/energy-availability.md
+      - Race prep, fueling & pacing: nutrition/racing.md
+  - Recovery & wellness:
+      - Garmin recovery metrics: recovery/garmin.md
+      - Wellness diary & correlation: recovery/wellness.md
+  - The coach:
+      - Chat, MCP tools & context: coach/coach.md
+  - Reference:
+      - Glossary: reference/glossary.md

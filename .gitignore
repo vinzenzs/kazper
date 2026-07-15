@@ -20,3 +20,5 @@ google-services.json
 # Built SPA bundle — produced by `task web:build` / the Docker node stage, not committed
 # (per build-spa-in-pipeline). The binary embeds it under `-tags webembed`.
 apps/web/dist/
+# MkDocs build output (userdocs/ is the source)
+site/

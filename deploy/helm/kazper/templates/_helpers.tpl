@@ -172,3 +172,32 @@ public-site image. tag defaults to "latest" (the mutable tag the CI publishes).
 {{- $tag := default "latest" .Values.publicSite.image.tag }}
 {{- printf "%s:%s" .Values.publicSite.image.repository $tag }}
 {{- end }}
+
+{{/*
+docs-site — the opt-in MkDocs user-guide container (static nginx, built by the
+docs-site CI workflow). Objects carry a "-docs" suffix with their own selector
+so they never collide with the backend, the bridge, or the public site.
+*/}}
+{{- define "docs-site.fullname" -}}
+{{- printf "%s-docs" (include "kazper.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "docs-site.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kazper.name" . }}-docs
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- define "docs-site.labels" -}}
+helm.sh/chart: {{ include "kazper.chart" . }}
+{{ include "docs-site.selectorLabels" . }}
+app.kubernetes.io/component: docs-site
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+docs-site image. tag defaults to "latest" (the mutable tag the CI publishes).
+*/}}
+{{- define "docs-site.image" -}}
+{{- $tag := default "latest" .Values.docsSite.image.tag }}
+{{- printf "%s:%s" .Values.docsSite.image.repository $tag }}
+{{- end }}

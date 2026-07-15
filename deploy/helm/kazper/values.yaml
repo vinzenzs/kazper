@@ -311,3 +311,38 @@ publicSite:
       secretName: ""
   # -- Resource requests/limits. Tiny; static nginx.
   resources: {}
+
+docsSite:
+  # -- Set true to render the docs-site Deployment + Service + Ingress
+  #    (the MkDocs user guide, built by the docs-site CI workflow).
+  enabled: false
+  image:
+    # -- Image published by the docs-site CI workflow.
+    repository: ghcr.io/vinzenzs/kazper-docs
+    # -- Mutable tag the workflow publishes; Always pull picks up rebuilds.
+    tag: "latest"
+    pullPolicy: Always
+  # -- Replicas. One is plenty for a static file server.
+  replicas: 1
+  # -- Hostname the guide is served at, e.g. docs.example.com. Required when
+  #    docsSite.enabled.
+  host: ""
+  ingress:
+    # -- Ingress class; defaults to the same nginx the API ingress assumes.
+    className: nginx
+    tls:
+      # -- When true, the Ingress carries tls: + the cert-manager annotation.
+      enabled: true
+      # -- cert-manager ClusterIssuer that mints the cert.
+      issuer: letsencrypt-prod
+      # -- TLS secret name. Empty defaults to <fullname>-docs-tls.
+      secretName: ""
+    auth:
+      # -- When true, gate the guide behind ingress basic auth (the docs
+      #    describe a personal system). Requires an operator-provisioned
+      #    htpasswd Secret (key "auth") named below.
+      enabled: false
+      # -- Name of the htpasswd Secret. Required when auth.enabled.
+      secretName: ""
+  # -- Resource requests/limits. Tiny; static nginx.
+  resources: {}
