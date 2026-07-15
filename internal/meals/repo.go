@@ -191,6 +191,34 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	return nil
 }
 
+// CorrectProduct retroactively re-points a meal at a product: sets product_id +
+// quantity_g and CLEARS every freeform snapshot column, so the effective
+// nutrients derive live from the product join (the same result as product-mode
+// logging). Identity, logged_at, note, workout link and created_at are
+// preserved; only updated_at moves. Returns ErrNotFound if no row matched.
+func (r *Repo) CorrectProduct(ctx context.Context, id, productID uuid.UUID, quantityG float64) error {
+	const q = `
+        UPDATE meal_entries SET
+            product_id  = $2,
+            quantity_g  = $3,
+            snapshot_name = NULL,
+            snapshot_kcal_per_100g = NULL, snapshot_protein_g_per_100g = NULL, snapshot_carbs_g_per_100g = NULL,
+            snapshot_fat_g_per_100g = NULL, snapshot_fiber_g_per_100g = NULL, snapshot_sugar_g_per_100g = NULL, snapshot_salt_g_per_100g = NULL,
+            snapshot_iron_mg_per_100g = NULL, snapshot_calcium_mg_per_100g = NULL, snapshot_vitamin_d_mcg_per_100g = NULL,
+            snapshot_vitamin_b12_mcg_per_100g = NULL, snapshot_vitamin_c_mg_per_100g = NULL, snapshot_magnesium_mg_per_100g = NULL,
+            snapshot_potassium_mg_per_100g = NULL, snapshot_zinc_mg_per_100g = NULL,
+            updated_at = now()
+        WHERE id = $1`
+	tag, err := r.q.Exec(ctx, q, id, productID, quantityG)
+	if err != nil {
+		return fmt.Errorf("correct meal product: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Delete removes a meal entry. Returns ErrNotFound if no row matched.
 func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.q.Exec(ctx, `DELETE FROM meal_entries WHERE id = $1`, id)

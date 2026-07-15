@@ -60,6 +60,13 @@ type LogMealFreeformArgs struct {
 	IdempotencyKey    string             `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args. To intentionally log the same item twice, pass a distinct key here."`
 }
 
+// CorrectMealProductArgs is the input to correct_meal_product.
+type CorrectMealProductArgs struct {
+	MealID    string  `json:"meal_id" jsonschema:"the meal entry id to correct"`
+	ProductID string  `json:"product_id" jsonschema:"the product to re-derive the meal's nutrients from"`
+	QuantityG float64 `json:"quantity_g" jsonschema:"amount consumed in grams (> 0)"`
+}
+
 type PatchMealArgs struct {
 	MealID    string   `json:"meal_id" jsonschema:"the id of the meal entry to update"`
 	QuantityG *float64 `json:"quantity_g,omitempty" jsonschema:"new amount in grams; must be greater than zero if supplied"`
@@ -202,6 +209,35 @@ func mealsSpecs() []Spec {
 					return HTTPCall{}, fmt.Errorf("meal_id is required")
 				}
 				return HTTPCall{Method: "DELETE", Path: "/meals/" + url.PathEscape(a.MealID)}, nil
+			},
+		},
+		{
+			Name: "correct_meal_product",
+			Description: "Retroactively correct a logged meal to a real product — e.g. 'that pasta from Tuesday " +
+				"is actually this Cookidoo recipe'. Re-derives the meal's nutrients from `product_id` (per-100g × " +
+				"`quantity_g`, the same as product-mode logging) and sets the product + quantity, while PRESERVING " +
+				"the entry's identity, logged_at, note, and workout link — better than delete + re-log, which loses " +
+				"all of that. Works on a freeform meal (freeform→product) or a product meal (fixing a wrong product " +
+				"or quantity). Daily/range summaries reflect the corrected values automatically. Errors: not_found " +
+				"(meal), product_not_found, quantity_invalid, product_id_required.",
+			SchemaType: CorrectMealProductArgs{},
+			Tier:       TierWriteAuto,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a CorrectMealProductArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				if a.MealID == "" {
+					return HTTPCall{}, fmt.Errorf("meal_id is required")
+				}
+				body, err := json.Marshal(map[string]any{
+					"product_id": a.ProductID,
+					"quantity_g": a.QuantityG,
+				})
+				if err != nil {
+					return HTTPCall{}, err
+				}
+				return HTTPCall{Method: "POST", Path: "/meals/" + url.PathEscape(a.MealID) + "/correct-product", Body: body}, nil
 			},
 		},
 	}

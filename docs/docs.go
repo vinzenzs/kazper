@@ -4884,6 +4884,84 @@ const docTemplate = `{
                 }
             }
         },
+        "/meals/{id}/correct-product": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Re-derives the meal's nutrient fields from ` + "`" + `product_id` + "`" + ` (per-100 g × ` + "`" + `quantity_g` + "`" + `, the same derivation as product-mode logging), sets the product reference and quantity, and preserves the entry's identity, ` + "`" + `logged_at` + "`" + `, note, and workout link. Works on a freeform meal (freeform→product) or a product meal (fixing a wrong product/quantity). Daily/range summaries reflect the corrected values automatically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meals"
+                ],
+                "summary": "Retroactively correct a meal to a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meal entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Product + quantity",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "product_id": {
+                                    "type": "string"
+                                },
+                                "quantity_g": {
+                                    "type": "number"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/meals.MealEntry"
+                        }
+                    },
+                    "400": {
+                        "description": "product_id_required | quantity_invalid | invalid_json",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found | product_not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/multisport-templates": {
             "get": {
                 "security": [

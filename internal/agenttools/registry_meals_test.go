@@ -138,3 +138,20 @@ func TestBuild_Meals_IDPathEscaping(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/meals/a%20b%2Fc", call.Path)
 }
+
+// correct_meal_product → POST /meals/{id}/correct-product with product+quantity.
+func TestBuild_CorrectMealProduct(t *testing.T) {
+	specs := ByName(MCPRegistry())
+	spec, ok := specs["correct_meal_product"]
+	require.True(t, ok, "correct_meal_product must be registered")
+	assert.True(t, spec.Tier.IsWrite())
+
+	call, err := spec.Build(json.RawMessage(`{"meal_id":"m1","product_id":"p1","quantity_g":150}`))
+	require.NoError(t, err)
+	assert.Equal(t, "POST", call.Method)
+	assert.Equal(t, "/meals/m1/correct-product", call.Path)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(call.Body, &body))
+	assert.Equal(t, "p1", body["product_id"])
+	assert.EqualValues(t, 150, body["quantity_g"])
+}

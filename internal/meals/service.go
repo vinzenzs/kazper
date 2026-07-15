@@ -145,6 +145,33 @@ func (s *Service) CreateInTx(ctx context.Context, q store.Querier, in CreateInpu
 	return mealsRepo.GetByID(ctx, id)
 }
 
+// CorrectProduct retroactively re-derives a meal's nutrients from a product,
+// preserving the entry's identity, logged_at, note and workout link. Works on a
+// freeform meal (freeform → product) or a product meal (fixing a wrong product/
+// quantity). Sentinels: ErrProductIDRequired / ErrQuantityInvalid /
+// ErrNotFound (meal) / ErrProductNotFound.
+func (s *Service) CorrectProduct(ctx context.Context, mealID uuid.UUID, productID *uuid.UUID, quantityG float64) (*MealEntry, error) {
+	if productID == nil {
+		return nil, ErrProductIDRequired
+	}
+	if quantityG <= 0 {
+		return nil, ErrQuantityInvalid
+	}
+	if _, err := s.mealsRepo.GetByID(ctx, mealID); err != nil {
+		return nil, err // ErrNotFound flows through
+	}
+	if _, err := s.productsRepo.GetByID(ctx, *productID); err != nil {
+		if errors.Is(err, products.ErrNotFound) {
+			return nil, ErrProductNotFound
+		}
+		return nil, err
+	}
+	if err := s.mealsRepo.CorrectProduct(ctx, mealID, *productID, quantityG); err != nil {
+		return nil, err
+	}
+	return s.mealsRepo.GetByID(ctx, mealID)
+}
+
 // FreeformInput is the payload for POST /meals/freeform.
 type FreeformInput struct {
 	Name          string

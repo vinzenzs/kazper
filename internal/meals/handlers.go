@@ -52,6 +52,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/meals/:id", h.get)
 	rg.GET("/meals", h.list)
 	rg.PATCH("/meals/:id", h.patch)
+	rg.POST("/meals/:id/correct-product", h.correctProduct)
 	rg.DELETE("/meals/:id", h.delete)
 }
 
@@ -265,6 +266,63 @@ func (h *Handlers) get(c *gin.Context) {
 			return
 		}
 		respondError(c, http.StatusInternalServerError, "get_failed")
+		return
+	}
+	c.JSON(http.StatusOK, m)
+}
+
+// correctProduct godoc
+// @Summary      Retroactively correct a meal to a product
+// @Description  Re-derives the meal's nutrient fields from `product_id` (per-100 g × `quantity_g`, the same derivation as product-mode logging), sets the product reference and quantity, and preserves the entry's identity, `logged_at`, note, and workout link. Works on a freeform meal (freeform→product) or a product meal (fixing a wrong product/quantity). Daily/range summaries reflect the corrected values automatically.
+// @Tags         meals
+// @Accept       json
+// @Produce      json
+// @Param        id               path   string  true   "Meal entry UUID"
+// @Param        Idempotency-Key  header string  false  "Optional client-supplied idempotency key"
+// @Param        body  body  object{product_id=string,quantity_g=number}  true  "Product + quantity"
+// @Success      200  {object}  MealEntry
+// @Failure      400  {object}  map[string]string  "product_id_required | quantity_invalid | invalid_json"
+// @Failure      404  {object}  map[string]string  "not_found | product_not_found"
+// @Security     BearerAuth
+// @Router       /meals/{id}/correct-product [post]
+func (h *Handlers) correctProduct(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		respondError(c, http.StatusNotFound, "not_found")
+		return
+	}
+	var req struct {
+		ProductID string  `json:"product_id"`
+		QuantityG float64 `json:"quantity_g"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	if req.ProductID == "" {
+		respondError(c, http.StatusBadRequest, "product_id_required")
+		return
+	}
+	productID, err := uuid.Parse(req.ProductID)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "product_id_required")
+		return
+	}
+
+	m, err := h.svc.CorrectProduct(c.Request.Context(), id, &productID, req.QuantityG)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrProductIDRequired):
+			respondError(c, http.StatusBadRequest, "product_id_required")
+		case errors.Is(err, ErrQuantityInvalid):
+			respondError(c, http.StatusBadRequest, "quantity_invalid")
+		case errors.Is(err, ErrNotFound):
+			respondError(c, http.StatusNotFound, "not_found")
+		case errors.Is(err, ErrProductNotFound):
+			respondError(c, http.StatusNotFound, "product_not_found")
+		default:
+			respondError(c, http.StatusInternalServerError, "correct_failed")
+		}
 		return
 	}
 	c.JSON(http.StatusOK, m)

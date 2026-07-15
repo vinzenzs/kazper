@@ -7295,6 +7295,61 @@ paths:
       summary: Update fields on a meal entry
       tags:
       - meals
+  /meals/{id}/correct-product:
+    post:
+      consumes:
+      - application/json
+      description: Re-derives the meal's nutrient fields from `product_id` (per-100
+        g × `quantity_g`, the same derivation as product-mode logging), sets the product
+        reference and quantity, and preserves the entry's identity, `logged_at`, note,
+        and workout link. Works on a freeform meal (freeform→product) or a product
+        meal (fixing a wrong product/quantity). Daily/range summaries reflect the
+        corrected values automatically.
+      parameters:
+      - description: Meal entry UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional client-supplied idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Product + quantity
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            product_id:
+              type: string
+            quantity_g:
+              type: number
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/meals.MealEntry'
+        "400":
+          description: product_id_required | quantity_invalid | invalid_json
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: not_found | product_not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Retroactively correct a meal to a product
+      tags:
+      - meals
   /meals/freeform:
     post:
       consumes:
