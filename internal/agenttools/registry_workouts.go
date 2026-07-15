@@ -109,6 +109,13 @@ type WorkoutFuelingSummaryArgs struct {
 	PostWindowMin *int   `json:"post_window_min,omitempty" jsonschema:"post-workout window in minutes (default 60, range 0..720)"`
 }
 
+type SweatRateArgs struct {
+	WorkoutID       string   `json:"workout_id" jsonschema:"the COMPLETED workout id to compute sweat rate for"`
+	PreWeightKg     float64  `json:"pre_weight_kg" jsonschema:"pre-session body weight in kg (required, positive)"`
+	PostWeightKg    float64  `json:"post_weight_kg" jsonschema:"post-session body weight in kg (required, positive)"`
+	FluidMlOverride *float64 `json:"fluid_ml_override,omitempty" jsonschema:"optional override (ml, >= 0) for in-session fluid; replaces the derived hydration + workout-fuel sum"`
+}
+
 type FulfillWorkoutArgs struct {
 	PlannedID      string `json:"planned_id" jsonschema:"the PLANNED workout id to fulfill (the merge target that holds the plan_slot_id)"`
 	CompletedID    string `json:"completed_id" jsonschema:"the standalone COMPLETED activity id to merge into the planned workout"`
@@ -392,6 +399,32 @@ func workoutsSpecs() []Spec {
 					q.Set("post_window_min", strconv.Itoa(*a.PostWindowMin))
 				}
 				return HTTPCall{Method: "GET", Path: "/workouts/" + url.PathEscape(a.WorkoutID) + "/fueling", Query: q}, nil
+			},
+		},
+		{
+			Name: "sweat_rate",
+			Description: "Compute a completed workout's sweat rate (ml/hr) — the standard field test: " +
+				"`sweat_loss_ml = (pre_weight_kg − post_weight_kg) × 1000 + fluid_ml`, over the workout's elapsed " +
+				"hours. `pre_weight_kg` and `post_weight_kg` are REQUIRED (the bodyweight log is daily-grained, not " +
+				"pre/post-session — the caller must supply the actual before/after readings). Fluid is summed from " +
+				"the workout's LINKED hydration + workout-fuel `quantity_ml` and itemized; pass `fluid_ml_override` " +
+				"for unlogged bottles. Result quality follows the supplied weights — a negative loss or a rate above " +
+				"5000 ml/hr returns the numbers with `warning: \"implausible_result\"` rather than refusing. Planned " +
+				"workouts are rejected. Read-only; anchors race hydration planning.",
+			SchemaType: SweatRateArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a SweatRateArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				q.Set("pre_weight_kg", strconv.FormatFloat(a.PreWeightKg, 'f', -1, 64))
+				q.Set("post_weight_kg", strconv.FormatFloat(a.PostWeightKg, 'f', -1, 64))
+				if a.FluidMlOverride != nil {
+					q.Set("fluid_ml_override", strconv.FormatFloat(*a.FluidMlOverride, 'f', -1, 64))
+				}
+				return HTTPCall{Method: "GET", Path: "/workouts/" + url.PathEscape(a.WorkoutID) + "/sweat-rate", Query: q}, nil
 			},
 		},
 		{

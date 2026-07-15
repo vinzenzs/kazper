@@ -1327,6 +1327,7 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `delete_weight`               | `DELETE /weight/{id}`                  | Remove a body-weight entry.                                   |
 | `weight_trend`                | `GET /weight/trend?from=…&to=…&window_days=…` | Rolling-average weight trend; each point carries `sample_count`. |
 | `workout_fueling_summary`     | `GET /workouts/{id}/fueling?pre_window_min=…&post_window_min=…` | Pre/intra/post intake totals for a workout. Three sub-objects per window: `nutrition` (meals), `hydration` (hydration entries), `workout_fuel` (workout-fuel entries). |
+| `sweat_rate`                  | `GET /workouts/{id}/sweat-rate?pre_weight_kg=…&post_weight_kg=…` | Standard sweat-rate field test over a completed workout: `(pre − post) × 1000 + linked fluid_ml`, over elapsed hours. Weights required (bodyweight log is daily-grained); fluid from linked hydration + workout-fuel ml, itemized, with a `fluid_ml_override`. Implausible results warn, not refuse. |
 | `log_workout_fuel`            | `POST /workout-fuel`                   | Record an in-session fueling event — gel, electrolyte drink, salt tab, caffeine. Plain water belongs in `log_hydration`. |
 | `list_workout_fuel`           | `GET /workout-fuel?from=…&to=…`        | List workout-fuel entries in a half-open window (92-day cap).  |
 | `patch_workout_fuel`          | `PATCH /workout-fuel/{id}`             | Edit name / quantitative fields / note / workout link.         |

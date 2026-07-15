@@ -208,6 +208,30 @@ func (r *Repo) List(ctx context.Context, from, to time.Time) ([]*Entry, error) {
 	return out, rows.Err()
 }
 
+// ListByWorkout returns every workout-fuel entry tagged with the given
+// workout_id, ascending by logged_at. Used by the workout-anchored fueling
+// aggregator (sweat rate) where the link — not a time window — defines
+// membership.
+func (r *Repo) ListByWorkout(ctx context.Context, workoutID uuid.UUID) ([]*Entry, error) {
+	rows, err := r.q.Query(ctx,
+		`SELECT `+selectCols+` FROM workout_fuel_entries WHERE workout_id = $1 ORDER BY logged_at ASC`,
+		workoutID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list workout-fuel entries by workout: %w", err)
+	}
+	defer rows.Close()
+	var out []*Entry
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }

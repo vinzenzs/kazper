@@ -10778,6 +10778,87 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/{id}/sweat-rate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Computes sweat rate (ml/hr) over a completed workout: ` + "`" + `sweat_loss_ml = (pre_weight_kg − post_weight_kg) × 1000 + fluid_ml` + "`" + `, divided by the workout's elapsed hours. Pre/post weights are REQUIRED positive params — the bodyweight log is daily-grained, not pre/post-session. Fluid is summed from the workout's linked hydration and workout-fuel ` + "`" + `quantity_ml` + "`" + ` entries and itemized in the response; an optional ` + "`" + `fluid_ml_override` + "`" + ` (≥ 0) replaces the derived sum for the unlogged-bottle case. A planned workout returns 409; a negative loss or a rate above 5000 ml/hr still returns the numbers with ` + "`" + `warning: \"implausible_result\"` + "`" + `. Compute-on-read: persists nothing, feeds no daily hydration or nutrition total.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Workout sweat rate: the standard field test",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Pre-session body weight (kg, positive)",
+                        "name": "pre_weight_kg",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Post-session body weight (kg, positive)",
+                        "name": "post_weight_kg",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Override for in-session fluid (ml, ≥ 0); replaces the derived hydration + workout-fuel sum",
+                        "name": "fluid_ml_override",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/workoutfueling.SweatRate"
+                        }
+                    },
+                    "400": {
+                        "description": "pre_weight_invalid / post_weight_invalid / fluid_override_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "workout_not_completed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/unfulfill": {
             "post": {
                 "security": [
@@ -16089,6 +16170,52 @@ const docTemplate = `{
                 },
                 "totals": {
                     "$ref": "#/definitions/workoutfueling.WorkoutFuelTotals"
+                }
+            }
+        },
+        "workoutfueling.SweatRate": {
+            "type": "object",
+            "properties": {
+                "duration_hr": {
+                    "type": "number"
+                },
+                "fluid": {
+                    "$ref": "#/definitions/workoutfueling.SweatRateFluid"
+                },
+                "post_weight_kg": {
+                    "type": "number"
+                },
+                "pre_weight_kg": {
+                    "type": "number"
+                },
+                "sweat_loss_ml": {
+                    "type": "number"
+                },
+                "sweat_rate_ml_per_hr": {
+                    "type": "number"
+                },
+                "warning": {
+                    "type": "string"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "workoutfueling.SweatRateFluid": {
+            "type": "object",
+            "properties": {
+                "fluid_ml_override": {
+                    "type": "number"
+                },
+                "hydration_ml": {
+                    "type": "number"
+                },
+                "total_ml": {
+                    "type": "number"
+                },
+                "workout_fuel_ml": {
+                    "type": "number"
                 }
             }
         },

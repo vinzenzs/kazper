@@ -21,6 +21,7 @@ func TestWorkouts_RegisteredWithExpectedTiers(t *testing.T) {
 		"fulfill_workout":         TierWriteAuto,
 		"unfulfill_workout":       TierWriteAuto,
 		"workout_fueling_summary": TierRead,
+		"sweat_rate":              TierRead,
 	}
 	for name, tier := range wantTier {
 		s, ok := specs[name]
@@ -261,6 +262,24 @@ func TestWorkoutFuelingSummary_BuildShape(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "180", call.Query.Get("pre_window_min"))
 	assert.Equal(t, "90", call.Query.Get("post_window_min"))
+}
+
+func TestSweatRate_BuildShape(t *testing.T) {
+	specs := ByName(MCPRegistry())
+
+	// Required weights only → no override key.
+	call, err := specs["sweat_rate"].Build(json.RawMessage(`{"workout_id":"w1","pre_weight_kg":71,"post_weight_kg":69.8}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/w1/sweat-rate", call.Path)
+	assert.Equal(t, "71", call.Query.Get("pre_weight_kg"))
+	assert.Equal(t, "69.8", call.Query.Get("post_weight_kg"))
+	assert.False(t, call.Query.Has("fluid_ml_override"))
+
+	// Override forwarded.
+	call, err = specs["sweat_rate"].Build(json.RawMessage(`{"workout_id":"w1","pre_weight_kg":71,"post_weight_kg":69.8,"fluid_ml_override":1500}`))
+	require.NoError(t, err)
+	assert.Equal(t, "1500", call.Query.Get("fluid_ml_override"))
 }
 
 // workout_adherence forwards the optional missed_limit + zero_fill knobs.
