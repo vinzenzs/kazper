@@ -22,3 +22,6 @@ google-services.json
 apps/web/dist/
 # MkDocs build output (userdocs/ is the source)
 site/
+
+# Python lockfile of the bridge's local uv env (not the deployment contract — requirements.txt is)
+apps/garmin-bridge/uv.lock
