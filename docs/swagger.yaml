@@ -291,6 +291,96 @@ definitions:
       updated_at:
         type: string
     type: object
+  athleteconfig.EffectiveConfig:
+    properties:
+      created_at:
+        type: string
+      field_sources:
+        additionalProperties:
+          type: string
+        description: |-
+          FieldSources maps each physiology field's JSON name to "manual" or
+          "garmin" — the provenance of the resolved value.
+        type: object
+      ftp_watts:
+        type: integer
+      hr_zone_1_max:
+        type: integer
+      hr_zone_2_max:
+        type: integer
+      hr_zone_3_max:
+        type: integer
+      hr_zone_4_max:
+        type: integer
+      hr_zone_5_max:
+        type: integer
+      lactate_threshold_hr:
+        type: integer
+      max_hr:
+        type: integer
+      power_zone_1_max:
+        type: integer
+      power_zone_2_max:
+        type: integer
+      power_zone_3_max:
+        type: integer
+      power_zone_4_max:
+        type: integer
+      power_zone_5_max:
+        type: integer
+      threshold_hr:
+        type: integer
+      threshold_pace_sec_per_km:
+        type: number
+      threshold_swim_pace_sec_per_100m:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  athleteconfig.GarminDetectedThresholds:
+    properties:
+      created_at:
+        type: string
+      detected_at:
+        type: string
+      ftp_watts:
+        type: integer
+      hr_zone_1_max:
+        type: integer
+      hr_zone_2_max:
+        type: integer
+      hr_zone_3_max:
+        type: integer
+      hr_zone_4_max:
+        type: integer
+      hr_zone_5_max:
+        type: integer
+      lactate_threshold_hr:
+        type: integer
+      max_hr:
+        type: integer
+      power_zone_1_max:
+        type: integer
+      power_zone_2_max:
+        type: integer
+      power_zone_3_max:
+        type: integer
+      power_zone_4_max:
+        type: integer
+      power_zone_5_max:
+        type: integer
+      threshold_pace_sec_per_km:
+        type: number
+      updated_at:
+        type: string
+    type: object
+  athleteconfig.sourcesRequest:
+    properties:
+      sources:
+        items:
+          type: string
+        type: array
+    type: object
   bodyweight.Entry:
     properties:
       bmi:
@@ -552,8 +642,22 @@ definitions:
           same call; null when no config row has been set.
       date:
         type: string
+      effective:
+        allOf:
+        - $ref: '#/definitions/athleteconfig.EffectiveConfig'
+        description: |-
+          Effective is the resolved physiology computations actually consume (config
+          with garmin-sourced fields swapped for the detection, per-field annotated);
+          null when neither a config nor an applied detection exists.
       fitness:
         $ref: '#/definitions/fitnessmetrics.Snapshot'
+      garmin_detected:
+        allOf:
+        - $ref: '#/definitions/athleteconfig.GarminDetectedThresholds'
+        description: |-
+          GarminDetected is the latest Garmin-detected physiology (advisory), so the
+          coach sees drift against the confirmed config in one read; null when no
+          detection has been recorded. (separate-garmin-threshold-detection)
       lookahead_days:
         type: integer
       lookback_days:
@@ -581,6 +685,14 @@ definitions:
       recent_workouts:
         items:
           $ref: '#/definitions/coachcontext.WorkoutLite'
+        type: array
+      threshold_sources:
+        description: |-
+          ThresholdSources is the active garmin-sourced field policy — which fields
+          computations read from Garmin instead of the confirmed config; empty slice
+          when all-manual.
+        items:
+          type: string
         type: array
       tz:
         type: string
@@ -4263,7 +4375,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: '{\"athlete_config\": AthleteConfig | null}'
+          description: '{\"athlete_config\": AthleteConfig | null, \"sources\": [string]}'
           schema:
             additionalProperties: true
             type: object
@@ -4301,9 +4413,95 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "403":
+          description: forbidden — the garmin identity cannot write the deliberate
+            config
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: Set or replace the athlete physiology configuration (singleton)
+      tags:
+      - athlete-config
+  /athlete-config/effective:
+    get:
+      description: 'Returns the resolved view computations consume: per field, the
+        Garmin-detected value where its source is `garmin` and a detection exists,
+        the confirmed value otherwise. `field_sources` annotates each field with `manual`
+        or `garmin`. With an empty source policy this equals GET /athlete-config field-for-field.
+        Null before any config or applied detection exists.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"effective\": EffectiveConfig | null}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the effective physiology config (resolved manual + detected)
+      tags:
+      - athlete-config
+  /athlete-config/garmin-detected:
+    get:
+      description: Returns the latest physiology Garmin detected (FTP, lactate-threshold
+        HR, max HR, run threshold pace, HR/power zone maxima) with `detected_at`,
+        or null before any sync has written one. Advisory evidence — NOT the configured
+        values; see GET /athlete-config for the deliberate record and GET /athlete-config/effective
+        for what computations use.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"garmin_detected\": GarminDetectedThresholds | null}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the latest Garmin-detected thresholds (advisory singleton)
+      tags:
+      - athlete-config
+    put:
+      consumes:
+      - application/json
+      description: Full-replaces the advisory detection singleton with the values
+        the daily sync mapped from Garmin. Accepted ONLY from the garmin identity
+        (others → 403); writing a detection never reads or mutates athlete_config
+        or threshold_history. `Idempotency-Key` is NOT accepted on PUT.
+      parameters:
+      - description: Detected thresholds payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/athleteconfig.GarminDetectedThresholds'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"garmin_detected\": GarminDetectedThresholds}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: athlete_config_value_invalid | invalid_json | idempotency_unsupported_for_put
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: forbidden — only the garmin identity may write detections
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Record the latest Garmin-detected thresholds (garmin identity only)
       tags:
       - athlete-config
   /athlete-config/history:
@@ -4342,6 +4540,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Dated history of the athlete physiology configuration
+      tags:
+      - athlete-config
+  /athlete-config/sources:
+    put:
+      consumes:
+      - application/json
+      description: 'Full-replaces `garmin_sourced_fields` (empty = all manual). Whitelisted
+        tokens: `ftp_watts`, `lactate_threshold_hr`, `max_hr`, `threshold_pace_sec_per_km`,
+        `hr_zones`, `power_zones` (zones flip as whole sets). Mutates ONLY the policy
+        — never the physiology values, never threshold history. Rejected from the
+        garmin identity (403). Flipping a source changes the thresholds computations
+        use; run POST /workouts/recompute-tss when derived TSS should follow. `Idempotency-Key`
+        is NOT accepted on PUT.'
+      parameters:
+      - description: Source policy payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/athleteconfig.sourcesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"sources\": [string]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: source_field_invalid | invalid_json | idempotency_unsupported_for_put
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: forbidden — the garmin identity cannot set the policy
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set the per-field source policy (which fields read from Garmin)
       tags:
       - athlete-config
   /chat:

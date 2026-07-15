@@ -61,6 +61,7 @@ type Service struct {
 	recoveryRepo      *recoverymetrics.Repo
 	phasesRepo        *trainingphases.PhasesRepo
 	athleteConfigRepo *athleteconfig.Repo
+	athleteConfigSvc  *athleteconfig.Service
 	bodyWeightRepo    *bodyweight.Repo
 	multisportRepo    multisportRepo
 	macrocycleRepo    macrocycleLookup
@@ -83,6 +84,12 @@ func (s *Service) SetMacrocycleRepo(r macrocycleLookup) { s.macrocycleRepo = r }
 // into grounding. Optional: when unset, the `memory` block is an empty array.
 // Wired in httpserver.Run().
 func (s *Service) SetMemoryRepo(r memoryLookup) { s.memoryRepo = r }
+
+// SetAthleteConfigService cross-injects the athlete-config service the training
+// bundle uses to surface the garmin detection, source policy, and effective
+// config beside the confirmed config. Optional: when unset, those three blocks
+// are null/empty. Wired in httpserver.Run().
+func (s *Service) SetAthleteConfigService(svc *athleteconfig.Service) { s.athleteConfigSvc = svc }
 
 func NewService(
 	workoutsRepo *workouts.Repo,
@@ -216,6 +223,27 @@ func (s *Service) BuildTraining(ctx context.Context, date time.Time, loc *time.L
 			return fmt.Errorf("athlete config: %w", err)
 		}
 		out.AthleteConfig = cfg
+		// Garmin detection + source policy + effective view beside the confirmed
+		// config, so the coach names drift and what's live in one read. All
+		// null-safe; only populated when the service is wired.
+		out.ThresholdSources = []string{}
+		if s.athleteConfigSvc != nil {
+			det, err := s.athleteConfigSvc.GetDetection(gctx)
+			if err != nil {
+				return fmt.Errorf("garmin detection: %w", err)
+			}
+			out.GarminDetected = det
+			sources, err := s.athleteConfigSvc.GetSources(gctx)
+			if err != nil {
+				return fmt.Errorf("threshold sources: %w", err)
+			}
+			out.ThresholdSources = sources
+			eff, err := s.athleteConfigSvc.EffectiveConfig(gctx)
+			if err != nil {
+				return fmt.Errorf("effective config: %w", err)
+			}
+			out.Effective = eff
+		}
 		bw, err := s.bodyWeightRepo.LatestBefore(gctx, dayEnd.UTC())
 		if err != nil {
 			if errors.Is(err, bodyweight.ErrNotFound) {

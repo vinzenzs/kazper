@@ -17,7 +17,8 @@ const FormatVersion = 1
 // exportedTables lists every user-data table, in the fixed order they appear in
 // the export document. Ordering is part of the format's determinism contract —
 // do not reorder without bumping FormatVersion. Verified against migration head
-// 063 (41 exported tables; workout_streams from 056 is excluded — see below).
+// 064 (41 exported tables; workout_streams from 056 and garmin_detected_thresholds
+// from 064 are excluded — see below).
 // A future migration that adds a table forces a classification decision here via
 // the drift guard (see Drift).
 var exportedTables = []string{
@@ -75,7 +76,8 @@ var excludedTables = []string{
 	"sync_runs",           // Garmin-bridge invocation ops log; recreated on next sync
 	"push_tokens",         // FCM device registrations; the companion re-registers
 	"relogin_latch",       // single migration-seeded guard row
-	"workout_streams",     // bulky raw 1 Hz sample arrays; re-derived on Garmin re-sync, and the compact derivations (workout_best_efforts + workouts.variability_index/efficiency_factor/decoupling_pct) are already exported
+	"workout_streams",           // bulky raw 1 Hz sample arrays; re-derived on Garmin re-sync, and the compact derivations (workout_best_efforts + workouts.variability_index/efficiency_factor/decoupling_pct) are already exported
+	"garmin_detected_thresholds", // latest-only advisory detection singleton; re-derived by the next sync (separate-garmin-threshold-detection). The confirmed athlete_config (incl. its garmin_sourced_fields policy column) is what's exported.
 }
 
 // exportedSet and excludedSet are lookup views of the two lists above.

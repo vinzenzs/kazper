@@ -82,6 +82,74 @@ func (s *Service) Put(ctx context.Context, cfg *AthleteConfig) (*AthleteConfig, 
 	return s.repo.Get(ctx)
 }
 
+// SourceFieldError carries the `source_field_invalid` code plus the offending
+// token, raised when PUT /athlete-config/sources includes a non-whitelisted
+// field.
+type SourceFieldError struct {
+	Field string
+}
+
+func (e *SourceFieldError) Error() string {
+	return fmt.Sprintf("source_field_invalid: %s", e.Field)
+}
+
+// sourceWhitelist is the set of tokens PUT /athlete-config/sources accepts.
+var sourceWhitelist = map[string]struct{}{
+	SourceFTPWatts:           {},
+	SourceLactateThresholdHR: {},
+	SourceMaxHR:              {},
+	SourceThresholdPace:      {},
+	SourceHRZones:            {},
+	SourcePowerZones:         {},
+}
+
+// GetDetection returns the latest Garmin-detected thresholds, or (nil, nil) when
+// none has been recorded.
+func (s *Service) GetDetection(ctx context.Context) (*GarminDetectedThresholds, error) {
+	return s.repo.GetDetection(ctx)
+}
+
+// PutDetection validates and full-replaces the detection singleton, then reads
+// it back. It deliberately never reads or mutates athlete_config or
+// threshold_history — a detection is advisory evidence, applied only through the
+// deliberate PUT /athlete-config flow.
+func (s *Service) PutDetection(ctx context.Context, d *GarminDetectedThresholds) (*GarminDetectedThresholds, error) {
+	if err := validateDetection(d); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpsertDetection(ctx, d); err != nil {
+		return nil, err
+	}
+	return s.repo.GetDetection(ctx)
+}
+
+// GetSources returns the active source policy (empty slice, never nil).
+func (s *Service) GetSources(ctx context.Context) ([]string, error) {
+	return s.repo.GetSources(ctx)
+}
+
+// PutSources validates the tokens against the whitelist and full-replaces the
+// policy, mutating only the policy column. Duplicate tokens are collapsed,
+// preserving first-seen order.
+func (s *Service) PutSources(ctx context.Context, sources []string) ([]string, error) {
+	normalized := make([]string, 0, len(sources))
+	seen := map[string]struct{}{}
+	for _, f := range sources {
+		if _, ok := sourceWhitelist[f]; !ok {
+			return nil, &SourceFieldError{Field: f}
+		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		normalized = append(normalized, f)
+	}
+	if err := s.repo.PutSources(ctx, normalized); err != nil {
+		return nil, err
+	}
+	return s.repo.GetSources(ctx)
+}
+
 // History returns the dated snapshots ascending, optionally bounded inclusively.
 func (s *Service) History(ctx context.Context, from, to *time.Time) ([]*ThresholdSnapshot, error) {
 	return s.repo.ListHistory(ctx, from, to)
@@ -166,6 +234,41 @@ func validate(cfg *AthleteConfig) error {
 	for _, f := range floats {
 		if f.v != nil && (math.IsNaN(*f.v) || math.IsInf(*f.v, 0) || *f.v <= 0) {
 			return &ValidationError{Field: f.name}
+		}
+	}
+	return nil
+}
+
+// validateDetection applies the same positivity/finiteness rules to a detection
+// payload (the DB CHECKs enforce them too; this surfaces a clean field error).
+func validateDetection(d *GarminDetectedThresholds) error {
+	ints := []struct {
+		name string
+		v    *int
+	}{
+		{"ftp_watts", d.FtpWatts},
+		{"lactate_threshold_hr", d.LactateThresholdHR},
+		{"max_hr", d.MaxHR},
+		{"hr_zone_1_max", d.HRZone1Max},
+		{"hr_zone_2_max", d.HRZone2Max},
+		{"hr_zone_3_max", d.HRZone3Max},
+		{"hr_zone_4_max", d.HRZone4Max},
+		{"hr_zone_5_max", d.HRZone5Max},
+		{"power_zone_1_max", d.PowerZone1Max},
+		{"power_zone_2_max", d.PowerZone2Max},
+		{"power_zone_3_max", d.PowerZone3Max},
+		{"power_zone_4_max", d.PowerZone4Max},
+		{"power_zone_5_max", d.PowerZone5Max},
+	}
+	for _, f := range ints {
+		if f.v != nil && *f.v <= 0 {
+			return &ValidationError{Field: f.name}
+		}
+	}
+	if d.ThresholdPaceSecPerKm != nil {
+		v := *d.ThresholdPaceSecPerKm
+		if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
+			return &ValidationError{Field: "threshold_pace_sec_per_km"}
 		}
 	}
 	return nil

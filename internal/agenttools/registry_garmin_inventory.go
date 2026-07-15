@@ -59,6 +59,12 @@ type ListPersonalRecordsArgs struct {
 	PRType string `json:"pr_type,omitempty" jsonschema:"optional filter to a single PR type (e.g. 5k, 10k, longest-ride)"`
 }
 
+// SetThresholdSourcesArgs is the PUT /athlete-config/sources body: the full
+// replacement list of garmin-sourced field tokens.
+type SetThresholdSourcesArgs struct {
+	Sources []string `json:"sources" jsonschema:"full replacement list of garmin-sourced fields; whitelisted tokens: ftp_watts, lactate_threshold_hr, max_hr, threshold_pace_sec_per_km, hr_zones, power_zones. Empty = all manual."`
+}
+
 func garminInventorySpecs() []Spec {
 	return []Spec{
 		{
@@ -144,6 +150,34 @@ func garminInventorySpecs() []Spec {
 					return HTTPCall{}, err
 				}
 				return HTTPCall{Method: "PUT", Path: "/athlete-config", Body: body}, nil
+			},
+		},
+		{
+			Name: "set_threshold_sources",
+			Description: "Set the per-field source policy — which physiology fields the app's computations " +
+				"read from Garmin's DETECTED values instead of the deliberately-confirmed athlete config. " +
+				"Full-replace list (send the complete desired set every time; empty = all manual). " +
+				"Whitelisted tokens: `ftp_watts`, `lactate_threshold_hr`, `max_hr`, " +
+				"`threshold_pace_sec_per_km`, and the zone groups `hr_zones` / `power_zones` (zones flip " +
+				"as whole sets). This changes ONLY the policy — it never overwrites a confirmed value and " +
+				"never writes threshold history. Flipping a source changes the thresholds computations " +
+				"use, so when derived TSS should follow the flip, run `recompute_workout_tss` afterward. " +
+				"Retries are NOT safe (the backend rejects Idempotency-Key on PUT).",
+			SchemaType: SetThresholdSourcesArgs{},
+			Tier:       TierWriteConfirm,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var args SetThresholdSourcesArgs
+				if err := DecodeInto(in, &args); err != nil {
+					return HTTPCall{}, err
+				}
+				if args.Sources == nil {
+					args.Sources = []string{}
+				}
+				body, err := json.Marshal(args)
+				if err != nil {
+					return HTTPCall{}, err
+				}
+				return HTTPCall{Method: "PUT", Path: "/athlete-config/sources", Body: body}, nil
 			},
 		},
 		{

@@ -254,6 +254,57 @@ func TestBuildTraining_AthleteConfigAndWattsPerKg(t *testing.T) {
 	assert.InDelta(t, 3.6, *out.WattsPerKg, 0.001, "256 / 72.0 rounded to 1dp")
 }
 
+func TestBuildTraining_GarminDetectionSourcesEffective(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	cfgSvc := athleteconfig.NewService(f.athlete, f.pool)
+	f.svc.SetAthleteConfigService(cfgSvc)
+
+	require.NoError(t, f.athlete.Upsert(ctx, &athleteconfig.AthleteConfig{FtpWatts: ptr(278)}))
+	require.NoError(t, f.athlete.UpsertDetection(ctx, &athleteconfig.GarminDetectedThresholds{FtpWatts: ptr(285)}))
+	require.NoError(t, f.athlete.PutSources(ctx, []string{athleteconfig.SourceFTPWatts}))
+
+	out, err := f.svc.BuildTraining(ctx, date, loc, 0, 0)
+	require.NoError(t, err)
+
+	// Configured value stays the deliberate 278.
+	require.NotNil(t, out.AthleteConfig)
+	assert.Equal(t, 278, *out.AthleteConfig.FtpWatts)
+	// Detected value with detected_at.
+	require.NotNil(t, out.GarminDetected)
+	assert.Equal(t, 285, *out.GarminDetected.FtpWatts)
+	assert.False(t, out.GarminDetected.DetectedAt.IsZero())
+	// Active policy.
+	assert.Equal(t, []string{"ftp_watts"}, out.ThresholdSources)
+	// Effective resolves to the detected value, annotated garmin.
+	require.NotNil(t, out.Effective)
+	assert.Equal(t, 285, *out.Effective.FtpWatts)
+	assert.Equal(t, "garmin", out.Effective.FieldSources["ftp_watts"])
+}
+
+func TestBuildTraining_NoDetectionDegradesToNull(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	loc := time.UTC
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, loc)
+
+	cfgSvc := athleteconfig.NewService(f.athlete, f.pool)
+	f.svc.SetAthleteConfigService(cfgSvc)
+	require.NoError(t, f.athlete.Upsert(ctx, &athleteconfig.AthleteConfig{FtpWatts: ptr(278)}))
+
+	out, err := f.svc.BuildTraining(ctx, date, loc, 0, 0)
+	require.NoError(t, err)
+	assert.Nil(t, out.GarminDetected, "no detection → null")
+	assert.Empty(t, out.ThresholdSources, "empty policy → empty list")
+	// Effective equals the config when nothing is sourced.
+	require.NotNil(t, out.Effective)
+	assert.Equal(t, 278, *out.Effective.FtpWatts)
+	assert.Equal(t, "manual", out.Effective.FieldSources["ftp_watts"])
+}
+
 func TestBuildTraining_WattsPerKgNullWhenInputMissing(t *testing.T) {
 	ctx := context.Background()
 	loc := time.UTC

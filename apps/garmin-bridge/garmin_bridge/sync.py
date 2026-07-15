@@ -85,22 +85,28 @@ def sync_day(backend: Backend, raw: dict[str, Any], date: str) -> dict[str, Any]
             logger.warning("workouts bulk post failed: %s", exc)
             summary["errors"]["workouts"] = str(exc)
 
-    # Athlete physiology config: a non-date-keyed singleton, refreshed in place
-    # via PUT each sync (Garmin source-of-truth). Skipped when the mapper found
-    # nothing. No Idempotency-Key — the backend rejects it on PUT.
+    # Garmin-detected physiology: written to the ADVISORY detection singleton, not
+    # the deliberate athlete_config (separate-garmin-threshold-detection). The
+    # config PUT is a human/coach-only record the bridge must never touch; the
+    # mapped values land in /athlete-config/garmin-detected as latest-detection
+    # evidence, and the coach chooses per field whether computations consume them.
+    # Skipped when the mapper found nothing. No Idempotency-Key — the backend
+    # rejects it on PUT. Per-capability accounting is unchanged: a 403 (e.g. an
+    # old bridge hitting a new backend, or this endpoint's garmin-only guard
+    # misfiring) is recorded as a failure without aborting the rest of the sync.
     config = mapped.get("athlete_config")
     if not config:
         summary["results"]["athlete_config"] = "skipped (no data)"
     else:
         try:
-            resp = backend.put_json("/athlete-config", config)
+            resp = backend.put_json("/athlete-config/garmin-detected", config)
             if resp.status_code in (200, 201):
                 summary["results"]["athlete_config"] = "updated"
             else:
                 summary["results"]["athlete_config"] = "failed"
                 summary["errors"]["athlete_config"] = f"PUT -> {resp.status_code}"
         except Exception as exc:  # noqa: BLE001
-            logger.warning("athlete_config put failed: %s", exc)
+            logger.warning("athlete_config detection put failed: %s", exc)
             summary["results"]["athlete_config"] = "failed"
             summary["errors"]["athlete_config"] = str(exc)
 

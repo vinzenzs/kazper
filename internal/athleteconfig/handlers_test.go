@@ -65,7 +65,7 @@ func TestGet_NullBeforeAnyWrite(t *testing.T) {
 	r := setup(t)
 	rec := do(t, r, http.MethodGet, "/athlete-config", "", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"athlete_config":null}`, rec.Body.String())
+	assert.JSONEq(t, `{"athlete_config":null,"sources":[]}`, rec.Body.String())
 }
 
 func TestPut_CreatesThenFullReplaceClearsOmitted(t *testing.T) {
@@ -124,7 +124,7 @@ func TestPut_NegativeValueRejected(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.JSONEq(t, `{"error":"athlete_config_value_invalid","field":"ftp_watts"}`, rec.Body.String())
 	// Not applied: still null.
-	assert.JSONEq(t, `{"athlete_config":null}`, do(t, r, http.MethodGet, "/athlete-config", "", nil).Body.String())
+	assert.JSONEq(t, `{"athlete_config":null,"sources":[]}`, do(t, r, http.MethodGet, "/athlete-config", "", nil).Body.String())
 }
 
 func TestPut_IdempotencyKeyRejected(t *testing.T) {
@@ -134,7 +134,7 @@ func TestPut_IdempotencyKeyRejected(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "idempotency_unsupported_for_put")
 	// No row created.
-	assert.JSONEq(t, `{"athlete_config":null}`, do(t, r, http.MethodGet, "/athlete-config", "", nil).Body.String())
+	assert.JSONEq(t, `{"athlete_config":null,"sources":[]}`, do(t, r, http.MethodGet, "/athlete-config", "", nil).Body.String())
 }
 
 func TestPut_FloatRoundedAtBoundary(t *testing.T) {

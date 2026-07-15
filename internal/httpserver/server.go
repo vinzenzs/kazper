@@ -238,10 +238,17 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	coachMemorySvc := coachmemory.NewService(coachMemoryRepo)
 	athleteConfigRepo := athleteconfig.NewRepo(pool)
 	athleteConfigSvc := athleteconfig.NewService(athleteConfigRepo, pool)
-	// Cross-inject athlete-config so the workouts service can derive a bike
-	// workout's intensity_factor from ftp_watts (mirrors the same optional-setter
-	// convention as trainingPlanSvc.SetAthleteConfigRepo).
-	workoutsSvc.SetAthleteConfigRepo(athleteConfigRepo)
+	// The effective-config provider resolves garmin-sourced fields against the
+	// latest detection (manual otherwise). Every computational consumer reads
+	// through it — one adapter here switches TSS derivation, zone resolution,
+	// race pacing, and step compliance without per-package edits. With an empty
+	// source policy it returns exactly the confirmed config (behavior-identical
+	// to today until a source is flipped). Raw endpoints keep the raw repo.
+	athleteConfigEffective := athleteconfig.NewEffectiveProvider(athleteConfigSvc)
+	// Cross-inject the effective config so the workouts service derives a bike
+	// workout's intensity_factor from the effective ftp_watts (mirrors the same
+	// optional-setter convention as trainingPlanSvc.SetAthleteConfigRepo).
+	workoutsSvc.SetAthleteConfigRepo(athleteConfigEffective)
 	devicesSvc := devices.NewService(devices.NewRepo(pool))
 	healthVitalsSvc := healthvitals.NewService(healthvitals.NewRepo(pool))
 	achievementsSvc := achievements.NewService(achievements.NewRepo(pool))
@@ -385,7 +392,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// bands from athlete-config thresholds over the race/leg tables, plus
 	// persisted per-leg overrides. Multi-repo aggregator (races + athlete-config).
 	racepacing.NewHandlers(
-		racepacing.NewService(racesRepo, athleteConfigRepo, racepacing.NewRepo(pool)),
+		racepacing.NewService(racesRepo, athleteConfigEffective, racepacing.NewRepo(pool)),
 	).Register(api)
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
@@ -411,9 +418,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	multisportRepo := multisport.NewRepo(pool)
 	multisport.NewHandlers(multisport.NewService(multisportRepo)).Register(api)
 	trainingPlanSvc := trainingplan.NewService(trainingplan.NewRepo(pool), pool, workoutsRepo, workoutTemplatesRepo, cfg.DefaultUserTZ)
-	// Cross-inject athlete-config so EffectiveProgram resolves zone-reference
-	// targets into absolute power_w/hr_bpm ranges (mirrors SetWorkoutsRepo).
-	trainingPlanSvc.SetAthleteConfigRepo(athleteConfigRepo)
+	// Cross-inject the effective config so EffectiveProgram resolves zone-reference
+	// targets into absolute power_w/hr_bpm ranges against the effective zones
+	// (mirrors SetWorkoutsRepo).
+	trainingPlanSvc.SetAthleteConfigRepo(athleteConfigEffective)
 	// Cross-inject the multisport-template repo so EffectiveProgram resolves a
 	// multisport workout's per-segment programs (each by its own sport).
 	trainingPlanSvc.SetMultisportRepo(multisportRepo)
@@ -477,6 +485,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Cross-inject coach memory so /context/training folds in active standing
 	// items + window-scoped recommendations (widen-coach-recs-to-memory).
 	coachCtxSvc.SetMemoryRepo(coachMemoryRepo)
+	// Cross-inject the athlete-config service so /context/training carries the
+	// garmin detection, source policy, and effective config beside the confirmed
+	// config (separate-garmin-threshold-detection).
+	coachCtxSvc.SetAthleteConfigService(athleteConfigSvc)
 	coachcontext.NewHandlers(coachCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	// POST /chat streams SSE. The idempotency middleware is a no-op here: it only
 	// engages when an Idempotency-Key header is present, and the chat client does

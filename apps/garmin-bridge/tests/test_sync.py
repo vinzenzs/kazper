@@ -173,6 +173,36 @@ def test_sync_lookback_zero_collapses_to_today(config, raw_day):
     assert gc.fetched == ["2026-06-13"]
 
 
+# --- garmin-detected thresholds (separate-garmin-threshold-detection) -------
+
+
+def test_sync_writes_detection_endpoint_not_config(raw_day):
+    """The mapped physiology goes to the ADVISORY detection singleton; the
+    deliberate /athlete-config PUT is never issued."""
+    backend = FakeBackend()
+    summary = sync.sync_day(backend, raw_day, "2026-06-12")
+
+    put_paths = [p for p, _ in backend.puts]
+    assert "/athlete-config/garmin-detected" in put_paths
+    assert "/athlete-config" not in put_paths
+    assert summary["results"]["athlete_config"] == "updated"
+
+
+def test_sync_detection_403_recorded_without_aborting(raw_day):
+    """An old-bridge/new-backend 403 on the detection PUT is recorded as a
+    per-capability failure but does not sink the rest of the day's writes."""
+    backend = FakeBackend()
+    backend.responses["/athlete-config/garmin-detected"] = FakeResponse(403)
+    summary = sync.sync_day(backend, raw_day, "2026-06-12")
+
+    assert summary["results"]["athlete_config"] == "failed"
+    assert "athlete_config" in summary["errors"]
+    assert "403" in summary["errors"]["athlete_config"]
+    # Other capabilities still attempted despite the 403.
+    assert "/workouts/bulk" in [p for p, _ in backend.posts]
+    assert summary["ok"] is False
+
+
 # --- sync-run reporting (add-garmin-connect-and-sync-status) ----------------
 
 

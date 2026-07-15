@@ -98,6 +98,114 @@ func (r *Repo) Upsert(ctx context.Context, cfg *AthleteConfig) error {
 	return nil
 }
 
+// detectionCols is the fixed column order of garmin_detected_thresholds used by
+// every detection query/scan.
+const detectionCols = `
+    ftp_watts, lactate_threshold_hr, max_hr, threshold_pace_sec_per_km,
+    hr_zone_1_max, hr_zone_2_max, hr_zone_3_max, hr_zone_4_max, hr_zone_5_max,
+    power_zone_1_max, power_zone_2_max, power_zone_3_max, power_zone_4_max, power_zone_5_max,
+    detected_at, created_at, updated_at
+`
+
+// GetDetection returns the latest Garmin-detected thresholds singleton, or
+// (nil, nil) when no sync has written one yet.
+func (r *Repo) GetDetection(ctx context.Context) (*GarminDetectedThresholds, error) {
+	row := r.q.QueryRow(ctx, `SELECT `+detectionCols+` FROM garmin_detected_thresholds WHERE id = $1`, singletonID)
+	var d GarminDetectedThresholds
+	err := row.Scan(
+		&d.FtpWatts, &d.LactateThresholdHR, &d.MaxHR, &d.ThresholdPaceSecPerKm,
+		&d.HRZone1Max, &d.HRZone2Max, &d.HRZone3Max, &d.HRZone4Max, &d.HRZone5Max,
+		&d.PowerZone1Max, &d.PowerZone2Max, &d.PowerZone3Max, &d.PowerZone4Max, &d.PowerZone5Max,
+		&d.DetectedAt, &d.CreatedAt, &d.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan garmin detection: %w", err)
+	}
+	return &d, nil
+}
+
+// UpsertDetection full-replaces the detection singleton with d, stamping
+// detected_at = now() (the moment the sync recorded it). Absent (nil) fields
+// overwrite to NULL — the detection is exactly what the latest sync mapped.
+func (r *Repo) UpsertDetection(ctx context.Context, d *GarminDetectedThresholds) error {
+	const q = `
+        INSERT INTO garmin_detected_thresholds (
+            id,
+            ftp_watts, lactate_threshold_hr, max_hr, threshold_pace_sec_per_km,
+            hr_zone_1_max, hr_zone_2_max, hr_zone_3_max, hr_zone_4_max, hr_zone_5_max,
+            power_zone_1_max, power_zone_2_max, power_zone_3_max, power_zone_4_max, power_zone_5_max,
+            detected_at, updated_at
+        ) VALUES (
+            $1,
+            $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15,
+            now(), now()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            ftp_watts                 = EXCLUDED.ftp_watts,
+            lactate_threshold_hr      = EXCLUDED.lactate_threshold_hr,
+            max_hr                    = EXCLUDED.max_hr,
+            threshold_pace_sec_per_km = EXCLUDED.threshold_pace_sec_per_km,
+            hr_zone_1_max             = EXCLUDED.hr_zone_1_max,
+            hr_zone_2_max             = EXCLUDED.hr_zone_2_max,
+            hr_zone_3_max             = EXCLUDED.hr_zone_3_max,
+            hr_zone_4_max             = EXCLUDED.hr_zone_4_max,
+            hr_zone_5_max             = EXCLUDED.hr_zone_5_max,
+            power_zone_1_max          = EXCLUDED.power_zone_1_max,
+            power_zone_2_max          = EXCLUDED.power_zone_2_max,
+            power_zone_3_max          = EXCLUDED.power_zone_3_max,
+            power_zone_4_max          = EXCLUDED.power_zone_4_max,
+            power_zone_5_max          = EXCLUDED.power_zone_5_max,
+            detected_at               = now(),
+            updated_at                = now()
+    `
+	_, err := r.q.Exec(ctx, q,
+		singletonID,
+		d.FtpWatts, d.LactateThresholdHR, d.MaxHR, d.ThresholdPaceSecPerKm,
+		d.HRZone1Max, d.HRZone2Max, d.HRZone3Max, d.HRZone4Max, d.HRZone5Max,
+		d.PowerZone1Max, d.PowerZone2Max, d.PowerZone3Max, d.PowerZone4Max, d.PowerZone5Max,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert garmin detection: %w", err)
+	}
+	return nil
+}
+
+// GetSources returns the active garmin_sourced_fields policy (empty slice when
+// no config row exists or the policy is empty — never nil).
+func (r *Repo) GetSources(ctx context.Context) ([]string, error) {
+	row := r.q.QueryRow(ctx, `SELECT garmin_sourced_fields FROM athlete_config WHERE id = $1`, singletonID)
+	var sources []string
+	if err := row.Scan(&sources); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("scan sources: %w", err)
+	}
+	if sources == nil {
+		sources = []string{}
+	}
+	return sources, nil
+}
+
+// PutSources full-replaces the source policy, mutating ONLY that column — never
+// the physiology values and never updated_at. Creates the config row (physiology
+// all-NULL) when none exists yet, so a policy can be set before any config PUT.
+func (r *Repo) PutSources(ctx context.Context, sources []string) error {
+	const q = `
+        INSERT INTO athlete_config (id, garmin_sourced_fields)
+        VALUES ($1, $2)
+        ON CONFLICT (id) DO UPDATE SET garmin_sourced_fields = EXCLUDED.garmin_sourced_fields`
+	if _, err := r.q.Exec(ctx, q, singletonID, sources); err != nil {
+		return fmt.Errorf("put sources: %w", err)
+	}
+	return nil
+}
+
 // historyPhysiologyCols is the 16 physiology columns of athlete_config_history,
 // in the fixed order used by every history query/scan.
 const historyPhysiologyCols = `

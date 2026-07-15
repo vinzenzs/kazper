@@ -59,7 +59,7 @@ type Service struct {
 	pool              *pgxpool.Pool
 	workoutsRepo      *workouts.Repo
 	templatesRepo     *workouttemplates.Repo
-	athleteConfigRepo *athleteconfig.Repo
+	athleteConfigRepo athleteconfig.ConfigProvider
 	multisportRepo    multisportRepo
 	loc               *time.Location
 }
@@ -78,7 +78,7 @@ func (s *Service) SetMultisportRepo(r multisportRepo) {
 // pass through unchanged. Mirrors the SetWorkoutsRepo cross-injection pattern;
 // wired in httpserver.Run() to keep athleteconfig an optional dependency and
 // avoid an import cycle.
-func (s *Service) SetAthleteConfigRepo(r *athleteconfig.Repo) {
+func (s *Service) SetAthleteConfigRepo(r athleteconfig.ConfigProvider) {
 	s.athleteConfigRepo = r
 }
 

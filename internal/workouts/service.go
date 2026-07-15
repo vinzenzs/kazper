@@ -75,11 +75,12 @@ type Service struct {
 	pool *pgxpool.Pool
 	loc  *time.Location
 
-	// athleteConfigRepo is the optional, cross-injected athlete-config singleton
-	// repo used to derive a bike workout's intensity_factor from ftp_watts. Nil
-	// when unwired (e.g. unit tests) — derivation then fails closed (no IF, no
-	// error). Mirrors trainingplan's SetAthleteConfigRepo cross-injection.
-	athleteConfigRepo *athleteconfig.Repo
+	// athleteConfigRepo is the optional, cross-injected effective athlete-config
+	// provider used to derive a bike workout's intensity_factor from ftp_watts.
+	// Nil when unwired (e.g. unit tests) — derivation then fails closed (no IF, no
+	// error). The server wires the effective view so a garmin-sourced FTP flows
+	// into TSS derivation; *athleteconfig.Repo also satisfies it for tests.
+	athleteConfigRepo athleteconfig.ConfigProvider
 }
 
 // NewService wires the repo, the pool (for the reconciliation transaction), and
@@ -100,7 +101,7 @@ func NewService(repo *Repo, pool *pgxpool.Pool, localTZ string) *Service {
 // the trainingplan SetAthleteConfigRepo cross-injection; wired in
 // httpserver.Run() to keep athleteconfig an optional dependency and avoid an
 // import cycle.
-func (s *Service) SetAthleteConfigRepo(r *athleteconfig.Repo) {
+func (s *Service) SetAthleteConfigRepo(r athleteconfig.ConfigProvider) {
 	s.athleteConfigRepo = r
 }
 

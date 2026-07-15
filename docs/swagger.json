@@ -116,7 +116,7 @@
                 "summary": "Get the athlete physiology configuration (singleton)",
                 "responses": {
                     "200": {
-                        "description": "{\\\"athlete_config\\\": AthleteConfig | null}",
+                        "description": "{\\\"athlete_config\\\": AthleteConfig | null, \\\"sources\\\": [string]}",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -168,6 +168,123 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "403": {
+                        "description": "forbidden — the garmin identity cannot write the deliberate config",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/athlete-config/effective": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the resolved view computations consume: per field, the Garmin-detected value where its source is `garmin` and a detection exists, the confirmed value otherwise. `field_sources` annotates each field with `manual` or `garmin`. With an empty source policy this equals GET /athlete-config field-for-field. Null before any config or applied detection exists.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "athlete-config"
+                ],
+                "summary": "Get the effective physiology config (resolved manual + detected)",
+                "responses": {
+                    "200": {
+                        "description": "{\\\"effective\\\": EffectiveConfig | null}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/athlete-config/garmin-detected": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the latest physiology Garmin detected (FTP, lactate-threshold HR, max HR, run threshold pace, HR/power zone maxima) with `detected_at`, or null before any sync has written one. Advisory evidence — NOT the configured values; see GET /athlete-config for the deliberate record and GET /athlete-config/effective for what computations use.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "athlete-config"
+                ],
+                "summary": "Get the latest Garmin-detected thresholds (advisory singleton)",
+                "responses": {
+                    "200": {
+                        "description": "{\\\"garmin_detected\\\": GarminDetectedThresholds | null}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full-replaces the advisory detection singleton with the values the daily sync mapped from Garmin. Accepted ONLY from the garmin identity (others → 403); writing a detection never reads or mutates athlete_config or threshold_history. `Idempotency-Key` is NOT accepted on PUT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "athlete-config"
+                ],
+                "summary": "Record the latest Garmin-detected thresholds (garmin identity only)",
+                "parameters": [
+                    {
+                        "description": "Detected thresholds payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/athleteconfig.GarminDetectedThresholds"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"garmin_detected\\\": GarminDetectedThresholds}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "athlete_config_value_invalid | invalid_json | idempotency_unsupported_for_put",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "forbidden — only the garmin identity may write detections",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -211,6 +328,64 @@
                     },
                     "400": {
                         "description": "date_invalid | range_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/athlete-config/sources": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full-replaces `garmin_sourced_fields` (empty = all manual). Whitelisted tokens: `ftp_watts`, `lactate_threshold_hr`, `max_hr`, `threshold_pace_sec_per_km`, `hr_zones`, `power_zones` (zones flip as whole sets). Mutates ONLY the policy — never the physiology values, never threshold history. Rejected from the garmin identity (403). Flipping a source changes the thresholds computations use; run POST /workouts/recompute-tss when derived TSS should follow. `Idempotency-Key` is NOT accepted on PUT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "athlete-config"
+                ],
+                "summary": "Set the per-field source policy (which fields read from Garmin)",
+                "parameters": [
+                    {
+                        "description": "Source policy payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/athleteconfig.sourcesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"sources\\\": [string]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "source_field_invalid | invalid_json | idempotency_unsupported_for_put",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "forbidden — the garmin identity cannot set the policy",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -11427,6 +11602,139 @@
                 }
             }
         },
+        "athleteconfig.EffectiveConfig": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "field_sources": {
+                    "description": "FieldSources maps each physiology field's JSON name to \"manual\" or\n\"garmin\" — the provenance of the resolved value.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "ftp_watts": {
+                    "type": "integer"
+                },
+                "hr_zone_1_max": {
+                    "type": "integer"
+                },
+                "hr_zone_2_max": {
+                    "type": "integer"
+                },
+                "hr_zone_3_max": {
+                    "type": "integer"
+                },
+                "hr_zone_4_max": {
+                    "type": "integer"
+                },
+                "hr_zone_5_max": {
+                    "type": "integer"
+                },
+                "lactate_threshold_hr": {
+                    "type": "integer"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "power_zone_1_max": {
+                    "type": "integer"
+                },
+                "power_zone_2_max": {
+                    "type": "integer"
+                },
+                "power_zone_3_max": {
+                    "type": "integer"
+                },
+                "power_zone_4_max": {
+                    "type": "integer"
+                },
+                "power_zone_5_max": {
+                    "type": "integer"
+                },
+                "threshold_hr": {
+                    "type": "integer"
+                },
+                "threshold_pace_sec_per_km": {
+                    "type": "number"
+                },
+                "threshold_swim_pace_sec_per_100m": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "athleteconfig.GarminDetectedThresholds": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "detected_at": {
+                    "type": "string"
+                },
+                "ftp_watts": {
+                    "type": "integer"
+                },
+                "hr_zone_1_max": {
+                    "type": "integer"
+                },
+                "hr_zone_2_max": {
+                    "type": "integer"
+                },
+                "hr_zone_3_max": {
+                    "type": "integer"
+                },
+                "hr_zone_4_max": {
+                    "type": "integer"
+                },
+                "hr_zone_5_max": {
+                    "type": "integer"
+                },
+                "lactate_threshold_hr": {
+                    "type": "integer"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "power_zone_1_max": {
+                    "type": "integer"
+                },
+                "power_zone_2_max": {
+                    "type": "integer"
+                },
+                "power_zone_3_max": {
+                    "type": "integer"
+                },
+                "power_zone_4_max": {
+                    "type": "integer"
+                },
+                "power_zone_5_max": {
+                    "type": "integer"
+                },
+                "threshold_pace_sec_per_km": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "athleteconfig.sourcesRequest": {
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "bodyweight.Entry": {
             "type": "object",
             "properties": {
@@ -11803,8 +12111,24 @@
                 "date": {
                     "type": "string"
                 },
+                "effective": {
+                    "description": "Effective is the resolved physiology computations actually consume (config\nwith garmin-sourced fields swapped for the detection, per-field annotated);\nnull when neither a config nor an applied detection exists.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/athleteconfig.EffectiveConfig"
+                        }
+                    ]
+                },
                 "fitness": {
                     "$ref": "#/definitions/fitnessmetrics.Snapshot"
+                },
+                "garmin_detected": {
+                    "description": "GarminDetected is the latest Garmin-detected physiology (advisory), so the\ncoach sees drift against the confirmed config in one read; null when no\ndetection has been recorded. (separate-garmin-threshold-detection)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/athleteconfig.GarminDetectedThresholds"
+                        }
+                    ]
                 },
                 "lookahead_days": {
                     "type": "integer"
@@ -11837,6 +12161,13 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/coachcontext.WorkoutLite"
+                    }
+                },
+                "threshold_sources": {
+                    "description": "ThresholdSources is the active garmin-sourced field policy — which fields\ncomputations read from Garmin instead of the confirmed config; empty slice\nwhen all-manual.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 },
                 "tz": {

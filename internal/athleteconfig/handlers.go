@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vinzenzs/kazper/internal/auth"
 	"github.com/vinzenzs/kazper/internal/numfmt"
 )
 
@@ -24,6 +25,10 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/athlete-config", h.get)
 	rg.PUT("/athlete-config", h.put)
 	rg.GET("/athlete-config/history", h.history)
+	rg.GET("/athlete-config/garmin-detected", h.getDetection)
+	rg.PUT("/athlete-config/garmin-detected", h.putDetection)
+	rg.GET("/athlete-config/effective", h.getEffective)
+	rg.PUT("/athlete-config/sources", h.putSources)
 }
 
 // get godoc
@@ -31,20 +36,22 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 // @Description  Returns the single athlete-config row (FTP, thresholds, max HR, lactate-threshold HR, HR-zone and optional power-zone boundaries), or null before any config has been set. Capture-only mirror; these values feed no fueling computation.
 // @Tags         athlete-config
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "{\"athlete_config\": AthleteConfig | null}"
+// @Success      200  {object}  map[string]interface{}  "{\"athlete_config\": AthleteConfig | null, \"sources\": [string]}"
 // @Security     BearerAuth
 // @Router       /athlete-config [get]
 func (h *Handlers) get(c *gin.Context) {
-	cfg, err := h.svc.Get(c.Request.Context())
+	ctx := c.Request.Context()
+	cfg, err := h.svc.Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "athlete_config_get_failed"})
 		return
 	}
-	if cfg == nil {
-		c.JSON(http.StatusOK, gin.H{"athlete_config": nil})
+	sources, err := h.svc.GetSources(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "athlete_config_get_failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"athlete_config": round(cfg)})
+	c.JSON(http.StatusOK, gin.H{"athlete_config": round(cfg), "sources": sources})
 }
 
 // put godoc
@@ -56,9 +63,17 @@ func (h *Handlers) get(c *gin.Context) {
 // @Param        body  body  AthleteConfig  true  "Athlete config payload"
 // @Success      200  {object}  map[string]interface{}  "{\"athlete_config\": AthleteConfig}"
 // @Failure      400  {object}  map[string]string  "athlete_config_value_invalid | invalid_json | idempotency_unsupported_for_put"
+// @Failure      403  {object}  map[string]string  "forbidden — the garmin identity cannot write the deliberate config"
 // @Security     BearerAuth
 // @Router       /athlete-config [put]
 func (h *Handlers) put(c *gin.Context) {
+	// The configured physiology and its threshold_history are exclusively
+	// deliberate human/coach records — the automated garmin writer is refused
+	// here and routed to PUT /athlete-config/garmin-detected instead.
+	if auth.ClientFromContext(c) == auth.ClientGarmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
 	raw, err := c.GetRawData()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
@@ -158,4 +173,152 @@ func round(cfg *AthleteConfig) *AthleteConfig {
 	out.ThresholdPaceSecPerKm = numfmt.Round1Ptr(cfg.ThresholdPaceSecPerKm)
 	out.ThresholdSwimPaceSecPer100m = numfmt.Round1Ptr(cfg.ThresholdSwimPaceSecPer100m)
 	return &out
+}
+
+// roundDetection rounds the detection's pace float at the response boundary.
+func roundDetection(d *GarminDetectedThresholds) *GarminDetectedThresholds {
+	if d == nil {
+		return nil
+	}
+	out := *d
+	out.ThresholdPaceSecPerKm = numfmt.Round1Ptr(d.ThresholdPaceSecPerKm)
+	return &out
+}
+
+// getDetection godoc
+// @Summary      Get the latest Garmin-detected thresholds (advisory singleton)
+// @Description  Returns the latest physiology Garmin detected (FTP, lactate-threshold HR, max HR, run threshold pace, HR/power zone maxima) with `detected_at`, or null before any sync has written one. Advisory evidence — NOT the configured values; see GET /athlete-config for the deliberate record and GET /athlete-config/effective for what computations use.
+// @Tags         athlete-config
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "{\"garmin_detected\": GarminDetectedThresholds | null}"
+// @Security     BearerAuth
+// @Router       /athlete-config/garmin-detected [get]
+func (h *Handlers) getDetection(c *gin.Context) {
+	d, err := h.svc.GetDetection(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "garmin_detected_get_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"garmin_detected": roundDetection(d)})
+}
+
+// putDetection godoc
+// @Summary      Record the latest Garmin-detected thresholds (garmin identity only)
+// @Description  Full-replaces the advisory detection singleton with the values the daily sync mapped from Garmin. Accepted ONLY from the garmin identity (others → 403); writing a detection never reads or mutates athlete_config or threshold_history. `Idempotency-Key` is NOT accepted on PUT.
+// @Tags         athlete-config
+// @Accept       json
+// @Produce      json
+// @Param        body  body  GarminDetectedThresholds  true  "Detected thresholds payload"
+// @Success      200  {object}  map[string]interface{}  "{\"garmin_detected\": GarminDetectedThresholds}"
+// @Failure      400  {object}  map[string]string  "athlete_config_value_invalid | invalid_json | idempotency_unsupported_for_put"
+// @Failure      403  {object}  map[string]string  "forbidden — only the garmin identity may write detections"
+// @Security     BearerAuth
+// @Router       /athlete-config/garmin-detected [put]
+func (h *Handlers) putDetection(c *gin.Context) {
+	if auth.ClientFromContext(c) != auth.ClientGarmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	var d GarminDetectedThresholds
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &d); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+			return
+		}
+	}
+	stored, err := h.svc.PutDetection(c.Request.Context(), &d)
+	if err != nil {
+		var verr *ValidationError
+		if errors.As(err, &verr) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "athlete_config_value_invalid", "field": verr.Field})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "garmin_detected_upsert_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"garmin_detected": roundDetection(stored)})
+}
+
+// getEffective godoc
+// @Summary      Get the effective physiology config (resolved manual + detected)
+// @Description  Returns the resolved view computations consume: per field, the Garmin-detected value where its source is `garmin` and a detection exists, the confirmed value otherwise. `field_sources` annotates each field with `manual` or `garmin`. With an empty source policy this equals GET /athlete-config field-for-field. Null before any config or applied detection exists.
+// @Tags         athlete-config
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "{\"effective\": EffectiveConfig | null}"
+// @Security     BearerAuth
+// @Router       /athlete-config/effective [get]
+func (h *Handlers) getEffective(c *gin.Context) {
+	eff, err := h.svc.EffectiveConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "athlete_config_effective_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"effective": roundEffective(eff)})
+}
+
+// roundEffective rounds the pace floats of the resolved config at the boundary.
+func roundEffective(eff *EffectiveConfig) *EffectiveConfig {
+	if eff == nil {
+		return nil
+	}
+	out := *eff
+	out.ThresholdPaceSecPerKm = numfmt.Round1Ptr(eff.ThresholdPaceSecPerKm)
+	out.ThresholdSwimPaceSecPer100m = numfmt.Round1Ptr(eff.ThresholdSwimPaceSecPer100m)
+	return &out
+}
+
+// sourcesRequest is the PUT /athlete-config/sources body: the full replacement
+// list of garmin-sourced field tokens.
+type sourcesRequest struct {
+	Sources []string `json:"sources"`
+}
+
+// putSources godoc
+// @Summary      Set the per-field source policy (which fields read from Garmin)
+// @Description  Full-replaces `garmin_sourced_fields` (empty = all manual). Whitelisted tokens: `ftp_watts`, `lactate_threshold_hr`, `max_hr`, `threshold_pace_sec_per_km`, `hr_zones`, `power_zones` (zones flip as whole sets). Mutates ONLY the policy — never the physiology values, never threshold history. Rejected from the garmin identity (403). Flipping a source changes the thresholds computations use; run POST /workouts/recompute-tss when derived TSS should follow. `Idempotency-Key` is NOT accepted on PUT.
+// @Tags         athlete-config
+// @Accept       json
+// @Produce      json
+// @Param        body  body  sourcesRequest  true  "Source policy payload"
+// @Success      200  {object}  map[string]interface{}  "{\"sources\": [string]}"
+// @Failure      400  {object}  map[string]string  "source_field_invalid | invalid_json | idempotency_unsupported_for_put"
+// @Failure      403  {object}  map[string]string  "forbidden — the garmin identity cannot set the policy"
+// @Security     BearerAuth
+// @Router       /athlete-config/sources [put]
+func (h *Handlers) putSources(c *gin.Context) {
+	if auth.ClientFromContext(c) == auth.ClientGarmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	var req sourcesRequest
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+			return
+		}
+	}
+	if req.Sources == nil {
+		req.Sources = []string{}
+	}
+	stored, err := h.svc.PutSources(c.Request.Context(), req.Sources)
+	if err != nil {
+		var serr *SourceFieldError
+		if errors.As(err, &serr) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source_field_invalid", "field": serr.Field})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "athlete_config_sources_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sources": stored})
 }

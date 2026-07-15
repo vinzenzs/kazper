@@ -95,6 +95,18 @@ type TrainingContext struct {
 	// zones) so the coach grounds intensity advice on the athlete's zones in the
 	// same call; null when no config row has been set.
 	AthleteConfig *athleteconfig.AthleteConfig `json:"athlete_config"`
+	// GarminDetected is the latest Garmin-detected physiology (advisory), so the
+	// coach sees drift against the confirmed config in one read; null when no
+	// detection has been recorded. (separate-garmin-threshold-detection)
+	GarminDetected *athleteconfig.GarminDetectedThresholds `json:"garmin_detected"`
+	// ThresholdSources is the active garmin-sourced field policy — which fields
+	// computations read from Garmin instead of the confirmed config; empty slice
+	// when all-manual.
+	ThresholdSources []string `json:"threshold_sources"`
+	// Effective is the resolved physiology computations actually consume (config
+	// with garmin-sourced fields swapped for the detection, per-field annotated);
+	// null when neither a config nor an applied detection exists.
+	Effective *athleteconfig.EffectiveConfig `json:"effective"`
 	// WattsPerKg is power-to-weight, derived (ftp_watts ÷ latest bodyweight kg)
 	// only when both are present and bodyweight is non-zero; null otherwise.
 	// Never stored.

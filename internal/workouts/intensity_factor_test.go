@@ -118,6 +118,30 @@ func TestIF_ResyncFillsNull(t *testing.T) {
 	assert.InDelta(t, 0.80, *w2.IntensityFactor, 0.001)
 }
 
+// 3.8 A garmin-sourced FTP drives the derivation: config FTP 278, detection FTP
+// 285, ftp_watts sourced → IF derives against the EFFECTIVE 285, not the
+// confirmed 278. Proves the effective provider is what the workouts service reads.
+func TestIF_DerivesAgainstEffectiveFTP(t *testing.T) {
+	f := setup(t)
+	cfgRepo := athleteconfig.NewRepo(f.pool)
+	ctx := context.Background()
+	require.NoError(t, cfgRepo.Upsert(ctx, &athleteconfig.AthleteConfig{FtpWatts: intVal(278)}))
+	require.NoError(t, cfgRepo.UpsertDetection(ctx, &athleteconfig.GarminDetectedThresholds{FtpWatts: intVal(285)}))
+	require.NoError(t, cfgRepo.PutSources(ctx, []string{athleteconfig.SourceFTPWatts}))
+
+	cfgSvc := athleteconfig.NewService(cfgRepo, f.pool)
+	svc := workouts.NewService(f.repo, f.pool, "UTC")
+	svc.SetAthleteConfigRepo(athleteconfig.NewEffectiveProvider(cfgSvc))
+	r := gin.New()
+	workouts.NewHandlers(svc).Register(r.Group("/"))
+
+	rec := doReq(t, r, http.MethodPost, "/workouts", ifBody("garmin:ifeff", "bike", at(7), `,"normalized_power_w":200`, ""))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	w := decodeWorkout(t, rec.Body.Bytes())
+	require.NotNil(t, w.IntensityFactor)
+	assert.InDelta(t, 0.70, *w.IntensityFactor, 0.001, "200/285 = 0.70, effective (detected) FTP")
+}
+
 // 3.7 Nil athlete-config repo (default setup, unwired) → write succeeds, no
 // derivation, no panic.
 func TestIF_NilConfigRepoNoPanic(t *testing.T) {
