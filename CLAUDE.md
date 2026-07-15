@@ -70,6 +70,16 @@ openspec/
 
 **Commit after every `/opsx:apply`.** When an apply finishes (tasks ticked, tests green, docs regenerated), propose a commit before moving to archive or the next change — don't pile multiple changes into one squash. Convention: `feat(<scope>): <one-line summary>` with the OpenSpec change directory included alongside the code/test/doc files (the tasks.md state belongs in the same commit as the implementation it describes). The archive `mv` is its own subsequent commit. Skipping this leaves `roadmap.md` showing `_uncommitted_` for the change.
 
+**The queue-drain loop.** When working through the `continuity.md` Up-next queue, each change completes the full cycle before the next one starts:
+
+1. `/opsx:apply <slug>` — implement, tick tasks, verify (tests/vet/swag).
+2. **Commit** the feat (code + change dir, convention above).
+3. `/opsx:archive <slug>` — sync delta specs into `openspec/specs/`, move to `archive/`; commit the archive `mv` as its own `chore(openspec)` commit.
+4. **Refresh `continuity.md`** (drop the shipped change from Up next, add its Notes entry; refresh `roadmap.md` when convenient — it keys off the archive commit).
+5. **Apply next** — take the new Up-next #1 and repeat.
+
+Never batch these (e.g. applying three changes and archiving them together): interleaved apply/archive keeps every commit attributable, keeps the specs in sync with what's actually on `main`, and keeps `continuity.md` truthful for whoever (or whichever session) picks up next. When multiple queued changes carry migrations, re-verify the on-disk head at each apply — the slot is claimed at apply time, not proposal time. Parallel sessions do work this repo concurrently: re-check `openspec/changes/` and `continuity.md` state before acting on either, and expect them to have moved.
+
 `continuity.md` (operational queue: in-progress + up-next + backlog) and `roadmap.md` (historical) are derived companion docs maintained by the `continuity` and `roadmap` skills respectively.
 
 When reviewing what to build next: read `continuity.md` for the operational state (Up next + Backlog carry the triage framing) and the `archive/` for precedent on shape decisions (e.g. unit isolation, tri-state PATCH, empty-string-clear).

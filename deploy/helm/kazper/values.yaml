@@ -97,9 +97,10 @@ config:
 # -- Reference an externally-managed Secret. When set, the chart will NOT
 #    render its own Secret; the Deployment's envFrom uses this name.
 #    The Secret must contain keys: DATABASE_URL, MOBILE_API_TOKEN,
-#    AGENT_API_TOKEN (and optionally ANTHROPIC_API_KEY, plus GARMIN_API_TOKEN +
-#    GARMIN_TOKEN_ENC_KEY when the backend Garmin integration is enabled, and
-#    FCM_SERVICE_ACCOUNT_JSON when Android push is enabled).
+#    AGENT_API_TOKEN (and optionally ANTHROPIC_API_KEY, FEED_SECRET when the
+#    public race feed is enabled, plus GARMIN_API_TOKEN + GARMIN_TOKEN_ENC_KEY
+#    when the backend Garmin integration is enabled, and FCM_SERVICE_ACCOUNT_JSON
+#    when Android push is enabled).
 existingSecret: ""
 
 # -- Secret values populated into a chart-managed Secret.
@@ -108,6 +109,11 @@ existingSecret: ""
 #    OPTIONAL:
 #       anthropicApiKey — empty falls back to 503 vision_unavailable on
 #                          /meals/from_photo (existing handler behaviour).
+#       feedSecret      — the shared secret gating GET /public/race-feed. When
+#                          set, the backend enables the endpoint and checks the
+#                          X-Feed-Key header against it; empty ⇒ 503 feed_disabled
+#                          (endpoint off). This is the API server's copy — the
+#                          public-site pod holds NO feed secret (build-time bake).
 #    Garmin integration (opt-in): set garminApiToken to enable the backend's
 #       /garmin/* endpoints under the `garmin` bearer identity (it must equal the
 #       garmin-bridge's GARMIN_API_TOKEN). When garminApiToken is set,
@@ -131,6 +137,7 @@ secrets:
   mobileApiToken: ""
   agentApiToken: ""
   anthropicApiKey: ""
+  feedSecret: ""
   garminApiToken: ""
   garminTokenEncKey: ""
   fcmServiceAccountJson: ""

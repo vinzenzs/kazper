@@ -73,21 +73,3 @@ jobs:
             FEED_URL=${{ vars.FEED_URL }}
             SITE_URL=${{ vars.PUBLIC_SITE_URL }}
             BASE_PATH=/
-
-      # Roll the in-cluster Deployment onto the freshly-pushed image. Mechanism is
-      # operator-choice (D3): this default does a `rollout restart` (works with a
-      # mutable :latest tag + imagePullPolicy Always), gated on a kubeconfig
-      # secret so the workflow stays valid without cluster creds — when absent,
-      # the image is published and a GitOps tool / the next `helm upgrade` picks
-      # it up. Only runs after a successful build+push.
-      - name: Roll Deployment
-        if: ${{ secrets.KUBECONFIG_B64 != '' }}
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-          NAMESPACE: ${{ vars.PUBLIC_SITE_NAMESPACE || 'default' }}
-          DEPLOYMENT: ${{ vars.PUBLIC_SITE_DEPLOYMENT || 'kazper-public-site' }}
-        run: |
-          echo "$KUBECONFIG_B64" | base64 -d > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
-          kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
-          kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=120s

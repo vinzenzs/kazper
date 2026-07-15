@@ -28,11 +28,20 @@ When the chart owns the Secret (default), three values MUST be set or
 /meals/from_photo` endpoint returns `503 vision_unavailable` (existing
 behaviour); the rest of the API works normally.
 
+`secrets.feedSecret` is optional. When set, the backend enables the public
+race feed (`GET /public/race-feed`) and validates the `X-Feed-Key` request
+header against it (constant-time); when empty the endpoint returns `503
+feed_disabled`. This is the API server's copy of the secret — the optional
+`publicSite` pod deliberately holds **no** feed secret (it bakes the feed into
+static files at image-build time), so set the same value as the build's
+`FEED_SECRET` when you run both.
+
 To manage the Secret outside the chart instead (e.g., applied via
 `kubectl apply` from a SOPS-encrypted file), pass `--set
 existingSecret=my-secret-name`. The Secret must contain these keys:
 `DATABASE_URL`, `MOBILE_API_TOKEN`, `AGENT_API_TOKEN` (and optionally
-`ANTHROPIC_API_KEY`, plus `FCM_SERVICE_ACCOUNT_JSON` when push is enabled).
+`ANTHROPIC_API_KEY`, `FEED_SECRET` when the public race feed is enabled, plus
+`FCM_SERVICE_ACCOUNT_JSON` when push is enabled).
 
 ## Push notifications (opt-in)
 
