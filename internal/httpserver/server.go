@@ -28,6 +28,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/devices"
 	"github.com/vinzenzs/kazper/internal/effortanalytics"
 	"github.com/vinzenzs/kazper/internal/energy"
+	"github.com/vinzenzs/kazper/internal/expenditure"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/garminauth"
 	"github.com/vinzenzs/kazper/internal/garmincontrol"
@@ -257,6 +258,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	hydrationBalanceRepo := hydrationbalance.NewRepo(pool)
 	hydrationBalanceSvc := hydrationbalance.NewService(hydrationBalanceRepo)
 	energySvc := energy.NewService(mealsRepo, workoutsRepo, bodyWeightRepo)
+	// Adaptive expenditure reads intake from meals and the mass signal from the
+	// body-weight capability's own trend (one smoothing truth) plus the raw
+	// weigh-ins behind its gate — narrow reads, no writes, no goals coupling.
+	expenditureSvc := expenditure.NewService(mealsRepo, bodyWeightSvc, bodyWeightRepo)
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
 	// (add-meal-workout-link).
@@ -468,6 +473,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	syncStatusSvc.SetLogger(logger)
 	garminsyncstatus.NewHandlers(syncStatusSvc, garminEnabled).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
+	expenditure.NewHandlers(expenditureSvc, cfg.DefaultUserTZ, logger).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,

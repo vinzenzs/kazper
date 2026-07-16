@@ -1333,6 +1333,7 @@ In `~/.claude/mcp.json` (or via `claude mcp add`):
 | `patch_workout_fuel`          | `PATCH /workout-fuel/{id}`             | Edit name / quantitative fields / note / workout link.         |
 | `delete_workout_fuel`         | `DELETE /workout-fuel/{id}`            | Remove a workout-fuel entry.                                   |
 | `weekly_energy_summary`       | `GET /energy/availability?from=…&to=…&tz=…&lean_mass_kg=…&body_fat_pct=…` | Per-day Energy Availability + window aggregate with Loucks bands. Days missing `kcal_burned` are flagged and excluded from `window.avg_ea`. |
+| `energy_expenditure`          | `GET /nutrition/expenditure?from=…&to=…&tz=…` | Actual TDEE from energy balance: `mean(intake over logged days) − Δ trend-weight × 7700 ÷ days`, over the smoothed 7-day weight trend. Returns every input behind the number. Gates to a null estimate + `reason` under 14 logged days or 5 weigh-ins. Advisory — reads no goals. |
 | `create_phase`                | `POST /phases`                         | Create a training phase (named date range tagged `base`/`build`/`peak`/`recovery`/`race_week`/`off_season`/`other`). Optional `default_template_id` makes the phase drive adherence; optional `methodology` (Markdown coach reference) surfaces via `/context/training`. |
 | `list_phases`                 | `GET /phases?from=…&to=…`              | List phases intersecting a window (max 730 days). |
 | `get_phase`                   | `GET /phases/{id}`                     | Fetch one phase, including resolved `default_template_name`. |

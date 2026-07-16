@@ -5290,6 +5290,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/nutrition/expenditure": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Estimates average daily expenditure over the window from the two series already logged: ` + "`" + `mean(intake over logged days) − Δ trend-weight × 7700 kcal/kg ÷ window_days` + "`" + `. The mass signal is the body-weight capability's own smoothed trend (7-day trailing) evaluated at the window ends; the values and the dates they were taken at are echoed. A day counts as logged only when it holds at least one meal — an unlogged day is excluded from the mean and counted in ` + "`" + `days_unlogged` + "`" + `, never read as zero intake. Honesty gates degrade to ` + "`" + `200` + "`" + ` with a null estimate: fewer than 14 logged days → ` + "`" + `insufficient_logged_days` + "`" + `; fewer than 5 weigh-ins in the window → ` + "`" + `insufficient_weigh_ins` + "`" + `. 21–28 day windows read most honestly; a window spanning deliberate glycogen manipulation (carb-load, race taper) moves water mass, not tissue, and distorts the estimate. Under-logged snacks bias the number down. Compute-on-read: persists nothing, reads no goals — comparing against a target and applying a change stay with the caller and the goals endpoints.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Adaptive energy expenditure (TDEE) from energy balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD; max 92-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/expenditure.Expenditure"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/performance/pmc": {
             "get": {
                 "security": [
@@ -13077,6 +13131,97 @@ const docTemplate = `{
                 },
                 "total_days": {
                     "type": "integer"
+                }
+            }
+        },
+        "expenditure.DayIntake": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "kcal": {
+                    "type": "number"
+                },
+                "logged": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "expenditure.Expenditure": {
+            "type": "object",
+            "properties": {
+                "expenditure_kcal_per_day": {
+                    "type": "number"
+                },
+                "intake": {
+                    "$ref": "#/definitions/expenditure.Intake"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "trend": {
+                    "$ref": "#/definitions/expenditure.TrendEnds"
+                },
+                "window": {
+                    "$ref": "#/definitions/expenditure.Window"
+                }
+            }
+        },
+        "expenditure.Intake": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/expenditure.DayIntake"
+                    }
+                },
+                "days_logged": {
+                    "type": "integer"
+                },
+                "days_unlogged": {
+                    "type": "integer"
+                },
+                "mean_kcal_logged_days": {
+                    "type": "number"
+                },
+                "weigh_ins": {
+                    "type": "integer"
+                }
+            }
+        },
+        "expenditure.TrendEnds": {
+            "type": "object",
+            "properties": {
+                "delta_kg": {
+                    "type": "number"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "end_kg": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "start_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "expenditure.Window": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
                 }
             }
         },

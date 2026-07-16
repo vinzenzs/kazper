@@ -1306,6 +1306,65 @@ definitions:
       total_days:
         type: integer
     type: object
+  expenditure.DayIntake:
+    properties:
+      date:
+        type: string
+      kcal:
+        type: number
+      logged:
+        type: boolean
+    type: object
+  expenditure.Expenditure:
+    properties:
+      expenditure_kcal_per_day:
+        type: number
+      intake:
+        $ref: '#/definitions/expenditure.Intake'
+      reason:
+        type: string
+      trend:
+        $ref: '#/definitions/expenditure.TrendEnds'
+      window:
+        $ref: '#/definitions/expenditure.Window'
+    type: object
+  expenditure.Intake:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/expenditure.DayIntake'
+        type: array
+      days_logged:
+        type: integer
+      days_unlogged:
+        type: integer
+      mean_kcal_logged_days:
+        type: number
+      weigh_ins:
+        type: integer
+    type: object
+  expenditure.TrendEnds:
+    properties:
+      delta_kg:
+        type: number
+      end_date:
+        type: string
+      end_kg:
+        type: number
+      start_date:
+        type: string
+      start_kg:
+        type: number
+    type: object
+  expenditure.Window:
+    properties:
+      days:
+        type: integer
+      from:
+        type: string
+      to:
+        type: string
+    type: object
   fitnessmetrics.Snapshot:
     properties:
       acute_load:
@@ -7893,6 +7952,55 @@ paths:
       summary: Get a multisport workout template by id
       tags:
       - multisport-templates
+  /nutrition/expenditure:
+    get:
+      description: 'Estimates average daily expenditure over the window from the two
+        series already logged: `mean(intake over logged days) − Δ trend-weight × 7700
+        kcal/kg ÷ window_days`. The mass signal is the body-weight capability''s own
+        smoothed trend (7-day trailing) evaluated at the window ends; the values and
+        the dates they were taken at are echoed. A day counts as logged only when
+        it holds at least one meal — an unlogged day is excluded from the mean and
+        counted in `days_unlogged`, never read as zero intake. Honesty gates degrade
+        to `200` with a null estimate: fewer than 14 logged days → `insufficient_logged_days`;
+        fewer than 5 weigh-ins in the window → `insufficient_weigh_ins`. 21–28 day
+        windows read most honestly; a window spanning deliberate glycogen manipulation
+        (carb-load, race taper) moves water mass, not tissue, and distorts the estimate.
+        Under-logged snacks bias the number down. Compute-on-read: persists nothing,
+        reads no goals — comparing against a target and applying a change stay with
+        the caller and the goals endpoints.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD; max 92-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/expenditure.Expenditure'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Adaptive energy expenditure (TDEE) from energy balance
+      tags:
+      - nutrition
   /performance/pmc:
     get:
       description: 'Compute-on-read Coggan PMC over stored completed-workout TSS:
