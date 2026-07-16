@@ -102,6 +102,11 @@ type Service struct {
 	meals       *meals.Repo
 	hydration   *hydration.Repo
 	workoutFuel *workoutfuel.Repo
+
+	// config is the optional effective-athlete-config reader behind the fueling
+	// plan's FTP-derived burn estimate, wired via SetConfigReader. nil degrades
+	// that plan to ftp_missing (fail-open) and touches nothing else.
+	config ConfigReader
 }
 
 func NewService(workoutsRepo *workouts.Repo, mealsRepo *meals.Repo, hydrationRepo *hydration.Repo, workoutFuelRepo *workoutfuel.Repo) *Service {

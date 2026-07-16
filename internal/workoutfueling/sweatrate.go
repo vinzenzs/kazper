@@ -23,7 +23,7 @@ var (
 // of the physiological band — a negative loss (net weight gain) or a rate above
 // maxPlausibleRateMlPerHr. See design D4: warn, don't refuse.
 const (
-	implausibleWarning     = "implausible_result"
+	implausibleWarning      = "implausible_result"
 	maxPlausibleRateMlPerHr = 5000.0
 )
 

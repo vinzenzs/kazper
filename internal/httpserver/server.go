@@ -442,6 +442,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// wired after trainingPlanSvc since it is the program provider.
 	workoutcompliance.NewHandlers(workoutcompliance.NewService(workoutsRepo, trainingPlanSvc)).Register(api)
 	workoutfueling.NewHandlers(fuelingSvc).Register(api)
+	// The fueling plan turns a planned session's TSS into work via the effective
+	// FTP. Fail-open like every other config consumer: an unset FTP degrades the
+	// plan to duration-based intake guidance, never an error.
+	fuelingSvc.SetConfigReader(athleteConfigEffective)
 	workoutfuel.NewHandlers(workoutFuelSvc).Register(api)
 	bodyweight.NewHandlers(bodyWeightSvc, cfg.DefaultUserTZ, logger).Register(api)
 	recoverymetrics.NewHandlers(recoveryMetricsSvc).Register(api)

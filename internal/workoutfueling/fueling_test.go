@@ -29,6 +29,7 @@ func init() {
 
 type fixture struct {
 	r            *gin.Engine
+	svc          *workoutfueling.Service
 	productsRepo *products.Repo
 	mealsRepo    *meals.Repo
 	hydRepo      *hydration.Repo
@@ -49,7 +50,7 @@ func setup(t *testing.T) *fixture {
 	rg := r.Group("/")
 	workoutfueling.NewHandlers(svc).Register(rg)
 	return &fixture{
-		r: r, productsRepo: pRepo, mealsRepo: mRepo, hydRepo: hRepo, fuelRepo: fRepo, workoutsRepo: wRepo,
+		r: r, svc: svc, productsRepo: pRepo, mealsRepo: mRepo, hydRepo: hRepo, fuelRepo: fRepo, workoutsRepo: wRepo,
 	}
 }
 

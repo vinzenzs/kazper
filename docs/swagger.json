@@ -10661,6 +10661,73 @@
                 }
             }
         },
+        "/workouts/{id}/fueling-plan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "For a PLANNED workout, estimates the session's work and carbohydrate burn and prescribes intake. Work: `kJ = planned_tss / 100 × effective FTP × 3.6` (exact under the TSS definition), with energy per the standard cycling kJ≈kcal convention. Carb burn: kcal × a CHO fraction selected by planned IF (`\u003c 0.60` → 45%, `0.60–0.75` → 55%, `0.75–0.85` → 70%, `\u003e 0.85` → 80%; IF derived as `sqrt(planned_tss/100 ÷ hours)`) ÷ 4 kcal/g. Intake: the duration ladder (`\u003c 60 min` → 0, `60–150 min` → 30–60 g/hr, `\u003e 150 min` → 60–90 g/hr), its ceiling clamped by the optional `carbs_per_hr` capacity (the athlete's tested gut tolerance — discovered in rehearsal, not by this endpoint). `projected_deficit_g` is burn minus the maximum prescribed intake: the number that says whether post-ride carbs need emphasis. Every input behind the numbers is echoed. Degradations state what they lack: no planned TSS and no duration → `plan_data_missing`; duration without TSS, or missing effective FTP → the intake ladder without a burn estimate (`tss_missing` / `ftp_missing`). A non-planned workout returns 409 — the pre-session question is the product. Compute-on-read: persists nothing, feeds no daily nutrition total. These are conventions and a planning anchor, not a metabolic lab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Planned workout fueling plan: burn estimate + intake prescription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Tested gut capacity in g/hr (\u003e 0, \u003c= 130); clamps the prescription's upper bound",
+                        "name": "carbs_per_hr",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/workoutfueling.FuelingPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "carbs_per_hr_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "workout_not_planned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/fulfill": {
             "post": {
                 "security": [
@@ -16809,6 +16876,58 @@
                 }
             }
         },
+        "workoutfueling.FuelingPlan": {
+            "type": "object",
+            "properties": {
+                "estimated_carb_burn_g": {
+                    "type": "number"
+                },
+                "estimated_kcal": {
+                    "type": "number"
+                },
+                "estimated_kj": {
+                    "type": "number"
+                },
+                "inputs": {
+                    "$ref": "#/definitions/workoutfueling.FuelingPlanInputs"
+                },
+                "prescription": {
+                    "$ref": "#/definitions/workoutfueling.Prescription"
+                },
+                "projected_deficit_g": {
+                    "type": "number"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "workoutfueling.FuelingPlanInputs": {
+            "type": "object",
+            "properties": {
+                "carbs_per_hr_limit": {
+                    "type": "number"
+                },
+                "cho_fraction": {
+                    "type": "number"
+                },
+                "duration_min": {
+                    "type": "number"
+                },
+                "ftp_watts": {
+                    "type": "integer"
+                },
+                "planned_if": {
+                    "type": "number"
+                },
+                "planned_tss": {
+                    "type": "number"
+                }
+            }
+        },
         "workoutfueling.FuelingWindow": {
             "type": "object",
             "properties": {
@@ -16840,6 +16959,23 @@
                 },
                 "totals": {
                     "$ref": "#/definitions/workoutfueling.WorkoutFuelTotals"
+                }
+            }
+        },
+        "workoutfueling.Prescription": {
+            "type": "object",
+            "properties": {
+                "per_hour_max_g": {
+                    "type": "number"
+                },
+                "per_hour_min_g": {
+                    "type": "number"
+                },
+                "session_total_max_g": {
+                    "type": "number"
+                },
+                "session_total_min_g": {
+                    "type": "number"
                 }
             }
         },

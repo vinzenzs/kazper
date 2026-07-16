@@ -3799,6 +3799,40 @@ definitions:
       totals:
         $ref: '#/definitions/summary.Totals'
     type: object
+  workoutfueling.FuelingPlan:
+    properties:
+      estimated_carb_burn_g:
+        type: number
+      estimated_kcal:
+        type: number
+      estimated_kj:
+        type: number
+      inputs:
+        $ref: '#/definitions/workoutfueling.FuelingPlanInputs'
+      prescription:
+        $ref: '#/definitions/workoutfueling.Prescription'
+      projected_deficit_g:
+        type: number
+      reason:
+        type: string
+      workout_id:
+        type: string
+    type: object
+  workoutfueling.FuelingPlanInputs:
+    properties:
+      carbs_per_hr_limit:
+        type: number
+      cho_fraction:
+        type: number
+      duration_min:
+        type: number
+      ftp_watts:
+        type: integer
+      planned_if:
+        type: number
+      planned_tss:
+        type: number
+    type: object
   workoutfueling.FuelingWindow:
     properties:
       end:
@@ -3820,6 +3854,17 @@ definitions:
         type: integer
       totals:
         $ref: '#/definitions/workoutfueling.WorkoutFuelTotals'
+    type: object
+  workoutfueling.Prescription:
+    properties:
+      per_hour_max_g:
+        type: number
+      per_hour_min_g:
+        type: number
+      session_total_max_g:
+        type: number
+      session_total_min_g:
+        type: number
     type: object
   workoutfueling.SweatRate:
     properties:
@@ -11440,6 +11485,66 @@ paths:
       security:
       - BearerAuth: []
       summary: 'Workout fueling: pre / intra / post windows'
+      tags:
+      - workouts
+  /workouts/{id}/fueling-plan:
+    get:
+      description: 'For a PLANNED workout, estimates the session''s work and carbohydrate
+        burn and prescribes intake. Work: `kJ = planned_tss / 100 × effective FTP
+        × 3.6` (exact under the TSS definition), with energy per the standard cycling
+        kJ≈kcal convention. Carb burn: kcal × a CHO fraction selected by planned IF
+        (`< 0.60` → 45%, `0.60–0.75` → 55%, `0.75–0.85` → 70%, `> 0.85` → 80%; IF
+        derived as `sqrt(planned_tss/100 ÷ hours)`) ÷ 4 kcal/g. Intake: the duration
+        ladder (`< 60 min` → 0, `60–150 min` → 30–60 g/hr, `> 150 min` → 60–90 g/hr),
+        its ceiling clamped by the optional `carbs_per_hr` capacity (the athlete''s
+        tested gut tolerance — discovered in rehearsal, not by this endpoint). `projected_deficit_g`
+        is burn minus the maximum prescribed intake: the number that says whether
+        post-ride carbs need emphasis. Every input behind the numbers is echoed. Degradations
+        state what they lack: no planned TSS and no duration → `plan_data_missing`;
+        duration without TSS, or missing effective FTP → the intake ladder without
+        a burn estimate (`tss_missing` / `ftp_missing`). A non-planned workout returns
+        409 — the pre-session question is the product. Compute-on-read: persists nothing,
+        feeds no daily nutrition total. These are conventions and a planning anchor,
+        not a metabolic lab.'
+      parameters:
+      - description: Workout UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Tested gut capacity in g/hr (> 0, <= 130); clamps the prescription's
+          upper bound
+        in: query
+        name: carbs_per_hr
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workoutfueling.FuelingPlan'
+        "400":
+          description: carbs_per_hr_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: workout_not_planned
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Planned workout fueling plan: burn estimate + intake prescription'
       tags:
       - workouts
   /workouts/{id}/fulfill:

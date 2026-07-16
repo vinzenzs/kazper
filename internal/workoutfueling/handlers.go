@@ -23,6 +23,54 @@ func NewHandlers(svc *Service) *Handlers {
 func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/workouts/:id/fueling", h.fueling)
 	rg.GET("/workouts/:id/sweat-rate", h.sweatRate)
+	rg.GET("/workouts/:id/fueling-plan", h.fuelingPlan)
+}
+
+// fuelingPlan godoc
+// @Summary      Planned workout fueling plan: burn estimate + intake prescription
+// @Description  For a PLANNED workout, estimates the session's work and carbohydrate burn and prescribes intake. Work: `kJ = planned_tss / 100 × effective FTP × 3.6` (exact under the TSS definition), with energy per the standard cycling kJ≈kcal convention. Carb burn: kcal × a CHO fraction selected by planned IF (`< 0.60` → 45%, `0.60–0.75` → 55%, `0.75–0.85` → 70%, `> 0.85` → 80%; IF derived as `sqrt(planned_tss/100 ÷ hours)`) ÷ 4 kcal/g. Intake: the duration ladder (`< 60 min` → 0, `60–150 min` → 30–60 g/hr, `> 150 min` → 60–90 g/hr), its ceiling clamped by the optional `carbs_per_hr` capacity (the athlete's tested gut tolerance — discovered in rehearsal, not by this endpoint). `projected_deficit_g` is burn minus the maximum prescribed intake: the number that says whether post-ride carbs need emphasis. Every input behind the numbers is echoed. Degradations state what they lack: no planned TSS and no duration → `plan_data_missing`; duration without TSS, or missing effective FTP → the intake ladder without a burn estimate (`tss_missing` / `ftp_missing`). A non-planned workout returns 409 — the pre-session question is the product. Compute-on-read: persists nothing, feeds no daily nutrition total. These are conventions and a planning anchor, not a metabolic lab.
+// @Tags         workouts
+// @Produce      json
+// @Param        id            path   string  true   "Workout UUID"
+// @Param        carbs_per_hr  query  number  false  "Tested gut capacity in g/hr (> 0, <= 130); clamps the prescription's upper bound"
+// @Success      200  {object}  FuelingPlan
+// @Failure      400  {object}  map[string]string  "carbs_per_hr_invalid"
+// @Failure      404  {object}  map[string]string  "not_found"
+// @Failure      409  {object}  map[string]string  "workout_not_planned"
+// @Security     BearerAuth
+// @Router       /workouts/{id}/fueling-plan [get]
+func (h *Handlers) fuelingPlan(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+
+	var capacity *float64
+	if s := c.Query("carbs_per_hr"); s != "" {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "carbs_per_hr_invalid"})
+			return
+		}
+		capacity = &v
+	}
+
+	out, err := h.svc.FuelingPlanFor(c.Request.Context(), id, capacity)
+	if err != nil {
+		switch {
+		case errors.Is(err, workouts.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		case errors.Is(err, ErrWorkoutNotPlanned):
+			c.JSON(http.StatusConflict, gin.H{"error": "workout_not_planned"})
+		case errors.Is(err, ErrCarbsPerHrInvalid):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "carbs_per_hr_invalid"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "fueling_plan_failed"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // fueling godoc
