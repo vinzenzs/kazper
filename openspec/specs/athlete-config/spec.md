@@ -100,11 +100,16 @@ fail-open: an unset threshold never fails a workout write. Its threshold fields
 SHALL additionally be consumed by the `race-pacing-plan` capability's
 compute-on-read per-leg pacing targets (bike power band, run pace band, swim
 pace band); an unset threshold degrades the affected legs of that plan rather
-than erroring (see the `race-pacing-plan` spec). Beyond those consumptions, the
-config SHALL remain otherwise-unconsumed: it does NOT relate the workouts
-capability's stored `secs_in_zone_*` to these zone boundaries, and does NOT feed
-any value into the race-fueling/raceprep intensity or carb-load math. Those
-remaining consumptions are explicit follow-ups outside this change.
+than erroring (see the `race-pacing-plan` spec). Its **`ftp_watts` field** (via
+the effective-config resolution) SHALL additionally be consumed by the
+`workout-fuel` capability's compute-on-read workout fueling plan to estimate a
+planned session's work and carbohydrate burn; a missing FTP degrades that plan
+to duration-based intake guidance rather than erroring (see the `workout-fuel`
+spec). Beyond those consumptions, the config SHALL remain otherwise-unconsumed:
+it does NOT relate the workouts capability's stored `secs_in_zone_*` to these
+zone boundaries, and does NOT feed any value into the race-fueling/raceprep
+intensity or carb-load math. Those remaining consumptions are explicit
+follow-ups outside this change.
 
 #### Scenario: Zone boundaries feed workout target resolution
 
@@ -136,6 +141,14 @@ remaining consumptions are explicit follow-ups outside this change.
   `ftp_watts`
 - **AND** updating `ftp_watts` changes the band on the next pacing-plan read
   (compute-on-read, nothing stored)
+
+#### Scenario: FTP feeds the workout fueling plan
+
+- **WHEN** effective `ftp_watts` resolves and a planned ride carries planned TSS
+- **AND** the client requests `GET /workouts/{id}/fueling-plan`
+- **THEN** the plan's estimated work derives from planned TSS × effective FTP
+- **AND** an unset FTP degrades the plan to duration-based intake guidance
+  rather than erroring
 
 #### Scenario: Config is not merged into summary totals
 
