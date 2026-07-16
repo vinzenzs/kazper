@@ -1,0 +1,54 @@
+## ADDED Requirements
+
+### Requirement: A planned workout's heat load and suggested adjustment are computed on read
+
+The system SHALL expose `GET /api/v1/workouts/{id}/heat` for a **planned** workout: resolve the
+session date's location via the location-periods primitive (resolved name and source echoed;
+unresolvable → `200` with `reason: "location_unconfigured"`), fetch the session window's
+forecast (failure → `reason: "weather_unavailable"`), and compute: **`heat_load_c`** — a
+composite °C-equivalent from the heat index (temperature × humidity) with bounded wind-cooling
+and cloud-cover reductions (fixed documented constants); an **acclimatization level**
+(`low` < 2, `medium` 2–4, `good` ≥ 5 qualifying sessions: outdoor completed, ≥ 60 min, session
+heat index ≥ 25 °C, trailing 14 days — count and qualifying workout ids echoed); and a
+**suggested adjustment**: a percentage reduction off the effective baseline (FTP-anchored for
+bike, threshold-pace for run) from a fixed heat-load × duration-band × acclimatization table
+printed in full in the response documentation, plus a fluid note scaled from the measured sweat
+rate when derivable (generic guidance flagged otherwise). A planned `indoor` session SHALL
+return `200 {not_applicable: true}` without fetching weather; a null environment SHALL compute
+with `assumed_outdoor: true`; a non-planned workout SHALL return `409 workout_not_planned`.
+The read SHALL be compute-on-read, persist nothing, and write no targets anywhere — it is
+advisory input to the coach's existing confirmed update flows.
+
+#### Scenario: A hot-day session gets load, level, and suggestion
+
+- **WHEN** tomorrow's 2-hour outdoor ride forecasts 31 °C / 55 % humidity, and 6 qualifying
+  hot outdoor sessions exist in the trailing 14 days
+- **THEN** the response reports the composite `heat_load_c`, `acclimatization: "good"` with its
+  evidence, a suggested percentage off effective FTP, and the fluid note
+
+#### Scenario: Indoor sessions are not applicable
+
+- **WHEN** the planned workout is marked `indoor`
+- **THEN** the response is `200` with `not_applicable: true` and no weather fetch occurs
+
+#### Scenario: Unknown environment is assumed, visibly
+
+- **WHEN** the planned workout has a null environment
+- **THEN** the heat computation runs with `assumed_outdoor: true` in the response
+
+#### Scenario: Weather trouble degrades honestly
+
+- **WHEN** the forecast fetch fails
+- **THEN** the response is `200` with `reason: "weather_unavailable"` and no adjustment
+
+### Requirement: The heat read is available over MCP
+
+The system SHALL expose a `workout_heat` MCP tool (read tier) issuing a single
+`GET /api/v1/workouts/{id}/heat` and forwarding the body verbatim. The description SHALL state
+that the model is a practice heuristic (not WBGT), strictly advisory, and that applying an
+adjustment means proposing edits to the scheduled workout through the existing confirmed flows.
+
+#### Scenario: The agent reads tomorrow's heat picture in one call
+
+- **WHEN** the agent invokes `workout_heat` for tomorrow's planned session
+- **THEN** one GET is issued and the load, level, and suggestion return verbatim
