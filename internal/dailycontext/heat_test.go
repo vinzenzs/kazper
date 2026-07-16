@@ -183,6 +183,36 @@ func TestBuildFor_HeatBlock_PartialDaysKeepTheBlock(t *testing.T) {
 	assert.InDelta(t, 34.0, out.Heat.Tomorrow.HeatLoadC, 0.01)
 }
 
+// The assumed START must reach the check-in too: "at your usual 06:00" is the
+// framing, and a silently invented hour would be worse than no number.
+func TestBuildFor_HeatBlock_AssumedStartSurvives(t *testing.T) {
+	f := setup(t)
+	date := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	id := planOn(t, f, date)
+	rep := hotReport(id, "2026-07-15", 31.0)
+	rep.StartSource = heat.StartAssumed
+	rep.AssumedStart = "06:00"
+	f.svc.SetHeatProvider(&fakeHeat{reports: map[uuid.UUID]*heat.Report{id: rep}})
+
+	out, err := f.svc.BuildFor(context.Background(), date, time.UTC)
+	require.NoError(t, err)
+
+	require.NotNil(t, out.Heat)
+	require.NotNil(t, out.Heat.Today)
+	assert.Equal(t, "06:00", out.Heat.Today.AssumedStart)
+
+	// A session with a real time carries no assumption into the block.
+	rep.StartSource = heat.StartFromWorkout
+	rep.AssumedStart = ""
+	f.svc.SetHeatProvider(&fakeHeat{reports: map[uuid.UUID]*heat.Report{id: rep}})
+	out, err = f.svc.BuildFor(context.Background(), date, time.UTC)
+	require.NoError(t, err)
+	assert.Empty(t, out.Heat.Today.AssumedStart)
+	raw, err := json.Marshal(out.Heat.Today)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "assumed_start")
+}
+
 // assumed_outdoor must survive into the block — a suggestion resting on an
 // assumption should carry it.
 func TestBuildFor_HeatBlock_AssumedOutdoorSurvives(t *testing.T) {

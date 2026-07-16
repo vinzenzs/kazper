@@ -1898,6 +1898,8 @@ definitions:
         $ref: '#/definitions/heat.AcclimEvidence'
       assumed_outdoor:
         type: boolean
+      assumed_start:
+        type: boolean
       conditions:
         $ref: '#/definitions/heat.Conditions'
       date:
@@ -1914,11 +1916,37 @@ definitions:
         type: boolean
       reason:
         type: string
+      start_source:
+        $ref: '#/definitions/heat.StartSource'
       suggested_adjustment:
         $ref: '#/definitions/heat.Adjustment'
+      window:
+        allOf:
+        - $ref: '#/definitions/heat.ScoredWindow'
+        description: |-
+          Window is the time range actually scored, StartSource names the rule that
+          produced it, and AssumedStart flags that the hour was guessed rather than
+          stated — a suggestion resting on an assumed start must say so.
       workout_id:
         type: string
     type: object
+  heat.ScoredWindow:
+    properties:
+      from:
+        type: string
+      to:
+        type: string
+    type: object
+  heat.StartSource:
+    enum:
+    - workout
+    - assumed
+    - param
+    type: string
+    x-enum-varnames:
+    - StartFromWorkout
+    - StartAssumed
+    - StartFromParam
   hydration.Daily:
     properties:
       date:
@@ -12152,6 +12180,13 @@ paths:
         effective baseline (FTP for bike, threshold pace for run) from a fixed heat-load
         × duration × acclimatization table, plus a fluid note scaled from the measured
         sweat rate when one exists (a generic 600 ml/hr default is flagged as such).
+        **Window anchoring**: a session scheduled by date alone carries no start time
+        (it lands at midnight), so the forecast would otherwise score pre-dawn hours
+        — such a session is re-anchored at the configured `DEFAULT_TRAINING_START`
+        and the response says `assumed_start: true` with `start_source: "assumed"`.
+        A session with a real start time anchors there (`start_source: "workout"`).
+        The optional `start=HH:MM` overrides both (`start_source: "param"`) — two
+        calls answer "before 07:00 vs past 09:00". The scored `window` is always echoed.
         Degradations are `200`s: an `indoor` planned session returns `not_applicable:
         true` without fetching weather; a null environment computes with `assumed_outdoor:
         true`; no resolvable location → `reason: "location_unconfigured"`; forecast
@@ -12167,6 +12202,11 @@ paths:
         name: id
         required: true
         type: string
+      - description: Score the session as if it started at this local HH:MM (24-hour)
+          — the 'what if I go out later' question
+        in: query
+        name: start
+        type: string
       produces:
       - application/json
       responses:
@@ -12174,6 +12214,12 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/heat.Report'
+        "400":
+          description: start_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "404":
           description: not_found
           schema:

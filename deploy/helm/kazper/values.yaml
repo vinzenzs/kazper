@@ -74,6 +74,13 @@ ingress:
 # -- Non-secret config. Mirrors the env vars README.md "Configuration" table.
 config:
   defaultUserTz: UTC
+  # -- The athlete's habitual session start (local HH:MM, read in defaultUserTz).
+  #    Sessions scheduled by date alone carry no start time, so the heat read
+  #    would otherwise score pre-dawn hours; it anchors them here instead and
+  #    echoes `assumed_start` so the guess is visible. A session with a real
+  #    start time always wins, and `GET /workouts/{id}/heat?start=HH:MM` answers
+  #    "what if I go out later".
+  defaultTrainingStart: "06:00"
   migrateOnStart: true
   swaggerEnabled: false
   offTimeoutSeconds: 5

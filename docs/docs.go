@@ -11115,7 +11115,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "For a PLANNED workout: resolves the session date's location (the same primitive ` + "`" + `/locations/resolve` + "`" + ` exposes — the echoed name shows which city the forecast came from), fetches the session window's forecast, and computes a composite ` + "`" + `heat_load_c` + "`" + ` = heat index (temperature × humidity) + a solar penalty scaled down by cloud cover − bounded wind cooling. Acclimatization is DERIVED, not asked for: ` + "`" + `low` + "`" + ` (\u003c 2) / ` + "`" + `medium` + "`" + ` (2–4) / ` + "`" + `good` + "`" + ` (≥ 5) qualifying sessions — outdoor, completed, ≥ 60 min, session heat index ≥ 25 °C, trailing 14 days — with the qualifying workout ids echoed so the level traces back to real rides. The suggested adjustment is a percentage reduction off the effective baseline (FTP for bike, threshold pace for run) from a fixed heat-load × duration × acclimatization table, plus a fluid note scaled from the measured sweat rate when one exists (a generic 600 ml/hr default is flagged as such). Degradations are ` + "`" + `200` + "`" + `s: an ` + "`" + `indoor` + "`" + ` planned session returns ` + "`" + `not_applicable: true` + "`" + ` without fetching weather; a null environment computes with ` + "`" + `assumed_outdoor: true` + "`" + `; no resolvable location → ` + "`" + `reason: \"location_unconfigured\"` + "`" + `; forecast trouble → ` + "`" + `reason: \"weather_unavailable\"` + "`" + `. A non-planned workout returns 409 — this is a pre-session question. **This is a practice HEURISTIC, not WBGT and not physiology** — there is no solar sensor, cloud cover is the proxy, and every constant is v1 and echoed. Compute-on-read: persists nothing and writes no target anywhere; applying an adjustment means proposing edits to the scheduled workout through the existing confirmed flows.",
+                "description": "For a PLANNED workout: resolves the session date's location (the same primitive ` + "`" + `/locations/resolve` + "`" + ` exposes — the echoed name shows which city the forecast came from), fetches the session window's forecast, and computes a composite ` + "`" + `heat_load_c` + "`" + ` = heat index (temperature × humidity) + a solar penalty scaled down by cloud cover − bounded wind cooling. Acclimatization is DERIVED, not asked for: ` + "`" + `low` + "`" + ` (\u003c 2) / ` + "`" + `medium` + "`" + ` (2–4) / ` + "`" + `good` + "`" + ` (≥ 5) qualifying sessions — outdoor, completed, ≥ 60 min, session heat index ≥ 25 °C, trailing 14 days — with the qualifying workout ids echoed so the level traces back to real rides. The suggested adjustment is a percentage reduction off the effective baseline (FTP for bike, threshold pace for run) from a fixed heat-load × duration × acclimatization table, plus a fluid note scaled from the measured sweat rate when one exists (a generic 600 ml/hr default is flagged as such). **Window anchoring**: a session scheduled by date alone carries no start time (it lands at midnight), so the forecast would otherwise score pre-dawn hours — such a session is re-anchored at the configured ` + "`" + `DEFAULT_TRAINING_START` + "`" + ` and the response says ` + "`" + `assumed_start: true` + "`" + ` with ` + "`" + `start_source: \"assumed\"` + "`" + `. A session with a real start time anchors there (` + "`" + `start_source: \"workout\"` + "`" + `). The optional ` + "`" + `start=HH:MM` + "`" + ` overrides both (` + "`" + `start_source: \"param\"` + "`" + `) — two calls answer \"before 07:00 vs past 09:00\". The scored ` + "`" + `window` + "`" + ` is always echoed. Degradations are ` + "`" + `200` + "`" + `s: an ` + "`" + `indoor` + "`" + ` planned session returns ` + "`" + `not_applicable: true` + "`" + ` without fetching weather; a null environment computes with ` + "`" + `assumed_outdoor: true` + "`" + `; no resolvable location → ` + "`" + `reason: \"location_unconfigured\"` + "`" + `; forecast trouble → ` + "`" + `reason: \"weather_unavailable\"` + "`" + `. A non-planned workout returns 409 — this is a pre-session question. **This is a practice HEURISTIC, not WBGT and not physiology** — there is no solar sensor, cloud cover is the proxy, and every constant is v1 and echoed. Compute-on-read: persists nothing and writes no target anywhere; applying an adjustment means proposing edits to the scheduled workout through the existing confirmed flows.",
                 "produces": [
                     "application/json"
                 ],
@@ -11130,6 +11130,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Score the session as if it started at this local HH:MM (24-hour) — the 'what if I go out later' question",
+                        "name": "start",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -11137,6 +11143,15 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/heat.Report"
+                        }
+                    },
+                    "400": {
+                        "description": "start_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "404": {
@@ -14484,6 +14499,9 @@ const docTemplate = `{
                 "assumed_outdoor": {
                     "type": "boolean"
                 },
+                "assumed_start": {
+                    "type": "boolean"
+                },
                 "conditions": {
                     "$ref": "#/definitions/heat.Conditions"
                 },
@@ -14508,13 +14526,48 @@ const docTemplate = `{
                 "reason": {
                     "type": "string"
                 },
+                "start_source": {
+                    "$ref": "#/definitions/heat.StartSource"
+                },
                 "suggested_adjustment": {
                     "$ref": "#/definitions/heat.Adjustment"
+                },
+                "window": {
+                    "description": "Window is the time range actually scored, StartSource names the rule that\nproduced it, and AssumedStart flags that the hour was guessed rather than\nstated — a suggestion resting on an assumed start must say so.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/heat.ScoredWindow"
+                        }
+                    ]
                 },
                 "workout_id": {
                     "type": "string"
                 }
             }
+        },
+        "heat.ScoredWindow": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "heat.StartSource": {
+            "type": "string",
+            "enum": [
+                "workout",
+                "assumed",
+                "param"
+            ],
+            "x-enum-varnames": [
+                "StartFromWorkout",
+                "StartAssumed",
+                "StartFromParam"
+            ]
         },
         "hydration.Daily": {
             "type": "object",

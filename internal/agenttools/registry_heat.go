@@ -12,6 +12,7 @@ func init() { registerMCPDomain(heatSpecs()) }
 // WorkoutHeatArgs is the input to workout_heat.
 type WorkoutHeatArgs struct {
 	WorkoutID string `json:"workout_id" jsonschema:"the PLANNED workout id to compute the heat picture for"`
+	Start     string `json:"start,omitempty" jsonschema:"optional local HH:MM (24-hour): score the session as if it started then. Use it to compare an early vs late start — two calls, two answers."`
 }
 
 // HeatAnalyticsArgs is the input to heat_analytics.
@@ -37,6 +38,12 @@ func heatSpecs() []Spec {
 				"The forecast is taken at the location that date resolves to (travel period, else the " +
 				"configured home) and the resolved name is echoed — if it names the wrong city, the athlete " +
 				"has unlogged travel: log it with `log_location_period`. " +
+				"WHICH HOURS GOT SCORED: sessions scheduled by date alone carry no start time, so the read " +
+				"re-anchors them at the athlete's configured usual start and returns `assumed_start: true` " +
+				"— say so (\"assuming your usual 06:00 start\"), because a 06:00 answer and a 10:00 answer can " +
+				"differ by several degrees on a warming morning. Pass `start: \"10:00\"` to score a different " +
+				"hour; call it twice to compare early vs late. The scored `window` and `start_source` " +
+				"(workout | assumed | param) are always echoed — read them before quoting a number. " +
 				"THIS IS A HEURISTIC, not WBGT and not physiology: there is no solar sensor (cloud cover is " +
 				"the proxy) and the constants are v1. Present it as a starting point for a conversation, " +
 				"never as a measurement. " +
@@ -56,9 +63,14 @@ func heatSpecs() []Spec {
 				if err := DecodeInto(in, &a); err != nil {
 					return HTTPCall{}, err
 				}
+				q := url.Values{}
+				if a.Start != "" {
+					q.Set("start", a.Start)
+				}
 				return HTTPCall{
 					Method: "GET",
 					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/heat",
+					Query:  q,
 				}, nil
 			},
 		},

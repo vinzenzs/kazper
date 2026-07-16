@@ -303,6 +303,13 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Date-only scheduled sessions store midnight; score them at the athlete's
+	// habitual start instead of pre-dawn (fix-heat-start-anchoring).
+	trainingStartHour, trainingStartMin, err := cfg.TrainingStart()
+	if err != nil {
+		return err
+	}
+	heatSvc.SetTrainingStart(userTZ, trainingStartHour, trainingStartMin)
 	racesRepo := races.NewRepo(pool)
 	racesSvc := races.NewService(pool, racesRepo)
 	racePacingSvc := racepacing.NewService(racesRepo, athleteConfigEffective, racepacing.NewRepo(pool))

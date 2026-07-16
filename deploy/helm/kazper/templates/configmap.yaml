@@ -9,6 +9,7 @@ data:
   # Viper config layer reads. Keys MUST be the env-var names the binary
   # expects, not camelCase mirrors of values.yaml.
   DEFAULT_USER_TZ: {{ .Values.config.defaultUserTz | quote }}
+  DEFAULT_TRAINING_START: {{ .Values.config.defaultTrainingStart | quote }}
   MIGRATE_ON_START: {{ .Values.config.migrateOnStart | quote }}
   SWAGGER_ENABLED: {{ .Values.config.swaggerEnabled | quote }}
   OFF_TIMEOUT_SECONDS: {{ .Values.config.offTimeoutSeconds | quote }}

@@ -177,6 +177,10 @@ type HeatDay struct {
 	Acclimatization string    `json:"acclimatization"`
 	ReductionPct    float64   `json:"suggested_reduction_pct"`
 	AssumedOutdoor  bool      `json:"assumed_outdoor,omitempty"`
+	// AssumedStart carries the habitual start that was assumed when the session
+	// was scheduled by date alone — the check-in should read "at your usual
+	// 06:00", not quote an hour it invented silently.
+	AssumedStart string `json:"assumed_start,omitempty"`
 }
 
 // FuelPlanDay is one day's classification. SuggestedCarbsG is absent when no

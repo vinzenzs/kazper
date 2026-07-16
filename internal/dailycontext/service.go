@@ -490,6 +490,7 @@ func (s *Service) heatDay(ctx context.Context, date time.Time, loc *time.Locatio
 			Acclimatization: string(rep.Acclim.Level),
 			ReductionPct:    rep.Adjustment.ReductionPct,
 			AssumedOutdoor:  rep.AssumedOutdoor,
+			AssumedStart:    rep.AssumedStart,
 		}
 	}
 	return nil

@@ -40,6 +40,7 @@ func (f fakeSweat) LatestSweatSignal(context.Context) *heat.SweatSignal {
 
 type fixture struct {
 	r            *gin.Engine
+	svc          *heat.Service
 	workoutsRepo *workouts.Repo
 	locRepo      *locations.Repo
 	calls        *int
@@ -102,7 +103,7 @@ func setup(t *testing.T, body string, opts ...func(*setupOpts)) *fixture {
 	r := gin.New()
 	rg := r.Group("/")
 	heat.NewHandlers(svc, "UTC", nil).Register(rg)
-	return &fixture{r: r, workoutsRepo: wRepo, locRepo: locRepo, calls: &calls}
+	return &fixture{r: r, svc: svc, workoutsRepo: wRepo, locRepo: locRepo, calls: &calls}
 }
 
 type setupOpts struct {

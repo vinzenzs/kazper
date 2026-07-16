@@ -63,6 +63,13 @@ type Config struct {
 	// like DEFAULT_USER_TZ — moving house is a config change, not a travel log.
 	HomeLat string `mapstructure:"HOME_LAT"`
 	HomeLon string `mapstructure:"HOME_LON"`
+	// DefaultTrainingStart is the athlete's habitual session start (local HH:MM,
+	// interpreted in DefaultUserTZ). Athlete infrastructure like DEFAULT_USER_TZ:
+	// it states intent rather than inferring a start hour from history, which
+	// would drift with the season and surprise. Used ONLY as the fallback when a
+	// planned workout carries no real start time (the date-only scheduling path
+	// stores midnight); a session with a genuine time always wins.
+	DefaultTrainingStart string `mapstructure:"DEFAULT_TRAINING_START"`
 	// GarminBridgeURL is the in-cluster base URL of the garmin-bridge (per
 	// add-garmin-mcp-login). When set, /garmin/login + /garmin/login/mfa proxy
 	// to it; when empty those endpoints return 503 garmin_disabled. Optional and
@@ -137,6 +144,9 @@ type Config struct {
 // HOME_LAT/HOME_LON pair is set — coordinates are meaningless alone.
 var ErrHomeLocationIncomplete = errors.New("HOME_LAT and HOME_LON must be set together")
 
+// defaultTrainingStartHour backs an unset DEFAULT_TRAINING_START.
+const defaultTrainingStartHour = 6
+
 var envKeys = []string{
 	"DATABASE_URL",
 	"HTTP_ADDR",
@@ -149,6 +159,7 @@ var envKeys = []string{
 	"WEB_PASSWORD",
 	"HOME_LAT",
 	"HOME_LON",
+	"DEFAULT_TRAINING_START",
 	"FCM_PROJECT_ID",
 	"FCM_SERVICE_ACCOUNT_JSON",
 	"DEFAULT_USER_TZ",
@@ -181,6 +192,7 @@ func New() *viper.Viper {
 	v := viper.New()
 	v.SetDefault("HTTP_ADDR", ":8080")
 	v.SetDefault("DEFAULT_USER_TZ", "UTC")
+	v.SetDefault("DEFAULT_TRAINING_START", "06:00")
 	v.SetDefault("OFF_TIMEOUT_SECONDS", 5)
 	v.SetDefault("IDEMPOTENCY_TTL_HOURS", 24)
 	v.SetDefault("MIGRATE_ON_START", true)
@@ -268,6 +280,9 @@ func (c *Config) ValidateForServe() error {
 	if _, _, _, err := c.HomeLocation(); err != nil {
 		return err
 	}
+	if _, _, err := c.TrainingStart(); err != nil {
+		return err
+	}
 	if c.IdempotencyTTLHours <= 0 {
 		return errors.New("IDEMPOTENCY_TTL_HOURS must be a positive integer")
 	}
@@ -326,6 +341,21 @@ func (c *Config) FCMServiceAccount() ([]byte, error) {
 		return nil, errors.New("FCM_SERVICE_ACCOUNT_JSON is not a Google service-account credential")
 	}
 	return data, nil
+}
+
+// TrainingStart parses DEFAULT_TRAINING_START into an hour and minute.
+// ValidateForServe rejects a malformed value at startup, so a booted server
+// only ever sees a usable pair.
+func (c *Config) TrainingStart() (hour, min int, err error) {
+	v := strings.TrimSpace(c.DefaultTrainingStart)
+	if v == "" {
+		return defaultTrainingStartHour, 0, nil
+	}
+	t, err := time.Parse("15:04", v)
+	if err != nil {
+		return 0, 0, fmt.Errorf("DEFAULT_TRAINING_START %q invalid: must be HH:MM (24-hour)", c.DefaultTrainingStart)
+	}
+	return t.Hour(), t.Minute(), nil
 }
 
 // HomeLocation parses the configured home coordinates. Returns ok=false when

@@ -60,10 +60,29 @@ type Service struct {
 	geocoder  Geocoder
 	// now is injectable so the race-heat forecast-horizon gate is testable.
 	now func() time.Time
+
+	// userLoc + startHour/startMin resolve the scored window when a planned
+	// workout carries no real start time. Defaults (UTC, 06:00) keep an unwired
+	// service working; SetTrainingStart applies the configured values.
+	userLoc   *time.Location
+	startHour int
+	startMin  int
+}
+
+// SetTrainingStart configures the athlete's timezone and habitual start hour —
+// the fallback anchor for midnight-stored (date-only scheduled) sessions.
+func (s *Service) SetTrainingStart(loc *time.Location, hour, min int) {
+	if loc != nil {
+		s.userLoc = loc
+	}
+	s.startHour, s.startMin = hour, min
 }
 
 func NewService(w WorkoutsReader, l LocationResolver, wx WeatherClient, c ConfigReader) *Service {
-	return &Service{workouts: w, locations: l, weather: wx, config: c, now: time.Now}
+	return &Service{
+		workouts: w, locations: l, weather: wx, config: c, now: time.Now,
+		userLoc: time.UTC, startHour: defaultStartHour,
+	}
 }
 
 // SetNow overrides the clock (tests only).
@@ -92,6 +111,15 @@ type Report struct {
 	NotApplicable  bool `json:"not_applicable,omitempty"`
 	AssumedOutdoor bool `json:"assumed_outdoor,omitempty"`
 
+	// Window is the time range actually scored and StartSource names the rule
+	// that produced it. AssumedStart carries the applied HH:MM when the hour was
+	// guessed rather than stated — the time itself rather than a bool, since
+	// StartSource already says THAT it was assumed; this says WHICH default
+	// applied, so a wrong one is self-evident.
+	Window       *ScoredWindow `json:"window,omitempty"`
+	StartSource  StartSource   `json:"start_source,omitempty"`
+	AssumedStart string        `json:"assumed_start,omitempty"`
+
 	Location    *Location       `json:"location,omitempty"`
 	Conditions  *Conditions     `json:"conditions,omitempty"`
 	Load        *Load           `json:"load,omitempty"`
@@ -103,8 +131,21 @@ type Report struct {
 	Reason *string `json:"reason,omitempty"`
 }
 
-// ReportFor computes the heat picture for a planned workout.
+// ScoredWindow is the local time range the forecast was averaged over.
+type ScoredWindow struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// ReportFor computes the heat picture for a planned workout, anchoring the
+// window by the default rules (no caller override).
 func (s *Service) ReportFor(ctx context.Context, id uuid.UUID) (*Report, error) {
+	return s.ReportForWithStart(ctx, id, "")
+}
+
+// ReportForWithStart is the same read with an optional `HH:MM` start override —
+// the "what if I go out at 10:00 instead" question, answerable in one call.
+func (s *Service) ReportForWithStart(ctx context.Context, id uuid.UUID, start string) (*Report, error) {
 	w, err := s.workouts.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -127,7 +168,29 @@ func (s *Service) ReportFor(ctx context.Context, id uuid.UUID) (*Report, error) 
 		out.AssumedOutdoor = true
 	}
 
-	durationMin := w.EndedAt.Sub(w.StartedAt).Minutes()
+	// A param is parsed before any I/O so a malformed one fails fast.
+	var override *startOverride
+	if start != "" {
+		hh, mm, err := ParseStartParam(start)
+		if err != nil {
+			return nil, err
+		}
+		override = &startOverride{hour: hh, min: mm}
+	}
+
+	// The window scored is NOT necessarily the stored one: date-only scheduled
+	// sessions land at midnight and would otherwise score pre-dawn hours.
+	from, to, source, assumed := resolveWindow(w.StartedAt, w.EndedAt, s.userLoc, s.startHour, s.startMin, override)
+	out.StartSource = source
+	if assumed {
+		out.AssumedStart = fmt.Sprintf("%02d:%02d", s.startHour, s.startMin)
+	}
+	out.Window = &ScoredWindow{
+		From: from.In(s.userLoc).Format(time.RFC3339),
+		To:   to.In(s.userLoc).Format(time.RFC3339),
+	}
+
+	durationMin := to.Sub(from).Minutes()
 	if durationMin < 0 {
 		durationMin = 0
 	}
@@ -144,13 +207,13 @@ func (s *Service) ReportFor(ctx context.Context, id uuid.UUID) (*Report, error) 
 	}
 	out.Location = &Location{Name: loc.Name, Source: string(loc.Source), Lat: loc.Lat, Lon: loc.Lon}
 
-	hours, ok := s.weather.Forecast(ctx, loc.Lat, loc.Lon, weather.Window{From: w.StartedAt, To: w.EndedAt})
+	hours, ok := s.weather.Forecast(ctx, loc.Lat, loc.Lon, weather.Window{From: from, To: to})
 	if !ok {
 		reason := ReasonWeatherUnavailable
 		out.Reason = &reason
 		return out, nil
 	}
-	mean, ok := weather.MeanOver(hours, w.StartedAt, w.EndedAt)
+	mean, ok := weather.MeanOver(hours, from, to)
 	if !ok {
 		// The fetch worked but covered no hour of the session — a forecast that
 		// doesn't reach the session is no forecast at all.

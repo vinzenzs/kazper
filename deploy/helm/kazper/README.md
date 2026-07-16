@@ -72,6 +72,17 @@ helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
 When using `existingSecret`, put `FCM_SERVICE_ACCOUNT_JSON` in that Secret
 and still set `config.fcmProjectId` in values.
 
+## Training-start default
+
+`config.defaultTrainingStart` (local `HH:MM`, default `06:00`, read in
+`defaultUserTz`) is the athlete's habitual session start. Sessions scheduled by
+date alone carry no time of day, so without it the heat read would score
+pre-dawn hours — several °C cooler than a session actually ridden at 09:00.
+Such a session is anchored here and the response echoes `assumed_start` so the
+assumption is visible; a session with a real start time always wins, and
+`GET /workouts/{id}/heat?start=HH:MM` answers the "what if I go out later"
+question per read.
+
 ## Home location (opt-in)
 
 The weather and heat reads need to know where the athlete is on a given date.

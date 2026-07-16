@@ -104,6 +104,8 @@ serve-specific flag today is `--addr`, which overrides `HTTP_ADDR`).
 | `GARMIN_TOKEN_ENC_KEY`   | _unset_                                       | Base64-encoded 32-byte AES-256 key encrypting the stored Garmin token blob at rest; required only when `GARMIN_API_TOKEN` is set |
 | `GARMIN_BRIDGE_URL`      | _unset_                                       | In-cluster base URL of the garmin-bridge. When set, `/garmin/login` + `/garmin/login/mfa` proxy to it (driving the interactive re-link from the agent); unset returns 503 `garmin_disabled` |
 | `DEFAULT_USER_TZ`        | `UTC`                                         | IANA timezone used when summary endpoints omit `tz`                  |
+| `DEFAULT_TRAINING_START` | `06:00`                                       | Habitual session start (local `HH:MM`, read in `DEFAULT_USER_TZ`). Anchors the heat read for sessions scheduled by date alone (which carry no time and would otherwise score pre-dawn hours); echoed as `assumed_start`. A real start time on the session always wins. |
+| `HOME_LAT` / `HOME_LON`  | _(unset)_                                     | Home coordinates for the weather/heat reads; both-or-neither, validated at startup. Unset ⇒ non-travel dates resolve `location_unconfigured`. |
 | `OFF_TIMEOUT_SECONDS`    | `5`                                           | Open Food Facts request timeout                                      |
 | `OFF_USER_AGENT_CONTACT` | `+https://github.com/vinzenzs/kazper`  | Identification baked into the OFF `User-Agent`                       |
 | `IDEMPOTENCY_TTL_HOURS`  | `24`                                          | How long idempotency records are retained before cleanup             |
