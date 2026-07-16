@@ -17,7 +17,7 @@ func TestWorkouts_RegisteredWithExpectedTiers(t *testing.T) {
 		"list_workouts":           TierRead,
 		"get_workout":             TierRead,
 		"patch_workout":           TierWriteAuto,
-		"delete_workout":          TierWriteAuto,
+		"delete_workout":          TierWriteConfirm,
 		"fulfill_workout":         TierWriteAuto,
 		"unfulfill_workout":       TierWriteAuto,
 		"workout_fueling_summary": TierRead,

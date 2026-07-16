@@ -16,7 +16,7 @@ func TestMacrocycle_SurfaceAndTiers(t *testing.T) {
 		"list_macrocycles":  TierRead,
 		"get_macrocycle":    TierRead,
 		"update_macrocycle": TierWriteAuto,
-		"delete_macrocycle": TierWriteAuto,
+		"delete_macrocycle": TierWriteConfirm,
 	}
 	for name, tier := range wantTier {
 		s, ok := specs[name]

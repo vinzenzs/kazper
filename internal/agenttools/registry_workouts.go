@@ -327,7 +327,7 @@ func workoutsSpecs() []Spec {
 			Name:        "delete_workout",
 			Description: "Delete a workout. Returns an empty result on success.",
 			SchemaType:  DeleteWorkoutArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteWorkoutArgs
 				if err := DecodeInto(in, &a); err != nil {

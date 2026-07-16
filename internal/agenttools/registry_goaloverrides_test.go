@@ -77,7 +77,7 @@ func TestBuild_DeleteDailyGoalOverride(t *testing.T) {
 	spec, ok := specs["delete_daily_goal_override"]
 	require.True(t, ok, "delete_daily_goal_override must be registered on the MCP surface")
 	assert.True(t, spec.Tier.IsWrite())
-	assert.Equal(t, TierWriteAuto, spec.Tier)
+	assert.Equal(t, TierWriteConfirm, spec.Tier)
 
 	call, err := spec.Build(json.RawMessage(`{"date":"2026-06-15"}`))
 	require.NoError(t, err)

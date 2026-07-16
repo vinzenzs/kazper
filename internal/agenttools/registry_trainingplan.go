@@ -212,7 +212,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "delete_training_plan",
 			Description: "Delete a plan (cascades weeks and slots). Materialized workouts are detached, not deleted.",
 			SchemaType:  DeleteTrainingPlanArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteTrainingPlanArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -271,7 +271,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "delete_plan_week",
 			Description: "Delete a plan week (cascades its slots).",
 			SchemaType:  DeletePlanWeekArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeletePlanWeekArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -286,7 +286,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "add_plan_slot",
 			Description: "Add a day-slot to a plan week: a weekday (0=Mon..6=Sun), a within-day ordinal, the template to schedule (EXACTLY ONE of template_id for a single-sport session or multisport_template_id for a triathlon/brick), an optional time_of_day, and optional per-intent target_overrides (progress an interval pace across weeks — run/bike use pace in sec/km, swim uses swim_pace in sec/100m) and duration_overrides (progress a block's length, e.g. 75min→80min) so one template can progress across the plan. Overrides apply to single-sport slots only.",
 			SchemaType:  AddPlanSlotArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a AddPlanSlotArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -316,7 +316,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "patch_plan_slot",
 			Description: "Update a slot's weekday / ordinal / template reference (template_id OR multisport_template_id — switching kind clears the other) / time_of_day / target_overrides / duration_overrides (each override list replaces wholesale; empty clears; multisport slots reject overrides). Re-materialize to retarget the planned workout.",
 			SchemaType:  PatchPlanSlotArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a PatchPlanSlotArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -357,7 +357,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "delete_plan_slot",
 			Description: "Delete a plan slot.",
 			SchemaType:  DeletePlanSlotArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeletePlanSlotArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -372,7 +372,7 @@ func trainingPlanSpecs() []Spec {
 			Name:        "materialize_training_plan",
 			Description: "Expand a plan into dated, planned workouts. scope is all, week (with week ordinal), or range (with from/to dates). Idempotent and slot-keyed: re-running updates the same planned workouts rather than duplicating; completed sessions are never reverted.",
 			SchemaType:  MaterializeTrainingPlanArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			// Re-runnable by design (see Spec.OmitIdempotencyKey): the bespoke
 			// handler sent no key so re-materialize after a plan edit always
 			// re-runs rather than replaying a stale response.

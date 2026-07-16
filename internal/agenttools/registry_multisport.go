@@ -101,7 +101,7 @@ func multisportSpecs() []Spec {
 			Name:        "delete_multisport_template",
 			Description: "Delete a multisport template by id. Returns an empty result on success.",
 			SchemaType:  DeleteMultisportTemplateArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteMultisportTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {

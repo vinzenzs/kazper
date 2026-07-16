@@ -20,7 +20,7 @@ func TestProducts_RegisteredWithExpectedTiers(t *testing.T) {
 		"recompute_recipe":          TierWriteAuto,
 		"import_cookidoo_recipe":    TierWriteAuto,
 		"list_products":             TierRead,
-		"delete_product":            TierWriteAuto,
+		"delete_product":            TierWriteConfirm,
 	}
 	for name, tier := range want {
 		s, ok := specs[name]

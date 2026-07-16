@@ -173,7 +173,7 @@ func racesSpecs() []Spec {
 			Name:        "delete_race",
 			Description: "Delete a race by id; its legs are removed too.",
 			SchemaType:  DeleteRaceArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteRaceArgs
 				if err := DecodeInto(in, &a); err != nil {

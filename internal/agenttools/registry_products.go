@@ -225,7 +225,7 @@ func productsSpecs() []Spec {
 				"using recipes — delete or replace this product within those recipes first, then retry. " +
 				"Deletion is idempotent under retry (subsequent calls return 404 product_not_found).",
 			SchemaType: DeleteProductArgs{},
-			Tier:       TierWriteAuto,
+			Tier:       TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteProductArgs
 				if err := DecodeInto(in, &a); err != nil {

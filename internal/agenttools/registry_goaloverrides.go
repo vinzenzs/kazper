@@ -135,7 +135,7 @@ func goalOverridesSpecs() []Spec {
 			Description: "Remove the override for a date. Subsequent adherence on that date falls back " +
 				"to the default goals (or to no adherence if no default is set).",
 			SchemaType: DeleteDailyGoalOverrideArgs{},
-			Tier:       TierWriteAuto,
+			Tier:       TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var args DeleteDailyGoalOverrideArgs
 				if err := DecodeInto(in, &args); err != nil {

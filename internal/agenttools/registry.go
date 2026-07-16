@@ -14,12 +14,23 @@ import (
 // Tier classifies how a tool's execution is gated by the chat loop.
 //
 //   - TierRead         — never gated; pure reads.
-//   - TierWriteAuto    — low-stakes nutrition-planning writes; dispatch inline.
-//   - TierWriteConfirm — training/goal/destructive writes; pause for human
-//     confirmation before dispatch.
+//   - TierWriteAuto    — low-stakes writes; dispatch inline.
+//   - TierWriteConfirm — pause for human confirmation before dispatch.
 //
-// The MCP server ignores the tier (it has its own client-side trust model);
-// only the chat loop reads it.
+// Only the chat loop reads the tier; the MCP server ignores it (its client's
+// own permission model is the gate). Tools that are not chat-exposed still
+// carry the tier they WOULD enforce if a future change exposed them — the tier
+// is a statement of policy, not of current wiring, so exposing a domain never
+// silently grants unconfirmed destructive writes.
+//
+// The tiering rule: a write is TierWriteConfirm when it destroys state that is
+// expensive to rebuild (plans, weeks, slots, macrocycles, races, templates,
+// phases, goal templates; deletes that cascade, like a workout's stored
+// streams) or defines a prescription (slot add/patch, template create/patch,
+// goal-template set, plan materialization). Cheap single-row deletes with no
+// cascade (a logged meal, a weight entry, a shopping item) stay TierWriteAuto
+// via the explicit cheapDeletes allowlist in the tier test — exempting a
+// delete is a deliberate, reviewable act.
 type Tier string
 
 const (

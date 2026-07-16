@@ -17,7 +17,7 @@ func TestRaces_SurfaceAndTiers(t *testing.T) {
 		"list_races":        TierRead,
 		"get_race":          TierRead,
 		"update_race":       TierWriteAuto,
-		"delete_race":       TierWriteAuto,
+		"delete_race":       TierWriteConfirm,
 		"plan_race_fueling": TierRead,
 	}
 	for name, tier := range wantTier {

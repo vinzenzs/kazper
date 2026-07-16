@@ -101,7 +101,7 @@ func workoutTemplatesSpecs() []Spec {
 				"accepted only on bike or run. Bike steps may also carry a secondary_target (a second simultaneous gate, " +
 				"e.g. primary power_zone + secondary hr_zone or cadence) — bike-only and a different metric family than the primary.",
 			SchemaType: CreateWorkoutTemplateArgs{},
-			Tier:       TierWriteAuto,
+			Tier:       TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a CreateWorkoutTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -158,7 +158,7 @@ func workoutTemplatesSpecs() []Spec {
 			Description: "Update a workout template. Any of sport / name / description / estimated_duration_sec / steps " +
 				"may be supplied; omitted fields are unchanged. A supplied `steps` array replaces the whole program.",
 			SchemaType: PatchWorkoutTemplateArgs{},
-			Tier:       TierWriteAuto,
+			Tier:       TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a PatchWorkoutTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -194,7 +194,7 @@ func workoutTemplatesSpecs() []Spec {
 			Name:        "delete_workout_template",
 			Description: "Delete a workout template by id. Returns an empty result on success.",
 			SchemaType:  DeleteWorkoutTemplateArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteWorkoutTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {

@@ -2,6 +2,7 @@ package agenttools
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -125,4 +126,55 @@ func TestBuild_PathParamAndQueryTools(t *testing.T) {
 	// missing required path param errors out (no call made)
 	_, err = specs["mark_planned_meal_eaten"].Build(json.RawMessage(`{}`))
 	assert.Error(t, err)
+}
+
+// Tier truthfulness holds registry-wide, not just on the exposed chat surface
+// (retier-destructive-agent-tools): every delete_* tool carries write-confirm
+// unless it is a documented cheap delete — a single-row, no-cascade record
+// that is cheap to notice and cheap to redo — and every prescription writer
+// carries write-confirm too. Exempting a delete means editing cheapDeletes
+// here, a deliberate reviewable act, so a future domain port cannot silently
+// reintroduce auto destructive writes.
+func TestRegistry_DestructiveAndPrescriptiveTiers(t *testing.T) {
+	cheapDeletes := map[string]bool{
+		"delete_meal":              true,
+		"delete_hydration":         true,
+		"delete_hydration_balance": true,
+		"delete_weight":            true,
+		"delete_workout_fuel":      true,
+		"delete_planned_meal":      true,
+		"delete_shopping_item":     true,
+		"delete_fitness_metrics":   true,
+		"delete_recovery_metrics":  true,
+		"delete_coach_memory":      true,
+	}
+	prescriptive := []string{
+		"add_plan_slot", "patch_plan_slot", "materialize_training_plan",
+		"create_workout_template", "patch_workout_template", "set_goal_template",
+	}
+
+	byName := map[string][]Spec{}
+	for _, s := range Registry() {
+		byName[s.Name] = append(byName[s.Name], s)
+	}
+	for name, specs := range byName {
+		if strings.HasPrefix(name, "delete_") && !cheapDeletes[name] {
+			for _, s := range specs {
+				assert.Equalf(t, TierWriteConfirm, s.Tier,
+					"destructive tool %s must be write-confirm (or be added to cheapDeletes deliberately)", name)
+			}
+		}
+	}
+	for name := range cheapDeletes {
+		require.Containsf(t, byName, name,
+			"cheapDeletes lists %s but no such tool is registered — prune the allowlist", name)
+	}
+	for _, name := range prescriptive {
+		require.Containsf(t, byName, name,
+			"prescriptive roster lists %s but no such tool is registered", name)
+		for _, s := range byName[name] {
+			assert.Equalf(t, TierWriteConfirm, s.Tier,
+				"prescription writer %s must be write-confirm", name)
+		}
+	}
 }

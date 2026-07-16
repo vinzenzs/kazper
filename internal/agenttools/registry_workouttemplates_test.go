@@ -13,11 +13,11 @@ import (
 func TestWorkoutTemplates_SurfaceAndTiers(t *testing.T) {
 	specs := ByName(MCPRegistry())
 	wantTier := map[string]Tier{
-		"create_workout_template": TierWriteAuto,
+		"create_workout_template": TierWriteConfirm,
 		"list_workout_templates":  TierRead,
 		"get_workout_template":    TierRead,
-		"patch_workout_template":  TierWriteAuto,
-		"delete_workout_template": TierWriteAuto,
+		"patch_workout_template":  TierWriteConfirm,
+		"delete_workout_template": TierWriteConfirm,
 	}
 	for name, tier := range wantTier {
 		s, ok := specs[name]

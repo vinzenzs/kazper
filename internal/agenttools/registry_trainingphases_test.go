@@ -18,11 +18,11 @@ func TestTrainingPhases_SurfaceAndTiers(t *testing.T) {
 		"list_phases":          TierRead,
 		"get_phase":            TierRead,
 		"update_phase":         TierWriteAuto,
-		"delete_phase":         TierWriteAuto,
-		"set_goal_template":    TierWriteAuto,
+		"delete_phase":         TierWriteConfirm,
+		"set_goal_template":    TierWriteConfirm,
 		"list_goal_templates":  TierRead,
 		"get_goal_template":    TierRead,
-		"delete_goal_template": TierWriteAuto,
+		"delete_goal_template": TierWriteConfirm,
 	}
 	for name, tier := range wantTier {
 		s, ok := specs[name]

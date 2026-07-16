@@ -248,7 +248,7 @@ func trainingPhasesSpecs() []Spec {
 			Name:        "delete_phase",
 			Description: "Delete a phase. Adherence on dates that were in the phase falls through to the next step (override, singleton default, or none). Any template the phase pointed at is unaffected.",
 			SchemaType:  DeletePhaseArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeletePhaseArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -263,7 +263,7 @@ func trainingPhasesSpecs() []Spec {
 				"A template is meant to be attached to a phase via create_phase or update_phase's default_template_id — once attached, editing the template's bounds propagates to every phase pointing at it on the next adherence read. " +
 				"No apply step required; template edits are intentionally cheap. Retries are NOT safe (PUT rejects Idempotency-Key).",
 			SchemaType: SetGoalTemplateArgs{},
-			Tier:       TierWriteAuto,
+			Tier:       TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a SetGoalTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {
@@ -339,7 +339,7 @@ func trainingPhasesSpecs() []Spec {
 			Name:        "delete_goal_template",
 			Description: "Delete a goal template by name. Refused with 409 template_in_use (and a referencing_phases list) if any phase points at it via default_template_id. Reassign or delete those phases first.",
 			SchemaType:  DeleteGoalTemplateArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteGoalTemplateArgs
 				if err := DecodeInto(in, &a); err != nil {

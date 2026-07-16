@@ -148,7 +148,7 @@ func macrocycleSpecs() []Spec {
 			Name:        "delete_macrocycle",
 			Description: "Delete a macrocycle. Its member phases survive — they are unlinked from the season (macrocycle_id set null) and continue to drive adherence unchanged.",
 			SchemaType:  DeleteMacrocycleArgs{},
-			Tier:        TierWriteAuto,
+			Tier:        TierWriteConfirm,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
 				var a DeleteMacrocycleArgs
 				if err := DecodeInto(in, &a); err != nil {
