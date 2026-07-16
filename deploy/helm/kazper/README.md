@@ -72,6 +72,43 @@ helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
 When using `existingSecret`, put `FCM_SERVICE_ACCOUNT_JSON` in that Secret
 and still set `config.fcmProjectId` in values.
 
+## Home location (opt-in)
+
+The weather and heat reads need to know where the athlete is on a given date.
+Travel is logged at runtime (`POST /locations`, or the coach's
+`log_location_period` tool); **home** is deployment configuration, because it
+is quasi-static infrastructure like `DEFAULT_USER_TZ` — moving house is a
+config change, not a log entry.
+
+| Value | What it is |
+|---|---|
+| `config.homeLat` | Home latitude, `-90`..`90` — city-grade precision is all a forecast needs |
+| `config.homeLon` | Home longitude, `-180`..`180` |
+
+```bash
+helm upgrade --install kazper oci://ghcr.io/vinzenzs/charts/kazper \
+    --version v0.1.0 --namespace kazper \
+    --set config.homeLat="48.2082" \
+    --set config.homeLon="16.3738" \
+    # ...required token values...
+```
+
+Set **both or neither**: a one-sided pair fails startup with
+`HOME_LAT and HOME_LON must be set together` rather than silently
+half-working. Note the values are **quoted strings, not YAML numbers** — `0`
+is a real coordinate (Null Island), so the backend can only tell "unset" from
+"zero" if the empty state is an empty string.
+
+With both empty, logged travel periods still resolve normally, but every other
+date returns `location_unconfigured` and the heat endpoints degrade with that
+reason instead of guessing a city. If `GET /workouts/{id}/heat` is reporting
+`location_unconfigured` for ordinary days, this pair is what's missing.
+
+Heat reads also make the backend's **first outbound request on a read path**
+(Open-Meteo, keyless — no account or credential to configure). A restrictive
+egress policy surfaces as `weather_unavailable` rather than an error; the
+client is fail-open by design.
+
 ## Coach dashboard (opt-in)
 
 The training dashboard is a browser SPA embedded in the binary and served

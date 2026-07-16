@@ -93,6 +93,21 @@ config:
   #    (the push surface returns 503 push_disabled and the relogin notification
   #    is a no-op).
   fcmProjectId: ""
+  # -- Home location for the weather/heat reads (opt-in). The coordinates the
+  #    athlete trains from when no travel period covers a date; city-grade
+  #    precision is all a forecast needs. Set BOTH or NEITHER — a one-sided pair
+  #    fails startup rather than silently half-working. Quoted strings, not
+  #    numbers: 0 is a real coordinate (Null Island), so the backend can only
+  #    tell "unset" from "zero" if the empty value is an empty string.
+  #    With both empty, travel periods still resolve, but every other date
+  #    reads `location_unconfigured` and the heat endpoints degrade rather than
+  #    guessing a city. Travel itself is NOT configured here — it is logged at
+  #    runtime (POST /locations); this is only the home fallback.
+  #    Example (Vienna):
+  #      homeLat: "48.2082"
+  #      homeLon: "16.3738"
+  homeLat: ""
+  homeLon: ""
 
 # -- Reference an externally-managed Secret. When set, the chart will NOT
 #    render its own Secret; the Deployment's envFrom uses this name.

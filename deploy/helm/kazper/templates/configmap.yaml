@@ -29,3 +29,19 @@ data:
   # FCM_SERVICE_ACCOUNT_JSON. With either unset, push is inert (503 push_disabled).
   FCM_PROJECT_ID: {{ .Values.config.fcmProjectId | quote }}
   {{- end }}
+  {{- if or (ne (toString .Values.config.homeLat) "") (ne (toString .Values.config.homeLon) "") }}
+  # Home location (opt-in) for the weather/heat reads. Emitted only when set,
+  # and BOTH keys are emitted together whenever either is: the backend validates
+  # the pair at startup, so a one-sided config fails loudly here rather than
+  # silently resolving every non-travel date to `location_unconfigured`.
+  #
+  # `ne (toString …) ""` rather than a plain truthiness test, because 0 is a
+  # real coordinate but is FALSY in Go templates. In practice this only differs
+  # at exactly (0, 0) — a plain `or` still fires when either half is non-zero —
+  # and (0, 0) is open ocean, so this guard buys correctness rather than a bug
+  # fix. It is kept because expressing "is it set" as "is it set" costs nothing
+  # and does not quietly depend on nobody living on a zero meridian.
+  # toString additionally normalises a `--set`-coerced number back to a string.
+  HOME_LAT: {{ .Values.config.homeLat | toString | quote }}
+  HOME_LON: {{ .Values.config.homeLon | toString | quote }}
+  {{- end }}
