@@ -19,6 +19,7 @@ import type {
   DurabilityResult,
   IntervalsResult,
   QuadrantResult,
+  StrideResult,
   WPrimeBalanceResult,
   Workout,
   WorkoutStats,
@@ -218,6 +219,21 @@ export function useQuadrant(
       apiGet<QuadrantResult>(
         `/workouts/${workoutId}/quadrant?cp_watts=${cpWatts}&cadence_rpm=${cadenceRpm}`,
       ),
+    refetchInterval: SLOW_INTERVAL_MS,
+    retry: false,
+  });
+}
+
+// Per-workout run stride decomposition (cadence vs step length). Runs only —
+// the endpoint 409s for any other sport — and a 404 (no cadence stream on runs
+// synced before the bridge's run-cadence extraction) leaves the detail-page
+// view absent. summary_only: the page charts the BINS, which are the plateau
+// story; the raw scatter isn't needed for it.
+export function useStride(workoutId: string | undefined, isRun: boolean) {
+  return useQuery({
+    queryKey: ["stride", workoutId],
+    enabled: !!workoutId && isRun,
+    queryFn: () => apiGet<StrideResult>(`/workouts/${workoutId}/stride?summary_only=true`),
     refetchInterval: SLOW_INTERVAL_MS,
     retry: false,
   });

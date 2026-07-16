@@ -524,7 +524,16 @@ def _extract_streams(detail: Any) -> dict[str, list[float]]:
     heart_rate = column(index_of.get("directHeartRate"))
     if heart_rate and any(v > 0 for v in heart_rate):
         out["heart_rate"] = heart_rate
+    # Cadence is ONE stream type carrying a sport-native unit: rpm for rides,
+    # spm for runs. Bike cadence wins when both columns exist (a ride's own
+    # column is the authoritative one); a run falls back to directDoubleCadence,
+    # Garmin's both-feet series that is ALREADY steps/min — the familiar ~170
+    # matching averageRunningCadenceInStepsPerMinute. Posted as reported: no
+    # halving, no doubling. Sport disambiguates the unit downstream, and the two
+    # never co-occur in one workout.
     cadence = column(index_of.get("directBikeCadence"))
+    if not (cadence and any(v > 0 for v in cadence)):
+        cadence = column(index_of.get("directDoubleCadence"))
     if cadence and any(v > 0 for v in cadence):
         out["cadence"] = cadence
     return out

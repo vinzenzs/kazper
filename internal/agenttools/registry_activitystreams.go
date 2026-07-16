@@ -43,8 +43,58 @@ type QuadrantAnalysisArgs struct {
 	CrankMM    float64 `json:"crank_mm,omitempty" jsonschema:"optional crank length in mm (default 172.5; 100-220)"`
 }
 
+// StrideAnalysisArgs is the input to stride_analysis.
+type StrideAnalysisArgs struct {
+	WorkoutID   string   `json:"workout_id" jsonschema:"the RUN workout id to decompose (needs stored speed + cadence streams)"`
+	MinSpeedMps *float64 `json:"min_speed_mps,omitempty" jsonschema:"optional: exclude samples slower than this in m/s (0.5..5.0) — e.g. trim walk breaks from a long run. Off by default."`
+}
+
 func activityStreamsSpecs() []Spec {
 	return []Spec{
+		{
+			Name: "stride_analysis",
+			Description: "For a RUN: where does this athlete's speed come from — turnover or step length, and " +
+				"which one plateaus? Speed = cadence × step length, so the decomposition is exact. From the " +
+				"stored speed + cadence streams it returns speed bins (each with its seconds, mean cadence in " +
+				"spm, and mean step length in metres per single step) plus a contribution split — " +
+				"`cadence_contribution_pct` and `step_contribution_pct`, summing to 100 — saying how much of " +
+				"the speed gain came from each. " +
+				"USE THE BINS, not just the split: the split is one number for the whole run, while the bins " +
+				"show WHERE a plateau starts (e.g. step length flat above threshold pace while cadence keeps " +
+				"climbing). Never report a bare \"you are stride-limited\" verdict — show the decomposition. " +
+				"A steady-state run returns `contribution: null` with `reason: \"insufficient_speed_range\"` " +
+				"and the bins only: a run without pace variety genuinely cannot answer the question, so say " +
+				"that rather than reaching for the split. This reads best on runs with variety — intervals, " +
+				"fartlek, progressions. " +
+				"Sanity-check the numbers before quoting them: a real run sits around 160–180 spm with ~1.0–1.4 m " +
+				"steps. An ~85 spm mean means the device reported single-foot cadence, so the step length is " +
+				"about double reality — say so instead of reporting a 2.4 m stride. " +
+				"`min_speed_mps` trims walk breaks when a long run has them. " +
+				"Runs only — a ride returns 409 `sport_unsupported` (a bike's cadence × \"step length\" is " +
+				"meaningless). Needs stored cadence: `cadence_stream_missing` means the run predates the " +
+				"bridge's run-cadence extraction, not that the athlete has no data — a re-sync/backfill of that " +
+				"activity's streams fixes it. Summary only (the scatter is chart data). Read-only.",
+			SchemaType: StrideAnalysisArgs{},
+			Tier:       TierRead,
+			Build: func(in json.RawMessage) (HTTPCall, error) {
+				var a StrideAnalysisArgs
+				if err := DecodeInto(in, &a); err != nil {
+					return HTTPCall{}, err
+				}
+				q := url.Values{}
+				// The scatter is chart data, never reasoning data (the
+				// quadrant/W′bal convention): always summary-only over MCP.
+				q.Set("summary_only", "true")
+				if a.MinSpeedMps != nil {
+					q.Set("min_speed_mps", strconv.FormatFloat(*a.MinSpeedMps, 'f', -1, 64))
+				}
+				return HTTPCall{
+					Method: "GET",
+					Path:   "/workouts/" + url.PathEscape(a.WorkoutID) + "/stride",
+					Query:  q,
+				}, nil
+			},
+		},
 		{
 			Name: "recompute_workout_streams",
 			Description: "Recompute a workout's stream-derived execution metrics (variability_index, efficiency_factor, " +

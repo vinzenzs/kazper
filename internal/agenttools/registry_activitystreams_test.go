@@ -70,3 +70,31 @@ func TestBuild_RecomputeWorkoutStreams(t *testing.T) {
 	assert.Equal(t, "POST", call.Method)
 	assert.Equal(t, "/workouts/w1/streams/recompute", call.Path)
 }
+
+func TestStrideAnalysis_BuildShapes(t *testing.T) {
+	specs := ByName(MCPRegistry())
+
+	spec, ok := specs["stride_analysis"]
+	require.True(t, ok, "tool stride_analysis missing from MCPRegistry")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	// summary_only is ALWAYS applied: the scatter is chart data, never
+	// reasoning data (the quadrant/W′bal convention).
+	call, err := spec.Build(json.RawMessage(`{"workout_id":"w1"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/w1/stride", call.Path)
+	assert.Equal(t, "true", call.Query.Get("summary_only"))
+	assert.False(t, call.Query.Has("min_speed_mps"), "the cutoff is opt-in")
+	assert.Nil(t, call.Body)
+
+	min := 1.8
+	withMin, err := spec.Build(mustMarshal(t, StrideAnalysisArgs{WorkoutID: "w1", MinSpeedMps: &min}))
+	require.NoError(t, err)
+	assert.Equal(t, "1.8", withMin.Query.Get("min_speed_mps"))
+	assert.Equal(t, "true", withMin.Query.Get("summary_only"), "still summary-only")
+
+	escaped, err := spec.Build(json.RawMessage(`{"workout_id":"a b/c"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "/workouts/a%20b%2Fc/stride", escaped.Path)
+}

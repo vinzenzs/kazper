@@ -32,6 +32,8 @@ vi.mock("../../api/hooks", () => ({
   useWPrimeBalance: () => ok(undefined),
   useDetectedIntervals: () => ok(undefined),
   useQuadrant: () => ok(undefined),
+  // Runs-only cadence-vs-stride view; undefined leaves it absent here.
+  useStride: () => ok(undefined),
 }));
 
 function renderAt(path: string) {

@@ -13,11 +13,17 @@ import (
 
 // Sentinel errors mapping 1:1 to API error codes.
 var (
-	ErrWorkoutNotFound   = errors.New("workout not found")    // workout_not_found
-	ErrStreamsNotFound   = errors.New("streams not found")    // streams_not_found
-	ErrDownsampleInvalid = errors.New("downsample invalid")   // downsample_invalid
+	ErrWorkoutNotFound      = errors.New("workout not found")      // workout_not_found
+	ErrStreamsNotFound      = errors.New("streams not found")      // streams_not_found
+	ErrDownsampleInvalid    = errors.New("downsample invalid")     // downsample_invalid
 	ErrPowerStreamMissing   = errors.New("power stream missing")   // power_stream_missing
 	ErrCadenceStreamMissing = errors.New("cadence stream missing") // cadence_stream_missing
+	ErrSpeedStreamMissing   = errors.New("speed stream missing")   // speed_stream_missing
+	// ErrSportUnsupported: the analysis only means something for the sport it
+	// was defined over — a ride's cadence × "step length" is nonsense. 409, the
+	// workoutcompliance multisport_unsupported precedent (the resource's state
+	// doesn't fit the analysis).
+	ErrSportUnsupported = errors.New("sport unsupported") // sport_unsupported
 )
 
 const (
@@ -440,4 +446,50 @@ func roundSamples(xs []float64) []float64 {
 		out[i] = numfmt.Round2(v)
 	}
 	return out
+}
+
+// Stride decomposes a RUN's speed into turnover vs step length over its stored
+// speed+cadence streams. Compute-on-read; nothing is persisted.
+//
+// minSpeed of 0 means no walk-break cutoff (the handler validates its bounds).
+func (s *Service) Stride(ctx context.Context, id uuid.UUID, minSpeed float64, summaryOnly bool) (*StrideResult, error) {
+	w, err := s.resolve(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Gate before touching streams: a ride with cadence would otherwise compute
+	// a plausible-looking number that means nothing.
+	if w.Sport != workouts.SportRun {
+		return nil, ErrSportUnsupported
+	}
+
+	series, _, err := s.streams.LoadForWorkout(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, ErrStreamsNotFound
+	}
+	speed := series[StreamSpeed]
+	if len(speed) == 0 {
+		return nil, ErrSpeedStreamMissing
+	}
+	cadence := series[StreamCadence]
+	if len(cadence) == 0 {
+		// Runs synced before the bridge learned directDoubleCadence have no
+		// cadence: its own sentinel, so "not synced yet" never reads as "no
+		// streams at all".
+		return nil, ErrCadenceStreamMissing
+	}
+
+	res := strideAnalysis(speed, cadence, minSpeed)
+	res.WorkoutID = id
+	if minSpeed > 0 {
+		m := minSpeed
+		res.MinSpeedMps = &m
+	}
+	if summaryOnly {
+		res.Scatter = nil
+	}
+	return &res, nil
 }

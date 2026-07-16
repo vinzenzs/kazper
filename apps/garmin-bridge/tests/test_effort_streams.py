@@ -28,6 +28,28 @@ def _detail_with_power(
     return {"metricDescriptors": descriptors, "activityDetailMetrics": rows}
 
 
+def _detail_run(
+    speed: list[float],
+    double_cadence: list[float] | None = None,
+    bike_cadence: list[float] | None = None,
+) -> dict:
+    """A run-shaped detail: speed plus Garmin's both-feet cadence column.
+
+    Runs carry no power, so this deliberately omits it — the bug this covers is
+    that the cadence fallback must fire on a payload that has no bike column.
+    """
+    descriptors = [{"key": "directSpeed", "metricsIndex": 0}]
+    cols: list[list[float]] = [speed]
+    if double_cadence is not None:
+        descriptors.append({"key": "directDoubleCadence", "metricsIndex": len(cols)})
+        cols.append(double_cadence)
+    if bike_cadence is not None:
+        descriptors.append({"key": "directBikeCadence", "metricsIndex": len(cols)})
+        cols.append(bike_cadence)
+    rows = [{"metrics": [c[i] for c in cols]} for i in range(len(speed))]
+    return {"metricDescriptors": descriptors, "activityDetailMetrics": rows}
+
+
 def _detail_hr_only(heart_rate: list[float]) -> dict:
     """A get_activity_details-shaped dict carrying only a heart-rate column."""
     descriptors = [{"key": "directHeartRate", "metricsIndex": 0}]
@@ -207,3 +229,52 @@ def test_rerun_reposts_streams_idempotently():
         )
         sync.sync_day(backend, raw, "2026-06-12")
         assert [p for p, _ in backend.posts if p == "/workouts/wid-111/streams"]
+
+
+def test_extract_streams_run_double_cadence_posted_as_spm():
+    # Garmin's directDoubleCadence is already steps/min — the familiar ~170.
+    # Posted as reported: no halving, no doubling.
+    detail = _detail_run([3.2, 3.3, 3.4], double_cadence=[170.0, 172.0, 174.0])
+    out = mapping._extract_streams(detail)
+    assert out["cadence"] == [170.0, 172.0, 174.0]
+    assert out["speed"] == [3.2, 3.3, 3.4]
+    assert "power" not in out
+
+
+def test_extract_streams_bike_cadence_wins_when_both_columns_exist():
+    # A ride's own column is the authoritative one; the run fallback must not
+    # shadow it.
+    detail = _detail_run(
+        [8.0, 8.1, 8.2],
+        double_cadence=[170.0, 172.0, 174.0],
+        bike_cadence=[90.0, 91.0, 92.0],
+    )
+    out = mapping._extract_streams(detail)
+    assert out["cadence"] == [90.0, 91.0, 92.0]
+
+
+def test_extract_streams_run_without_any_cadence_column_degrades():
+    # No recognizable cadence column: the sync proceeds, just without cadence.
+    detail = _detail_run([3.2, 3.3, 3.4])
+    out = mapping._extract_streams(detail)
+    assert "cadence" not in out
+    assert out["speed"] == [3.2, 3.3, 3.4]
+
+
+def test_extract_streams_flat_zero_double_cadence_dropped():
+    # An all-non-positive series is no data — same rule as every other column.
+    detail = _detail_run([3.2, 3.3, 3.4], double_cadence=[0.0, 0.0, 0.0])
+    out = mapping._extract_streams(detail)
+    assert "cadence" not in out
+
+
+def test_extract_streams_flat_zero_bike_cadence_falls_back_to_run_column():
+    # A dead bike column must not suppress a live run column: the fallback is
+    # gated on usable data, not on mere presence.
+    detail = _detail_run(
+        [3.2, 3.3, 3.4],
+        double_cadence=[170.0, 172.0, 174.0],
+        bike_cadence=[0.0, 0.0, 0.0],
+    )
+    out = mapping._extract_streams(detail)
+    assert out["cadence"] == [170.0, 172.0, 174.0]

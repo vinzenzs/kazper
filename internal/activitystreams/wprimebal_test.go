@@ -36,8 +36,8 @@ func TestWPrimeBalance_DepletionThenRecovery(t *testing.T) {
 	depleted := bal[99]
 	end := bal[len(bal)-1]
 	assert.InDelta(t, 10000, depleted, 1e-9)
-	assert.Greater(t, end, depleted)   // recovered
-	assert.Less(t, end, wp)            // but never fully back to W′ in finite time
+	assert.Greater(t, end, depleted) // recovered
+	assert.Less(t, end, wp)          // but never fully back to W′ in finite time
 	for _, b := range bal {
 		assert.LessOrEqual(t, b, wp+1e-9) // never exceeds W′
 	}

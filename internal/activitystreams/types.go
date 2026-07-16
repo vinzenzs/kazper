@@ -10,6 +10,8 @@
 // signals and feed no nutrition/hydration/energy total.
 package activitystreams
 
+import "github.com/google/uuid"
+
 // StreamType is a stored series kind. Matches the workout_streams.stream_type
 // CHECK constraint.
 type StreamType string
@@ -73,10 +75,10 @@ type RecomputeResult struct {
 // series was returned. DurationS is the stored (full-resolution) sample count of
 // the longest series — the real activity length, independent of downsampling.
 type StreamsResponse struct {
-	WorkoutID    string                 `json:"workout_id"`
-	SampleRateHz int                    `json:"sample_rate_hz"`
-	DurationS    int                    `json:"duration_s"`
-	Downsample   *int                   `json:"downsample,omitempty"`
+	WorkoutID    string                   `json:"workout_id"`
+	SampleRateHz int                      `json:"sample_rate_hz"`
+	DurationS    int                      `json:"duration_s"`
+	Downsample   *int                     `json:"downsample,omitempty"`
 	Streams      map[StreamType][]float64 `json:"streams"`
 }
 
@@ -197,4 +199,49 @@ type ExecutionMetrics struct {
 	VariabilityIndex *float64
 	EfficiencyFactor *float64
 	DecouplingPct    *float64
+}
+
+// ----- stride analysis (add-run-stride-analysis) -----
+
+// StrideBin is one speed bucket's mean composition. Seconds is the bucket's
+// sample count at 1 Hz, so it reads as time spent there.
+type StrideBin struct {
+	SpeedLowMps  float64 `json:"speed_low_mps"`
+	SpeedHighMps float64 `json:"speed_high_mps"`
+	Seconds      int     `json:"seconds"`
+	CadenceSPM   float64 `json:"cadence_spm"`
+	StepLengthM  float64 `json:"step_length_m"`
+}
+
+// StrideContribution splits a run's speed gain between turnover and step
+// length. The two sum to 100 by construction (ln(speed) = ln(cadence) +
+// ln(step)), which is what makes the pair a partition rather than two
+// unrelated numbers.
+type StrideContribution struct {
+	CadencePct float64 `json:"cadence_contribution_pct"`
+	StepPct    float64 `json:"step_contribution_pct"`
+}
+
+// StridePoint is one scatter sample.
+type StridePoint struct {
+	SpeedMps    float64 `json:"speed_mps"`
+	CadenceSPM  float64 `json:"cadence_spm"`
+	StepLengthM float64 `json:"step_length_m"`
+}
+
+// StrideResult is the response shape for GET /workouts/{id}/stride.
+//
+// Contribution is nil exactly when Reason is set: a steady-state run cannot say
+// where speed comes from, and the bins are still returned so the reader sees
+// what data there was. The verdict is always decomposed — never a bare
+// "you are stride-limited" label.
+type StrideResult struct {
+	WorkoutID    uuid.UUID           `json:"workout_id"`
+	Bins         []StrideBin         `json:"bins"`
+	Contribution *StrideContribution `json:"contribution,omitempty"`
+	Reason       *string             `json:"reason,omitempty"`
+	AnalyzedS    int                 `json:"analyzed_s"`
+	ExcludedS    int                 `json:"excluded_s"`
+	MinSpeedMps  *float64            `json:"min_speed_mps,omitempty"`
+	Scatter      []StridePoint       `json:"scatter,omitempty"`
 }

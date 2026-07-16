@@ -7,12 +7,14 @@ import { ZoneTimeStrip } from "../components/ZoneTimeStrip";
 import { WPrimeBalanceStrip } from "../components/WPrimeBalanceStrip";
 import { DetectedIntervalsTable } from "../components/DetectedIntervalsTable";
 import { QuadrantScatter } from "../components/QuadrantScatter";
+import { StrideView } from "../components/StrideView";
 import {
   useWorkout,
   useCPModel,
   useWPrimeBalance,
   useDetectedIntervals,
   useQuadrant,
+  useStride,
 } from "../api/hooks";
 import { ApiError } from "../api/client";
 import type { Workout } from "../api/types";
@@ -48,6 +50,9 @@ export function WorkoutDetailView() {
   // Force/velocity quadrant scatter — needs power+cadence streams and a CP fit;
   // pivot cadence is the UI constant 90 rpm. Absent (404 / no fit) renders nothing.
   const quadrant = useQuadrant(id, cp.data?.model?.cp_watts);
+  // Runs only: the endpoint 409s otherwise, so the hook is gated on sport
+  // rather than letting the page make a request that cannot succeed.
+  const stride = useStride(id, data?.sport === "run");
 
   const notFound =
     isError && error instanceof ApiError && error.status === 404;
@@ -101,6 +106,16 @@ export function WorkoutDetailView() {
       {quadrant.data && quadrant.data.summary.pedaling_s > 0 && (
         <Panel title="Quadrant analysis">
           <QuadrantScatter result={quadrant.data} />
+        </Panel>
+      )}
+
+      {/* Renders whenever the run has usable bins — including the steady-state
+          case, where the view explains WHY there is no split rather than
+          vanishing. A non-run, a missing cadence stream (404) or a fetch error
+          leaves it absent and the page unaffected. */}
+      {stride.data && stride.data.bins.length > 0 && (
+        <Panel title="Cadence vs stride">
+          <StrideView result={stride.data} />
         </Panel>
       )}
 

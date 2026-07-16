@@ -28,6 +28,7 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 	rg.GET("/workouts/:id/w-prime-balance", h.wPrimeBalance)
 	rg.GET("/workouts/:id/intervals", h.intervals)
 	rg.GET("/workouts/:id/quadrant", h.quadrant)
+	rg.GET("/workouts/:id/stride", h.stride)
 }
 
 // ingest godoc
@@ -310,9 +311,75 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "power_stream_missing"})
 	case errors.Is(err, ErrCadenceStreamMissing):
 		c.JSON(http.StatusNotFound, gin.H{"error": "cadence_stream_missing"})
+	case errors.Is(err, ErrSpeedStreamMissing):
+		c.JSON(http.StatusNotFound, gin.H{"error": "speed_stream_missing"})
+	case errors.Is(err, ErrSportUnsupported):
+		c.JSON(http.StatusConflict, gin.H{"error": "sport_unsupported"})
 	case errors.Is(err, ErrDownsampleInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "downsample_invalid"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "streams_failed"})
+	}
+}
+
+// stride godoc
+// @Summary      Run cadence-vs-step-length decomposition
+// @Description  For a RUN, decomposes where speed comes from: turnover or step length, and which one plateaus. Speed = cadence × step length, so per-sample `step_length_m = speed / (cadence/60)` — metres per single ground contact (Garmin's "step length", ~1.0–1.3 m; "stride" conventionally means two steps, hence the naming). Qualifying samples (speed AND cadence both positive) are bucketed into 0.25 m/s speed bins over the observed range; each bin reports its seconds, mean cadence and mean step length, so a plateau is VISIBLE rather than asserted. Because `ln(speed) = ln(cadence) + ln(step)`, the time-weighted log-log slopes over the bin means sum to 1 and split the speed gain into `cadence_contribution_pct` / `step_contribution_pct` — the verdict is always decomposed, never a bare "you are stride-limited" label. Samples with non-positive speed or cadence (standing, dropouts) are excluded and counted in `excluded_s`. Optional `min_speed_mps` ([0.5, 5.0]) trims walk breaks and is echoed when applied; default off, since a fixed cutoff would misread slow trail runs. A run whose bins span < 0.5 m/s returns the bins with `contribution: null` and `reason: "insufficient_speed_range"` — a steady-state run genuinely holds no answer. `summary_only=true` omits the ≤1000-point scatter. Reads best on runs with pace variety (intervals, fartlek, progressions). Compute-on-read: nothing persisted; step length and cadence feed no nutrition/hydration/energy total.
+// @Tags         workouts
+// @Produce      json
+// @Param        id             path   string   true   "Workout UUID"
+// @Param        min_speed_mps  query  number   false  "Exclude samples slower than this (m/s, 0.5..5.0) — e.g. walk breaks"
+// @Param        summary_only   query  boolean  false  "Omit the scatter (bins + split only)"
+// @Success      200  {object}  StrideResult
+// @Failure      400  {object}  map[string]string  "min_speed_invalid"
+// @Failure      404  {object}  map[string]string  "workout_not_found | streams_not_found | speed_stream_missing | cadence_stream_missing"
+// @Failure      409  {object}  map[string]string  "sport_unsupported"
+// @Security     BearerAuth
+// @Router       /workouts/{id}/stride [get]
+func (h *Handlers) stride(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workout_not_found"})
+		return
+	}
+
+	minSpeed := 0.0 // 0 = no cutoff; the param is opt-in
+	if raw := c.Query("min_speed_mps"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < minSpeedParamLow || v > minSpeedParamHigh {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "min_speed_invalid"})
+			return
+		}
+		minSpeed = v
+	}
+	summaryOnly := c.Query("summary_only") == "true"
+
+	res, err := h.svc.Stride(c.Request.Context(), id, minSpeed, summaryOnly)
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	roundStride(res)
+	c.JSON(http.StatusOK, res)
+}
+
+// roundStride rounds at the boundary: step length 2dp (a centimetre is the
+// meaningful grain), cadence and percentages 1dp. Full precision runs through
+// the fit — the split is computed before any rounding.
+func roundStride(res *StrideResult) {
+	for i := range res.Bins {
+		res.Bins[i].CadenceSPM = numfmt.Round1(res.Bins[i].CadenceSPM)
+		res.Bins[i].StepLengthM = numfmt.Round2(res.Bins[i].StepLengthM)
+		res.Bins[i].SpeedLowMps = numfmt.Round2(res.Bins[i].SpeedLowMps)
+		res.Bins[i].SpeedHighMps = numfmt.Round2(res.Bins[i].SpeedHighMps)
+	}
+	if res.Contribution != nil {
+		res.Contribution.CadencePct = numfmt.Round1(res.Contribution.CadencePct)
+		res.Contribution.StepPct = numfmt.Round1(res.Contribution.StepPct)
+	}
+	for i := range res.Scatter {
+		res.Scatter[i].SpeedMps = numfmt.Round2(res.Scatter[i].SpeedMps)
+		res.Scatter[i].CadenceSPM = numfmt.Round1(res.Scatter[i].CadenceSPM)
+		res.Scatter[i].StepLengthM = numfmt.Round2(res.Scatter[i].StepLengthM)
 	}
 }

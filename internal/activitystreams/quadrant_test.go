@@ -40,7 +40,7 @@ func TestQuadrant_SpinningIsQ4(t *testing.T) {
 
 // Coasting/dropout samples (power ≤ 0 or cadence ≤ 0) are excluded, not diluting.
 func TestQuadrant_CoastingExcluded(t *testing.T) {
-	power := append(constF(20, 300), constF(10, 0)...)   // 10 s coasting
+	power := append(constF(20, 300), constF(10, 0)...) // 10 s coasting
 	cadence := append(constF(20, 60), constF(10, 0)...)
 	res := quadrantAnalysis(power, cadence, 250, 90, 172.5)
 	assert.Equal(t, 20, res.Summary.PedalingS)

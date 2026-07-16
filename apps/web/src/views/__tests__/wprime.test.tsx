@@ -72,6 +72,7 @@ function mockHooks(over: Record<string, unknown>) {
     useWPrimeBalance: () => ok(undefined),
     useDetectedIntervals: () => ok(undefined),
     useQuadrant: () => ok(undefined),
+    useStride: () => ok(undefined),
     ...over,
   }));
 }

@@ -558,3 +558,30 @@ export interface Workout {
   splits?: Split[] | null;
   sets?: WorkoutSet[] | null;
 }
+
+// Mirrors internal/activitystreams stride analysis. Speed = cadence × step
+// length, so a run's speed gain splits between turnover and step length; the
+// bins show WHERE each plateaus. `contribution` is null exactly when `reason`
+// is set (a steady run holds no answer).
+export type StrideBin = {
+  speed_low_mps: number;
+  speed_high_mps: number;
+  seconds: number;
+  cadence_spm: number;
+  step_length_m: number;
+};
+
+export type StrideContribution = {
+  cadence_contribution_pct: number;
+  step_contribution_pct: number;
+};
+
+export type StrideResult = {
+  workout_id: string;
+  bins: StrideBin[];
+  contribution?: StrideContribution | null;
+  reason?: string | null;
+  analyzed_s: number;
+  excluded_s: number;
+  min_speed_mps?: number | null;
+};

@@ -11502,6 +11502,79 @@ const docTemplate = `{
                 }
             }
         },
+        "/workouts/{id}/stride": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "For a RUN, decomposes where speed comes from: turnover or step length, and which one plateaus. Speed = cadence × step length, so per-sample ` + "`" + `step_length_m = speed / (cadence/60)` + "`" + ` — metres per single ground contact (Garmin's \"step length\", ~1.0–1.3 m; \"stride\" conventionally means two steps, hence the naming). Qualifying samples (speed AND cadence both positive) are bucketed into 0.25 m/s speed bins over the observed range; each bin reports its seconds, mean cadence and mean step length, so a plateau is VISIBLE rather than asserted. Because ` + "`" + `ln(speed) = ln(cadence) + ln(step)` + "`" + `, the time-weighted log-log slopes over the bin means sum to 1 and split the speed gain into ` + "`" + `cadence_contribution_pct` + "`" + ` / ` + "`" + `step_contribution_pct` + "`" + ` — the verdict is always decomposed, never a bare \"you are stride-limited\" label. Samples with non-positive speed or cadence (standing, dropouts) are excluded and counted in ` + "`" + `excluded_s` + "`" + `. Optional ` + "`" + `min_speed_mps` + "`" + ` ([0.5, 5.0]) trims walk breaks and is echoed when applied; default off, since a fixed cutoff would misread slow trail runs. A run whose bins span \u003c 0.5 m/s returns the bins with ` + "`" + `contribution: null` + "`" + ` and ` + "`" + `reason: \"insufficient_speed_range\"` + "`" + ` — a steady-state run genuinely holds no answer. ` + "`" + `summary_only=true` + "`" + ` omits the ≤1000-point scatter. Reads best on runs with pace variety (intervals, fartlek, progressions). Compute-on-read: nothing persisted; step length and cadence feed no nutrition/hydration/energy total.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Run cadence-vs-step-length decomposition",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Exclude samples slower than this (m/s, 0.5..5.0) — e.g. walk breaks",
+                        "name": "min_speed_mps",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Omit the scatter (bins + split only)",
+                        "name": "summary_only",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activitystreams.StrideResult"
+                        }
+                    },
+                    "400": {
+                        "description": "min_speed_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "workout_not_found | streams_not_found | speed_stream_missing | cadence_stream_missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "sport_unsupported",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/sweat-rate": {
             "get": {
                 "security": [
@@ -12005,6 +12078,86 @@ const docTemplate = `{
                         "items": {
                             "type": "number"
                         }
+                    }
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "activitystreams.StrideBin": {
+            "type": "object",
+            "properties": {
+                "cadence_spm": {
+                    "type": "number"
+                },
+                "seconds": {
+                    "type": "integer"
+                },
+                "speed_high_mps": {
+                    "type": "number"
+                },
+                "speed_low_mps": {
+                    "type": "number"
+                },
+                "step_length_m": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.StrideContribution": {
+            "type": "object",
+            "properties": {
+                "cadence_contribution_pct": {
+                    "type": "number"
+                },
+                "step_contribution_pct": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.StridePoint": {
+            "type": "object",
+            "properties": {
+                "cadence_spm": {
+                    "type": "number"
+                },
+                "speed_mps": {
+                    "type": "number"
+                },
+                "step_length_m": {
+                    "type": "number"
+                }
+            }
+        },
+        "activitystreams.StrideResult": {
+            "type": "object",
+            "properties": {
+                "analyzed_s": {
+                    "type": "integer"
+                },
+                "bins": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/activitystreams.StrideBin"
+                    }
+                },
+                "contribution": {
+                    "$ref": "#/definitions/activitystreams.StrideContribution"
+                },
+                "excluded_s": {
+                    "type": "integer"
+                },
+                "min_speed_mps": {
+                    "type": "number"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "scatter": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/activitystreams.StridePoint"
                     }
                 },
                 "workout_id": {
@@ -13074,6 +13227,10 @@ const docTemplate = `{
                 },
                 "assumed_outdoor": {
                     "type": "boolean"
+                },
+                "assumed_start": {
+                    "description": "AssumedStart carries the habitual start that was assumed when the session\nwas scheduled by date alone — the check-in should read \"at your usual\n06:00\", not quote an hour it invented silently.",
+                    "type": "string"
                 },
                 "date": {
                     "type": "string"
@@ -14500,7 +14657,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "assumed_start": {
-                    "type": "boolean"
+                    "type": "string"
                 },
                 "conditions": {
                     "$ref": "#/definitions/heat.Conditions"
@@ -14533,7 +14690,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/heat.Adjustment"
                 },
                 "window": {
-                    "description": "Window is the time range actually scored, StartSource names the rule that\nproduced it, and AssumedStart flags that the hour was guessed rather than\nstated — a suggestion resting on an assumed start must say so.",
+                    "description": "Window is the time range actually scored and StartSource names the rule\nthat produced it. AssumedStart carries the applied HH:MM when the hour was\nguessed rather than stated — the time itself rather than a bool, since\nStartSource already says THAT it was assumed; this says WHICH default\napplied, so a wrong one is self-evident.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/heat.ScoredWindow"
