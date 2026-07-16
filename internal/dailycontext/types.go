@@ -45,6 +45,11 @@ type DailyContext struct {
 	// full week and the inputs behind each tier stay behind /nutrition/fuel-plan,
 	// and applying a number is the goal-override PUT (add-periodized-fuel-targets).
 	FuelPlan *FuelPlanBlock `json:"fuel_plan,omitempty"`
+	// Today's and tomorrow's heat picture for planned OUTDOOR sessions — the
+	// trigger for the coach's confirmed update flow when weather says a session
+	// needs changing. Omitted entirely when nothing is heat-relevant or
+	// computable (add-heat-adjusted-training).
+	Heat *HeatBlock `json:"heat,omitempty"`
 	// Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
 	// reading is misleading). nil when no snapshot exists for the date.
 	Recovery *recoverymetrics.Snapshot `json:"recovery"`
@@ -151,6 +156,27 @@ type GoalOverrideBlock struct {
 type FuelPlanBlock struct {
 	Today    *FuelPlanDay `json:"today,omitempty"`
 	Tomorrow *FuelPlanDay `json:"tomorrow,omitempty"`
+}
+
+// HeatBlock is the check-in view of heat: only the days that actually have a
+// heat-relevant session. Indoor, absent and uncomputable sessions are left out
+// rather than represented as nulls — the block exists to say "this needs
+// attention", so a day with nothing to say has no entry.
+type HeatBlock struct {
+	Today    *HeatDay `json:"today,omitempty"`
+	Tomorrow *HeatDay `json:"tomorrow,omitempty"`
+}
+
+// HeatDay is one planned session's heat summary. Deliberately compact — the
+// conditions, evidence and fluid note live on /workouts/{id}/heat.
+type HeatDay struct {
+	WorkoutID       uuid.UUID `json:"workout_id"`
+	Date            string    `json:"date"`
+	LocationName    string    `json:"location_name"`
+	HeatLoadC       float64   `json:"heat_load_c"`
+	Acclimatization string    `json:"acclimatization"`
+	ReductionPct    float64   `json:"suggested_reduction_pct"`
+	AssumedOutdoor  bool      `json:"assumed_outdoor,omitempty"`
 }
 
 // FuelPlanDay is one day's classification. SuggestedCarbsG is absent when no

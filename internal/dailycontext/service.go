@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vinzenzs/kazper/internal/bodyweight"
@@ -13,6 +14,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
 	"github.com/vinzenzs/kazper/internal/fuelplan"
 	"github.com/vinzenzs/kazper/internal/goals"
+	"github.com/vinzenzs/kazper/internal/heat"
 	"github.com/vinzenzs/kazper/internal/hydration"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
 	"github.com/vinzenzs/kazper/internal/numfmt"
@@ -47,7 +49,19 @@ type Service struct {
 	// summarySvc.SetBodyWeightRepo pattern) rather than widening the already-wide
 	// constructor. nil leaves the fuel_plan block out entirely.
 	fuelPlanSvc FuelPlanProvider
+
+	// heatSvc is optional, same pattern. nil leaves the heat block out.
+	heatSvc HeatProvider
 }
+
+// HeatProvider is the narrow read behind the heat block: one planned session's
+// heat report.
+type HeatProvider interface {
+	ReportFor(ctx context.Context, id uuid.UUID) (*heat.Report, error)
+}
+
+// SetHeatProvider enables the today+tomorrow heat block.
+func (s *Service) SetHeatProvider(p HeatProvider) { s.heatSvc = p }
 
 // FuelPlanProvider is the narrow read behind the fuel_plan block: classify a
 // date window. Kept an interface so dailycontext stays testable without the
@@ -349,6 +363,23 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		})
 	}
 
+	// Today's and tomorrow's heat picture. Best-effort like the fuel block: heat
+	// is supplementary, and a forecast problem must not fail the check-in.
+	if s.heatSvc != nil {
+		g.Go(func() error {
+			block := &HeatBlock{
+				Today:    s.heatDay(gctx, date, loc),
+				Tomorrow: s.heatDay(gctx, date.AddDate(0, 0, 1), loc),
+			}
+			// A block with nothing to say is no block: indoor, absent and
+			// uncomputable sessions leave nothing worth a key.
+			if block.Today != nil || block.Tomorrow != nil {
+				out.Heat = block
+			}
+			return nil
+		})
+	}
+
 	// Goal override on the date.
 	g.Go(func() error {
 		ov, err := s.goalOverridesRepo.GetOverride(gctx, date)
@@ -426,4 +457,40 @@ func compactFuelDay(d fuelplan.Day) *FuelPlanDay {
 		SuggestedCarbsG: d.SuggestedCarbsG,
 		PlanMissing:     d.PlanMissing,
 	}
+}
+
+// heatDay returns the compact heat summary for the day's first planned session
+// that actually has a heat answer, or nil. Indoor sessions, days with no
+// planned session, and reports that degraded (no location, no forecast) all
+// yield nil — the block flags what needs attention, not what doesn't.
+func (s *Service) heatDay(ctx context.Context, date time.Time, loc *time.Location) *HeatDay {
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
+	dayEnd := dayStart.Add(24 * time.Hour)
+	status := string(workouts.StatusPlanned)
+
+	planned, err := s.workoutsRepo.List(ctx, dayStart.UTC(), dayEnd.UTC(), nil, &status)
+	if err != nil {
+		return nil
+	}
+	for _, w := range planned {
+		rep, err := s.heatSvc.ReportFor(ctx, w.ID)
+		if err != nil || rep == nil {
+			continue
+		}
+		// not_applicable (indoor) or a degradation reason means no answer.
+		if rep.NotApplicable || rep.Reason != nil || rep.Load == nil ||
+			rep.Adjustment == nil || rep.Acclim == nil || rep.Location == nil {
+			continue
+		}
+		return &HeatDay{
+			WorkoutID:       w.ID,
+			Date:            rep.Date,
+			LocationName:    rep.Location.Name,
+			HeatLoadC:       rep.Load.HeatLoadC,
+			Acclimatization: string(rep.Acclim.Level),
+			ReductionPct:    rep.Adjustment.ReductionPct,
+			AssumedOutdoor:  rep.AssumedOutdoor,
+		}
+	}
+	return nil
 }

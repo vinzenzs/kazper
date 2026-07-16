@@ -4442,7 +4442,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Records where the athlete is over an inclusive date range, so weather/heat reads for those dates resolve to that place instead of home. `name`, `lat` (-90..90) and `lon` (-180..180) are required — city-grade coordinates are all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside a training camp resolves to the weekend for its dates (latest `start_date` wins). No PATCH — corrections and trip extensions are delete + re-log. `Idempotency-Key` is supported. Nothing downstream is precomputed, so sessions already scheduled in the range follow the trip automatically.",
+                "description": "Records where the athlete is over an inclusive date range, so weather/heat reads for those dates resolve to that place instead of home. Supply either explicit `lat` (-90..90) + `lon` (-180..180), or a `place` name to geocode server-side (which also fills `name` when omitted); explicit coordinates win when both are given. A `place` matching nothing is `400 place_not_found`; geocoding being down is `503 geocoding_unavailable` — the write is refused rather than stored without real coordinates. City-grade precision is all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside a training camp resolves to the weekend for its dates (latest `start_date` wins). No PATCH — corrections and trip extensions are delete + re-log. `Idempotency-Key` is supported. Nothing downstream is precomputed, so sessions already scheduled in the range follow the trip automatically.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4479,7 +4479,16 @@
                         }
                     },
                     "400": {
-                        "description": "name_required | lat_lon_invalid | date_invalid | range_invalid | note_too_long | invalid_json",
+                        "description": "name_required | lat_lon_invalid | date_invalid | range_invalid | note_too_long | place_not_found | invalid_json",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "geocoding_unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -11026,6 +11035,58 @@
                 }
             }
         },
+        "/workouts/{id}/heat": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "For a PLANNED workout: resolves the session date's location (the same primitive `/locations/resolve` exposes — the echoed name shows which city the forecast came from), fetches the session window's forecast, and computes a composite `heat_load_c` = heat index (temperature × humidity) + a solar penalty scaled down by cloud cover − bounded wind cooling. Acclimatization is DERIVED, not asked for: `low` (\u003c 2) / `medium` (2–4) / `good` (≥ 5) qualifying sessions — outdoor, completed, ≥ 60 min, session heat index ≥ 25 °C, trailing 14 days — with the qualifying workout ids echoed so the level traces back to real rides. The suggested adjustment is a percentage reduction off the effective baseline (FTP for bike, threshold pace for run) from a fixed heat-load × duration × acclimatization table, plus a fluid note scaled from the measured sweat rate when one exists (a generic 600 ml/hr default is flagged as such). Degradations are `200`s: an `indoor` planned session returns `not_applicable: true` without fetching weather; a null environment computes with `assumed_outdoor: true`; no resolvable location → `reason: \"location_unconfigured\"`; forecast trouble → `reason: \"weather_unavailable\"`. A non-planned workout returns 409 — this is a pre-session question. **This is a practice HEURISTIC, not WBGT and not physiology** — there is no solar sensor, cloud cover is the proxy, and every constant is v1 and echoed. Compute-on-read: persists nothing and writes no target anywhere; applying an adjustment means proposing edits to the scheduled workout through the existing confirmed flows.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Heat load and suggested adjustment for a planned session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heat.Report"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "workout_not_planned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/workouts/{id}/intervals": {
             "get": {
                 "security": [
@@ -12777,6 +12838,14 @@
                 "goal_override": {
                     "$ref": "#/definitions/dailycontext.GoalOverrideBlock"
                 },
+                "heat": {
+                    "description": "Today's and tomorrow's heat picture for planned OUTDOOR sessions — the\ntrigger for the coach's confirmed update flow when weather says a session\nneeds changing. Omitted entirely when nothing is heat-relevant or\ncomputable (add-heat-adjusted-training).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dailycontext.HeatBlock"
+                        }
+                    ]
+                },
                 "hydration": {
                     "$ref": "#/definitions/dailycontext.HydrationBlock"
                 },
@@ -12895,6 +12964,43 @@
                 },
                 "present": {
                     "type": "boolean"
+                }
+            }
+        },
+        "dailycontext.HeatBlock": {
+            "type": "object",
+            "properties": {
+                "today": {
+                    "$ref": "#/definitions/dailycontext.HeatDay"
+                },
+                "tomorrow": {
+                    "$ref": "#/definitions/dailycontext.HeatDay"
+                }
+            }
+        },
+        "dailycontext.HeatDay": {
+            "type": "object",
+            "properties": {
+                "acclimatization": {
+                    "type": "string"
+                },
+                "assumed_outdoor": {
+                    "type": "boolean"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "heat_load_c": {
+                    "type": "number"
+                },
+                "location_name": {
+                    "type": "string"
+                },
+                "suggested_reduction_pct": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
                 }
             }
         },
@@ -14089,6 +14195,180 @@
                 }
             }
         },
+        "heat.AcclimEvidence": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "$ref": "#/definitions/heat.Acclimatization"
+                },
+                "qualifying_sessions": {
+                    "type": "integer"
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heat.QualifyingSession"
+                    }
+                },
+                "window_days": {
+                    "type": "integer"
+                }
+            }
+        },
+        "heat.Acclimatization": {
+            "type": "string",
+            "enum": [
+                "low",
+                "medium",
+                "good"
+            ],
+            "x-enum-varnames": [
+                "AcclimLow",
+                "AcclimMedium",
+                "AcclimGood"
+            ]
+        },
+        "heat.Adjustment": {
+            "type": "object",
+            "properties": {
+                "baseline": {
+                    "type": "string"
+                },
+                "baseline_value": {
+                    "type": "number"
+                },
+                "reduction_pct": {
+                    "type": "number"
+                },
+                "suggested_value": {
+                    "type": "number"
+                }
+            }
+        },
+        "heat.Conditions": {
+            "type": "object",
+            "properties": {
+                "cloud_cover_pct": {
+                    "type": "number"
+                },
+                "humidity_pct": {
+                    "type": "number"
+                },
+                "temperature_c": {
+                    "type": "number"
+                },
+                "wind_speed_mps": {
+                    "type": "number"
+                }
+            }
+        },
+        "heat.FluidNote": {
+            "type": "object",
+            "properties": {
+                "ml_per_hour": {
+                    "type": "number"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source states where the number came from — a flagged default is honest, a\nsilent one would not be. See the Source* constants.",
+                    "type": "string"
+                }
+            }
+        },
+        "heat.Load": {
+            "type": "object",
+            "properties": {
+                "heat_index_c": {
+                    "type": "number"
+                },
+                "heat_load_c": {
+                    "type": "number"
+                },
+                "solar_penalty_c": {
+                    "type": "number"
+                },
+                "wind_cooling_c": {
+                    "type": "number"
+                }
+            }
+        },
+        "heat.Location": {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "heat.QualifyingSession": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "duration_min": {
+                    "type": "number"
+                },
+                "heat_index_c": {
+                    "type": "number"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "heat.Report": {
+            "type": "object",
+            "properties": {
+                "acclimatization": {
+                    "$ref": "#/definitions/heat.AcclimEvidence"
+                },
+                "assumed_outdoor": {
+                    "type": "boolean"
+                },
+                "conditions": {
+                    "$ref": "#/definitions/heat.Conditions"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "duration_min": {
+                    "type": "number"
+                },
+                "fluid": {
+                    "$ref": "#/definitions/heat.FluidNote"
+                },
+                "load": {
+                    "$ref": "#/definitions/heat.Load"
+                },
+                "location": {
+                    "$ref": "#/definitions/heat.Location"
+                },
+                "not_applicable": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "suggested_adjustment": {
+                    "$ref": "#/definitions/heat.Adjustment"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
         "hydration.Daily": {
             "type": "object",
             "properties": {
@@ -14243,6 +14523,9 @@
                     "type": "string"
                 },
                 "note": {
+                    "type": "string"
+                },
+                "place": {
                     "type": "string"
                 },
                 "start_date": {

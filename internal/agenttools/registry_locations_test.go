@@ -47,9 +47,10 @@ func TestLocations_BuildShapes(t *testing.T) {
 	assert.Equal(t, float64(0), zeroBody["lon"])
 
 	note := "altitude camp, 2320 m"
+	lat, lon := 37.09, -3.40
 	withNote, err := log.Build(mustMarshal(t, LogLocationPeriodArgs{
 		Name: "Sierra Nevada", StartDate: "2026-05-01", EndDate: "2026-05-21",
-		Lat: 37.09, Lon: -3.40, Note: &note,
+		Lat: &lat, Lon: &lon, Note: &note,
 	}))
 	require.NoError(t, err)
 	var noteBody map[string]any

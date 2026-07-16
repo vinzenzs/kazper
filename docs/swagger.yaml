@@ -842,6 +842,14 @@ definitions:
           and applying a number is the goal-override PUT (add-periodized-fuel-targets).
       goal_override:
         $ref: '#/definitions/dailycontext.GoalOverrideBlock'
+      heat:
+        allOf:
+        - $ref: '#/definitions/dailycontext.HeatBlock'
+        description: |-
+          Today's and tomorrow's heat picture for planned OUTDOOR sessions — the
+          trigger for the coach's confirmed update flow when weather says a session
+          needs changing. Omitted entirely when nothing is heat-relevant or
+          computable (add-heat-adjusted-training).
       hydration:
         $ref: '#/definitions/dailycontext.HydrationBlock'
       hydration_balance:
@@ -928,6 +936,30 @@ definitions:
         $ref: '#/definitions/goals.Goals'
       present:
         type: boolean
+    type: object
+  dailycontext.HeatBlock:
+    properties:
+      today:
+        $ref: '#/definitions/dailycontext.HeatDay'
+      tomorrow:
+        $ref: '#/definitions/dailycontext.HeatDay'
+    type: object
+  dailycontext.HeatDay:
+    properties:
+      acclimatization:
+        type: string
+      assumed_outdoor:
+        type: boolean
+      date:
+        type: string
+      heat_load_c:
+        type: number
+      location_name:
+        type: string
+      suggested_reduction_pct:
+        type: number
+      workout_id:
+        type: string
     type: object
   dailycontext.HydrationBlock:
     properties:
@@ -1716,6 +1748,123 @@ definitions:
       updated_at:
         type: string
     type: object
+  heat.AcclimEvidence:
+    properties:
+      level:
+        $ref: '#/definitions/heat.Acclimatization'
+      qualifying_sessions:
+        type: integer
+      sessions:
+        items:
+          $ref: '#/definitions/heat.QualifyingSession'
+        type: array
+      window_days:
+        type: integer
+    type: object
+  heat.Acclimatization:
+    enum:
+    - low
+    - medium
+    - good
+    type: string
+    x-enum-varnames:
+    - AcclimLow
+    - AcclimMedium
+    - AcclimGood
+  heat.Adjustment:
+    properties:
+      baseline:
+        type: string
+      baseline_value:
+        type: number
+      reduction_pct:
+        type: number
+      suggested_value:
+        type: number
+    type: object
+  heat.Conditions:
+    properties:
+      cloud_cover_pct:
+        type: number
+      humidity_pct:
+        type: number
+      temperature_c:
+        type: number
+      wind_speed_mps:
+        type: number
+    type: object
+  heat.FluidNote:
+    properties:
+      ml_per_hour:
+        type: number
+      note:
+        type: string
+      source:
+        description: |-
+          Source states where the number came from — a flagged default is honest, a
+          silent one would not be. See the Source* constants.
+        type: string
+    type: object
+  heat.Load:
+    properties:
+      heat_index_c:
+        type: number
+      heat_load_c:
+        type: number
+      solar_penalty_c:
+        type: number
+      wind_cooling_c:
+        type: number
+    type: object
+  heat.Location:
+    properties:
+      lat:
+        type: number
+      lon:
+        type: number
+      name:
+        type: string
+      source:
+        type: string
+    type: object
+  heat.QualifyingSession:
+    properties:
+      date:
+        type: string
+      duration_min:
+        type: number
+      heat_index_c:
+        type: number
+      workout_id:
+        type: string
+    type: object
+  heat.Report:
+    properties:
+      acclimatization:
+        $ref: '#/definitions/heat.AcclimEvidence'
+      assumed_outdoor:
+        type: boolean
+      conditions:
+        $ref: '#/definitions/heat.Conditions'
+      date:
+        type: string
+      duration_min:
+        type: number
+      fluid:
+        $ref: '#/definitions/heat.FluidNote'
+      load:
+        $ref: '#/definitions/heat.Load'
+      location:
+        $ref: '#/definitions/heat.Location'
+      not_applicable:
+        type: boolean
+      reason:
+        type: string
+      suggested_adjustment:
+        $ref: '#/definitions/heat.Adjustment'
+      workout_id:
+        type: string
+    type: object
   hydration.Daily:
     properties:
       date:
@@ -1822,6 +1971,8 @@ definitions:
       name:
         type: string
       note:
+        type: string
+      place:
         type: string
       start_date:
         type: string
@@ -7583,12 +7734,16 @@ paths:
       - application/json
       description: 'Records where the athlete is over an inclusive date range, so
         weather/heat reads for those dates resolve to that place instead of home.
-        `name`, `lat` (-90..90) and `lon` (-180..180) are required — city-grade coordinates
-        are all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip
-        nested inside a training camp resolves to the weekend for its dates (latest
-        `start_date` wins). No PATCH — corrections and trip extensions are delete
-        + re-log. `Idempotency-Key` is supported. Nothing downstream is precomputed,
-        so sessions already scheduled in the range follow the trip automatically.'
+        Supply either explicit `lat` (-90..90) + `lon` (-180..180), or a `place` name
+        to geocode server-side (which also fills `name` when omitted); explicit coordinates
+        win when both are given. A `place` matching nothing is `400 place_not_found`;
+        geocoding being down is `503 geocoding_unavailable` — the write is refused
+        rather than stored without real coordinates. City-grade precision is all the
+        forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside
+        a training camp resolves to the weekend for its dates (latest `start_date`
+        wins). No PATCH — corrections and trip extensions are delete + re-log. `Idempotency-Key`
+        is supported. Nothing downstream is precomputed, so sessions already scheduled
+        in the range follow the trip automatically.'
       parameters:
       - description: Optional client-supplied idempotency key
         in: header
@@ -7610,7 +7765,13 @@ paths:
             type: object
         "400":
           description: name_required | lat_lon_invalid | date_invalid | range_invalid
-            | note_too_long | invalid_json
+            | note_too_long | place_not_found | invalid_json
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: geocoding_unavailable
           schema:
             additionalProperties:
               type: string
@@ -11811,6 +11972,59 @@ paths:
       security:
       - BearerAuth: []
       summary: Fulfill a planned workout with a completed activity
+      tags:
+      - workouts
+  /workouts/{id}/heat:
+    get:
+      description: 'For a PLANNED workout: resolves the session date''s location (the
+        same primitive `/locations/resolve` exposes — the echoed name shows which
+        city the forecast came from), fetches the session window''s forecast, and
+        computes a composite `heat_load_c` = heat index (temperature × humidity) +
+        a solar penalty scaled down by cloud cover − bounded wind cooling. Acclimatization
+        is DERIVED, not asked for: `low` (< 2) / `medium` (2–4) / `good` (≥ 5) qualifying
+        sessions — outdoor, completed, ≥ 60 min, session heat index ≥ 25 °C, trailing
+        14 days — with the qualifying workout ids echoed so the level traces back
+        to real rides. The suggested adjustment is a percentage reduction off the
+        effective baseline (FTP for bike, threshold pace for run) from a fixed heat-load
+        × duration × acclimatization table, plus a fluid note scaled from the measured
+        sweat rate when one exists (a generic 600 ml/hr default is flagged as such).
+        Degradations are `200`s: an `indoor` planned session returns `not_applicable:
+        true` without fetching weather; a null environment computes with `assumed_outdoor:
+        true`; no resolvable location → `reason: "location_unconfigured"`; forecast
+        trouble → `reason: "weather_unavailable"`. A non-planned workout returns 409
+        — this is a pre-session question. **This is a practice HEURISTIC, not WBGT
+        and not physiology** — there is no solar sensor, cloud cover is the proxy,
+        and every constant is v1 and echoed. Compute-on-read: persists nothing and
+        writes no target anywhere; applying an adjustment means proposing edits to
+        the scheduled workout through the existing confirmed flows.'
+      parameters:
+      - description: Workout UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heat.Report'
+        "404":
+          description: not_found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: workout_not_planned
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Heat load and suggested adjustment for a planned session
       tags:
       - workouts
   /workouts/{id}/intervals:

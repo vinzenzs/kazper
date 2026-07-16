@@ -37,6 +37,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/gear"
 	"github.com/vinzenzs/kazper/internal/goals"
 	"github.com/vinzenzs/kazper/internal/healthvitals"
+	"github.com/vinzenzs/kazper/internal/heat"
 	"github.com/vinzenzs/kazper/internal/hydration"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
 	"github.com/vinzenzs/kazper/internal/idempotency"
@@ -62,6 +63,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/trainingphases"
 	"github.com/vinzenzs/kazper/internal/trainingplan"
 	"github.com/vinzenzs/kazper/internal/vision"
+	"github.com/vinzenzs/kazper/internal/weather"
 	"github.com/vinzenzs/kazper/internal/wellness"
 	"github.com/vinzenzs/kazper/internal/workoutcompliance"
 	"github.com/vinzenzs/kazper/internal/workoutfuel"
@@ -281,6 +283,16 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	locationsSvc := locations.NewService(locationsRepo, locations.Home{
 		Lat: homeLat, Lon: homeLon, Set: homeSet,
 	})
+	// Second outbound integration after OFF, same posture: keyless, bounded
+	// timeout, cached, fail-open. Weather trouble degrades a heat read; it never
+	// 5xx's one.
+	weatherClient := weather.New(weather.Config{}, logger)
+	// Geocoding sugar on the locations write: "log Mallorca July 20-28".
+	locationsSvc.SetGeocoder(weatherClient)
+	heatSvc := heat.NewService(workoutsRepo, locationsSvc, weatherClient, athleteConfigEffective)
+	// Personal fluid guidance from the device's own sweat-loss estimates —
+	// reported under its own source label, never as a field test.
+	heatSvc.SetSweatRateProvider(heat.GarminSweatSignal{Repo: workoutsRepo})
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
 	// (add-meal-workout-link).
@@ -499,6 +511,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	expenditure.NewHandlers(expenditureSvc, cfg.DefaultUserTZ, logger).Register(api)
 	fuelplan.NewHandlers(fuelPlanSvc, cfg.DefaultUserTZ, logger).Register(api)
 	locations.NewHandlers(locationsSvc, cfg.DefaultUserTZ).Register(api)
+	heat.NewHandlers(heatSvc, logger).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
@@ -509,6 +522,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// call. Optional-setter (the summarySvc.SetBodyWeightRepo pattern) rather
 	// than widening an already-wide constructor.
 	dailyCtxSvc.SetFuelPlanProvider(fuelPlanSvc)
+	dailyCtxSvc.SetHeatProvider(heatSvc)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)
 	// Cross-inject multisport so the recent-load by_sport summary decomposes a

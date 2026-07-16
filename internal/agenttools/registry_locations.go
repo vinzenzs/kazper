@@ -14,13 +14,16 @@ func init() { registerMCPDomain(locationSpecs()) }
 
 // LogLocationPeriodArgs is the input to log_location_period.
 type LogLocationPeriodArgs struct {
-	Name           string  `json:"name" jsonschema:"place name as the athlete would say it, e.g. 'Mallorca', 'Sierra Nevada camp' (required)"`
-	StartDate      string  `json:"start_date" jsonschema:"first day at this location, YYYY-MM-DD (inclusive)"`
-	EndDate        string  `json:"end_date" jsonschema:"last day at this location, YYYY-MM-DD (inclusive)"`
-	Lat            float64 `json:"lat" jsonschema:"latitude in [-90, 90]; city-grade precision is enough"`
-	Lon            float64 `json:"lon" jsonschema:"longitude in [-180, 180]; city-grade precision is enough"`
-	Note           *string `json:"note,omitempty" jsonschema:"optional free-text note, e.g. 'altitude camp, 2320 m'"`
-	IdempotencyKey string  `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args"`
+	StartDate string `json:"start_date" jsonschema:"first day at this location, YYYY-MM-DD (inclusive)"`
+	EndDate   string `json:"end_date" jsonschema:"last day at this location, YYYY-MM-DD (inclusive)"`
+	// Place geocodes server-side; lat/lon are the explicit alternative. Supply
+	// one or the other — see the tool description.
+	Place          string   `json:"place,omitempty" jsonschema:"place name to geocode server-side, e.g. 'Mallorca'. Use this OR lat+lon. Also names the period when name is omitted."`
+	Name           string   `json:"name,omitempty" jsonschema:"optional label for the period, e.g. 'Sierra Nevada camp'. Required when passing lat/lon instead of place; with place, defaults to the geocoded name."`
+	Lat            *float64 `json:"lat,omitempty" jsonschema:"latitude in [-90, 90]; city-grade precision is enough. Pass with lon instead of place."`
+	Lon            *float64 `json:"lon,omitempty" jsonschema:"longitude in [-180, 180]; city-grade precision is enough. Pass with lat instead of place."`
+	Note           *string  `json:"note,omitempty" jsonschema:"optional free-text note, e.g. 'altitude camp, 2320 m'"`
+	IdempotencyKey string   `json:"idempotency_key,omitempty" jsonschema:"optional retry key; if omitted, a stable key is derived from the other args"`
 }
 
 // ListLocationPeriodsArgs is the input to list_location_periods.
@@ -36,9 +39,12 @@ func locationSpecs() []Spec {
 			Description: "Record where the athlete is over a date range, so weather and heat reads for " +
 				"those days resolve to that place instead of home. Use it whenever the athlete mentions " +
 				"travel — \"I'm in Mallorca July 20–28\", a training camp, a race trip. " +
-				"YOU supply the coordinates from your own knowledge of the place; city-grade precision is " +
-				"all a forecast needs. Say which city you used, so a wrong guess is visible to the athlete " +
-				"rather than buried in a forecast. " +
+				"Pass `place` and the server geocodes it (simplest, and it names the period for you); or " +
+				"pass explicit `lat`+`lon`+`name` when you know the coordinates or the place name is " +
+				"ambiguous. Explicit coordinates win if you send both. City-grade precision is all a " +
+				"forecast needs — say which place resolved, so a wrong city is visible to the athlete " +
+				"rather than buried in a forecast. An unknown `place` is rejected rather than stored " +
+				"without coordinates. " +
 				"Home does NOT go here — it is server configuration (HOME_LAT/HOME_LON). This is the travel " +
 				"layer only; moving house is a config change, not a log entry. " +
 				"Overlapping periods are fine: a weekend trip logged inside a training camp wins for its " +
@@ -54,13 +60,14 @@ func locationSpecs() []Spec {
 					return HTTPCall{}, err
 				}
 				payload := struct {
-					Name      string  `json:"name"`
-					StartDate string  `json:"start_date"`
-					EndDate   string  `json:"end_date"`
-					Lat       float64 `json:"lat"`
-					Lon       float64 `json:"lon"`
-					Note      *string `json:"note,omitempty"`
-				}{a.Name, a.StartDate, a.EndDate, a.Lat, a.Lon, a.Note}
+					Name      string   `json:"name,omitempty"`
+					StartDate string   `json:"start_date"`
+					EndDate   string   `json:"end_date"`
+					Place     string   `json:"place,omitempty"`
+					Lat       *float64 `json:"lat,omitempty"`
+					Lon       *float64 `json:"lon,omitempty"`
+					Note      *string  `json:"note,omitempty"`
+				}{a.Name, a.StartDate, a.EndDate, a.Place, a.Lat, a.Lon, a.Note}
 				body, err := json.Marshal(payload)
 				if err != nil {
 					return HTTPCall{}, err

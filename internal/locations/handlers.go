@@ -40,18 +40,20 @@ type createBody struct {
 	Lat       *float64 `json:"lat"`
 	Lon       *float64 `json:"lon"`
 	Note      *string  `json:"note"`
+	Place     string   `json:"place"`
 }
 
 // create godoc
 // @Summary      Log a travel location period
-// @Description  Records where the athlete is over an inclusive date range, so weather/heat reads for those dates resolve to that place instead of home. `name`, `lat` (-90..90) and `lon` (-180..180) are required — city-grade coordinates are all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside a training camp resolves to the weekend for its dates (latest `start_date` wins). No PATCH — corrections and trip extensions are delete + re-log. `Idempotency-Key` is supported. Nothing downstream is precomputed, so sessions already scheduled in the range follow the trip automatically.
+// @Description  Records where the athlete is over an inclusive date range, so weather/heat reads for those dates resolve to that place instead of home. Supply either explicit `lat` (-90..90) + `lon` (-180..180), or a `place` name to geocode server-side (which also fills `name` when omitted); explicit coordinates win when both are given. A `place` matching nothing is `400 place_not_found`; geocoding being down is `503 geocoding_unavailable` — the write is refused rather than stored without real coordinates. City-grade precision is all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside a training camp resolves to the weekend for its dates (latest `start_date` wins). No PATCH — corrections and trip extensions are delete + re-log. `Idempotency-Key` is supported. Nothing downstream is precomputed, so sessions already scheduled in the range follow the trip automatically.
 // @Tags         locations
 // @Accept       json
 // @Produce      json
 // @Param        Idempotency-Key  header  string      false  "Optional client-supplied idempotency key"
 // @Param        body  body  createBody  true  "Location period"
 // @Success      201   {object}  map[string]interface{}  "{\"location\": Period}"
-// @Failure      400   {object}  map[string]string  "name_required | lat_lon_invalid | date_invalid | range_invalid | note_too_long | invalid_json"
+// @Failure      400   {object}  map[string]string  "name_required | lat_lon_invalid | date_invalid | range_invalid | note_too_long | place_not_found | invalid_json"
+// @Failure      503   {object}  map[string]string  "geocoding_unavailable"
 // @Security     BearerAuth
 // @Router       /locations [post]
 func (h *Handlers) create(c *gin.Context) {
@@ -62,7 +64,7 @@ func (h *Handlers) create(c *gin.Context) {
 	}
 	p, err := h.svc.Create(c.Request.Context(), CreateInput{
 		StartDate: b.StartDate, EndDate: b.EndDate, Name: b.Name,
-		Lat: b.Lat, Lon: b.Lon, Note: b.Note,
+		Lat: b.Lat, Lon: b.Lon, Note: b.Note, Place: b.Place,
 	})
 	if err != nil {
 		writeErr(c, err)
@@ -215,6 +217,10 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "range_invalid"})
 	case errors.Is(err, ErrNoteTooLong):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "note_too_long"})
+	case errors.Is(err, ErrPlaceNotFound):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "place_not_found"})
+	case errors.Is(err, ErrGeocodingUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "geocoding_unavailable"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "location_failed"})
 	}

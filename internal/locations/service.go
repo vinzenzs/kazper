@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/vinzenzs/kazper/internal/weather"
 )
 
 // Sentinel errors — mapped 1:1 to API error codes by the handler.
@@ -18,7 +20,22 @@ var (
 	ErrRangeInvalid  = errors.New("range_invalid")
 	ErrNoteTooLong   = errors.New("note_too_long")
 	ErrUnconfigured  = errors.New("location_unconfigured")
+
+	// ErrPlaceNotFound: geocoding worked and matched nothing.
+	ErrPlaceNotFound = errors.New("place_not_found")
+	// ErrGeocodingUnavailable: geocoding could not be performed. Distinct from
+	// ErrPlaceNotFound on purpose — "no such place" and "the lookup is down"
+	// call for different reactions, and the write is refused either way rather
+	// than stored without coordinates.
+	ErrGeocodingUnavailable = errors.New("geocoding_unavailable")
 )
+
+// Geocoder resolves a place name to coordinates. Optional: an unwired geocoder
+// makes `place` writes fail with ErrGeocodingUnavailable while explicit
+// lat/lon writes keep working.
+type Geocoder interface {
+	Geocode(ctx context.Context, place string) ([]weather.Place, bool)
+}
 
 const (
 	maxNameLen = 200
@@ -37,13 +54,17 @@ type Home struct {
 
 // Service validates and resolves location periods.
 type Service struct {
-	repo *Repo
-	home Home
+	repo     *Repo
+	home     Home
+	geocoder Geocoder
 }
 
 func NewService(repo *Repo, home Home) *Service {
 	return &Service{repo: repo, home: home}
 }
+
+// SetGeocoder enables `place`-by-name writes.
+func (s *Service) SetGeocoder(g Geocoder) { s.geocoder = g }
 
 // CreateInput is the payload for POST /locations.
 type CreateInput struct {
@@ -53,12 +74,29 @@ type CreateInput struct {
 	Lat       *float64
 	Lon       *float64
 	Note      *string
+	// Place is an alternative to explicit coordinates: geocoded server-side.
+	// Explicit Lat/Lon win when both are supplied.
+	Place string
 }
 
 // Create validates and stores a period. Overlaps with existing periods are
 // accepted — nesting a weekend trip inside a camp is a real thing to log, and
 // resolution's latest-start rule makes it unambiguous.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*Period, error) {
+	// A place name stands in for coordinates AND, when no name was given, for
+	// the name too — "log Mallorca July 20–28" should need nothing else.
+	// Explicit coordinates win: an athlete who gives both means the numbers.
+	if place := strings.TrimSpace(in.Place); place != "" && (in.Lat == nil || in.Lon == nil) {
+		resolved, err := s.geocode(ctx, place)
+		if err != nil {
+			return nil, err
+		}
+		in.Lat, in.Lon = &resolved.Lat, &resolved.Lon
+		if strings.TrimSpace(in.Name) == "" {
+			in.Name = resolved.Name
+		}
+	}
+
 	name := strings.TrimSpace(in.Name)
 	if name == "" || len(name) > maxNameLen {
 		return nil, ErrNameRequired
@@ -93,6 +131,23 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Period, error) {
 		Lon:       *in.Lon,
 		Note:      in.Note,
 	})
+}
+
+// geocode resolves a place name to its top match. The write is refused rather
+// than stored ungeocoded: a period without real coordinates would silently
+// resolve every forecast to the wrong city.
+func (s *Service) geocode(ctx context.Context, place string) (*weather.Place, error) {
+	if s.geocoder == nil {
+		return nil, ErrGeocodingUnavailable
+	}
+	matches, ok := s.geocoder.Geocode(ctx, place)
+	if !ok {
+		return nil, ErrGeocodingUnavailable
+	}
+	if len(matches) == 0 {
+		return nil, ErrPlaceNotFound
+	}
+	return &matches[0], nil
 }
 
 func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*Period, error) {
