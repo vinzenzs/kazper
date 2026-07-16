@@ -7619,7 +7619,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deterministic per-leg in-event fuelling baseline computed on read (not stored). Carbs band by total race duration (\u003c75 min → 0, 75–150 → 60, ≥150 → 90 g/hr) and scale by discipline intake capacity (swim/transition 0, bike 1.0, run 0.7, other 0.8). Fluid and sodium derive from ` + "`" + `sweat_rate_ml_per_hr` + "`" + ` when supplied (fluid capped at 1000 ml/hr; sodium = sweat_rate/1000 × 800 mg/L), else a flagged 600 ml/hr and 600 mg/hr. Carbs (g), sodium (mg) and fluid (ml) are reported as distinct unit fields.",
+                "description": "Deterministic per-leg in-event fuelling baseline computed on read (not stored). Carbs band by total race duration (\u003c75 min → 0, 75–150 → 60, ≥150 → 90 g/hr) and scale by discipline intake capacity (swim/transition 0, bike 1.0, run 0.7, other 0.8). Fluid and sodium derive from ` + "`" + `sweat_rate_ml_per_hr` + "`" + ` when supplied (fluid capped at 1000 ml/hr; sodium = sweat_rate/1000 × 800 mg/L), else a flagged 600 ml/hr and 600 mg/hr. Carbs (g), sodium (mg) and fluid (ml) are reported as distinct unit fields. Optional ` + "`" + `weather=true` + "`" + ` geocodes the race ` + "`" + `location` + "`" + `, fetches the race window's forecast, and scales FLUID and SODIUM by a bounded heat multiplier (~1.0–1.5×, echoed in the ` + "`" + `heat` + "`" + ` block with the load and resolved location) — carbs are never scaled by weather (heat drives sweat loss, not carbohydrate oxidation), the 1000 ml/hr absorption cap still applies, and a flagged default stays flagged (scaling a generic number does not make it measured). Without the flag the response is byte-identical to the base contract; weather-mode degradations keep the base plan and set ` + "`" + `heat_reason` + "`" + ` (` + "`" + `location_ungeocodable` + "`" + ` | ` + "`" + `forecast_out_of_range` + "`" + ` | ` + "`" + `weather_unavailable` + "`" + `).",
                 "produces": [
                     "application/json"
                 ],
@@ -7646,6 +7646,12 @@ const docTemplate = `{
                         "type": "number",
                         "description": "Measured sweat rate in ml/hr; personalises fluid and sodium",
                         "name": "sweat_rate_ml_per_hr",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Scale fluid/sodium by the race-day forecast (opt-in; carbs untouched)",
+                        "name": "weather",
                         "in": "query"
                     }
                 ],
@@ -7684,7 +7690,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Computes, per race leg, a duration-banded intensity target from the athlete-config thresholds: bike legs a power band as a % of ` + "`" + `ftp_watts` + "`" + `, run legs a pace band vs ` + "`" + `threshold_pace_sec_per_km` + "`" + `, swim legs a pace band per 100 m vs ` + "`" + `threshold_swim_pace_sec_per_100m` + "`" + ` (CSS). Each leg carries a ` + "`" + `source` + "`" + ` (computed/override/none), per-leg ` + "`" + `intensity_factor` + "`" + ` and ` + "`" + `estimated_tss` + "`" + `, and a ` + "`" + `rationale` + "`" + `; the race carries ` + "`" + `estimated_tss_total` + "`" + `, ` + "`" + `tss_complete` + "`" + `, and a ` + "`" + `missing_thresholds` + "`" + ` union. Unset thresholds degrade the affected legs only (still 200). Compute-on-read; nothing computed is persisted. Power lives only in ` + "`" + `_w` + "`" + ` fields, run pace in ` + "`" + `_sec_per_km` + "`" + `, swim pace in ` + "`" + `_sec_per_100m` + "`" + ` (unit isolation).",
+                "description": "Computes, per race leg, a duration-banded intensity target from the athlete-config thresholds: bike legs a power band as a % of ` + "`" + `ftp_watts` + "`" + `, run legs a pace band vs ` + "`" + `threshold_pace_sec_per_km` + "`" + `, swim legs a pace band per 100 m vs ` + "`" + `threshold_swim_pace_sec_per_100m` + "`" + ` (CSS). Each leg carries a ` + "`" + `source` + "`" + ` (computed/override/none), per-leg ` + "`" + `intensity_factor` + "`" + ` and ` + "`" + `estimated_tss` + "`" + `, and a ` + "`" + `rationale` + "`" + `; the race carries ` + "`" + `estimated_tss_total` + "`" + `, ` + "`" + `tss_complete` + "`" + `, and a ` + "`" + `missing_thresholds` + "`" + ` union. Unset thresholds degrade the affected legs only (still 200). Compute-on-read; nothing computed is persisted. Power lives only in ` + "`" + `_w` + "`" + ` fields, run pace in ` + "`" + `_sec_per_km` + "`" + `, swim pace in ` + "`" + `_sec_per_100m` + "`" + ` (unit isolation). Optional ` + "`" + `weather=true` + "`" + ` additionally geocodes the race ` + "`" + `location` + "`" + `, fetches the race window's forecast, and annotates each computable leg with a ` + "`" + `heat_adjusted` + "`" + ` sibling BESIDE its original band (originals never change), plus a race-level ` + "`" + `heat` + "`" + ` block — so \"plan A cool / plan B hot\" can be read side by side. Without the flag the response is byte-identical to the base contract. Weather-mode degradations keep the base plan and say why: ` + "`" + `heat_reason` + "`" + ` of ` + "`" + `location_ungeocodable` + "`" + ` (the race's location text geocodes nowhere), ` + "`" + `forecast_out_of_range` + "`" + ` (beyond ~16 days — a race two weeks out has no reliable forecast, which is why the flag is opt-in), or ` + "`" + `weather_unavailable` + "`" + `.",
                 "produces": [
                     "application/json"
                 ],
@@ -7699,6 +7705,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Annotate heat-adjusted bands from the race-day forecast (opt-in; originals retained)",
+                        "name": "weather",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10376,6 +10388,60 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/effortanalytics.DurabilityResult"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/workouts/heat-analytics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Buckets the window's OUTDOOR completed workouts by session heat index (` + "`" + `\u003c20` + "`" + ` / ` + "`" + `20-25` + "`" + ` / ` + "`" + `25-30` + "`" + ` / ` + "`" + `\u003e30` + "`" + ` °C) and reports, per bucket, the session count and the mean duration, EF, decoupling, and power relative to the window's own baseline (100 = this athlete's mean over the window). Adds Spearman correlations of EF and decoupling against heat index, gated at 10 pairs (` + "`" + `insufficient_pairs` + "`" + ` below it — sparse data can't produce a confident number). Indoor sessions are excluded (a trainer's temperature says nothing about racing in the heat); sessions with a null environment are included and counted in ` + "`" + `assumed_outdoor` + "`" + ` so the caveat is visible; sessions with no stored temperature are skipped. **Read the duration confound**: hot sessions skew long, and duration is reported per bucket precisely so a \"heat\" effect that is really a distance effect is visible. This is DESCRIPTIVE, not a model fit — it exists as the evidence stream for a human refining the heat-adjustment constants, and nothing here refits anything. Compute-on-read; persists nothing. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Heat-vs-performance evidence over history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD; max 400-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/heat.Analytics"
                         }
                     },
                     "400": {
@@ -14252,6 +14318,66 @@ const docTemplate = `{
                 }
             }
         },
+        "heat.Analytics": {
+            "type": "object",
+            "properties": {
+                "assumed_outdoor": {
+                    "description": "AssumedOutdoor counts sessions with a null environment that were included\nanyway — the caveat, made visible rather than buried.",
+                    "type": "integer"
+                },
+                "buckets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/heat.Bucket"
+                    }
+                },
+                "decoupling_vs_heat_index": {
+                    "$ref": "#/definitions/heat.Correlation"
+                },
+                "ef_vs_heat_index": {
+                    "$ref": "#/definitions/heat.Correlation"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "sessions": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
+        "heat.Bucket": {
+            "type": "object",
+            "properties": {
+                "bucket": {
+                    "type": "string"
+                },
+                "mean_decoupling_pct": {
+                    "type": "number"
+                },
+                "mean_duration_min": {
+                    "type": "number"
+                },
+                "mean_ef": {
+                    "type": "number"
+                },
+                "mean_heat_index_c": {
+                    "type": "number"
+                },
+                "mean_output_rel_pct": {
+                    "description": "MeanOutputRelPct is the bucket's mean power relative to the window's\noverall mean (100 = the window baseline), so the gradient reads without\nknowing the athlete's absolute numbers.",
+                    "type": "number"
+                },
+                "sessions": {
+                    "type": "integer"
+                }
+            }
+        },
         "heat.Conditions": {
             "type": "object",
             "properties": {
@@ -14265,6 +14391,20 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "wind_speed_mps": {
+                    "type": "number"
+                }
+            }
+        },
+        "heat.Correlation": {
+            "type": "object",
+            "properties": {
+                "n": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "rho": {
                     "type": "number"
                 }
             }
@@ -15662,6 +15802,64 @@ const docTemplate = `{
                 }
             }
         },
+        "racepacing.HeatAdjustedLeg": {
+            "type": "object",
+            "properties": {
+                "estimated_tss": {
+                    "type": "number"
+                },
+                "intensity_factor": {
+                    "type": "number"
+                },
+                "reduction_pct": {
+                    "type": "number"
+                },
+                "target_pace_high_sec_per_100m": {
+                    "type": "number"
+                },
+                "target_pace_high_sec_per_km": {
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_100m": {
+                    "type": "number"
+                },
+                "target_pace_low_sec_per_km": {
+                    "type": "number"
+                },
+                "target_power_high_w": {
+                    "type": "integer"
+                },
+                "target_power_low_w": {
+                    "type": "integer"
+                }
+            }
+        },
+        "racepacing.HeatBlock": {
+            "type": "object",
+            "properties": {
+                "acclimatization": {
+                    "type": "string"
+                },
+                "conditions": {
+                    "$ref": "#/definitions/heat.Conditions"
+                },
+                "forecast_at": {
+                    "type": "string"
+                },
+                "heat_index_c": {
+                    "type": "number"
+                },
+                "load_c": {
+                    "type": "number"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "reduction_pct": {
+                    "type": "number"
+                }
+            }
+        },
         "racepacing.LegPacingPlan": {
             "type": "object",
             "properties": {
@@ -15673,6 +15871,14 @@ const docTemplate = `{
                 },
                 "expected_duration_min": {
                     "type": "integer"
+                },
+                "heat_adjusted": {
+                    "description": "HeatAdjusted is the weather-mode sibling of this leg's band — present\nonly with ` + "`" + `weather=true` + "`" + ` and only when the leg has a computable target.\nThe fields above are never modified by it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/racepacing.HeatAdjustedLeg"
+                        }
+                    ]
                 },
                 "intensity_factor": {
                     "type": "number"
@@ -15747,6 +15953,17 @@ const docTemplate = `{
             "properties": {
                 "estimated_tss_total": {
                     "type": "number"
+                },
+                "heat": {
+                    "description": "Heat and HeatReason appear ONLY in weather mode (` + "`" + `weather=true` + "`" + `), and\nexactly one of them is set when it's on. Without the flag both are absent\nand the response is byte-identical to the pre-weather contract — a race\ntwo weeks out has no reliable forecast, so the deterministic plan stays\nthe default (add-race-weather-adjustments).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/racepacing.HeatBlock"
+                        }
+                    ]
+                },
+                "heat_reason": {
+                    "type": "string"
                 },
                 "legs": {
                     "type": "array",
@@ -16038,6 +16255,17 @@ const docTemplate = `{
                 "body_weight_kg": {
                     "type": "number"
                 },
+                "heat": {
+                    "description": "Heat and HeatReason appear ONLY in weather mode (` + "`" + `weather=true` + "`" + `), and\nexactly one is set when it's on. Without the flag both are absent and the\nresponse is byte-identical to the pre-weather contract\n(add-race-weather-adjustments).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/races.HeatScaling"
+                        }
+                    ]
+                },
+                "heat_reason": {
+                    "type": "string"
+                },
                 "legs": {
                     "type": "array",
                     "items": {
@@ -16061,6 +16289,33 @@ const docTemplate = `{
                 },
                 "total_duration_min": {
                     "type": "integer"
+                }
+            }
+        },
+        "races.HeatScaling": {
+            "type": "object",
+            "properties": {
+                "acclimatization": {
+                    "type": "string"
+                },
+                "conditions": {
+                    "$ref": "#/definitions/heat.Conditions"
+                },
+                "fluid_multiplier": {
+                    "description": "FluidMultiplier is echoed so the scaled numbers can be taken back apart.",
+                    "type": "number"
+                },
+                "forecast_at": {
+                    "type": "string"
+                },
+                "heat_index_c": {
+                    "type": "number"
+                },
+                "load_c": {
+                    "type": "number"
+                },
+                "location": {
+                    "type": "string"
                 }
             }
         },

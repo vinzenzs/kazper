@@ -229,12 +229,13 @@ func (h *Handlers) delete(c *gin.Context) {
 
 // fuelingPlan godoc
 // @Summary      Compute the per-leg fuelling plan for a race
-// @Description  Deterministic per-leg in-event fuelling baseline computed on read (not stored). Carbs band by total race duration (<75 min → 0, 75–150 → 60, ≥150 → 90 g/hr) and scale by discipline intake capacity (swim/transition 0, bike 1.0, run 0.7, other 0.8). Fluid and sodium derive from `sweat_rate_ml_per_hr` when supplied (fluid capped at 1000 ml/hr; sodium = sweat_rate/1000 × 800 mg/L), else a flagged 600 ml/hr and 600 mg/hr. Carbs (g), sodium (mg) and fluid (ml) are reported as distinct unit fields.
+// @Description  Deterministic per-leg in-event fuelling baseline computed on read (not stored). Carbs band by total race duration (<75 min → 0, 75–150 → 60, ≥150 → 90 g/hr) and scale by discipline intake capacity (swim/transition 0, bike 1.0, run 0.7, other 0.8). Fluid and sodium derive from `sweat_rate_ml_per_hr` when supplied (fluid capped at 1000 ml/hr; sodium = sweat_rate/1000 × 800 mg/L), else a flagged 600 ml/hr and 600 mg/hr. Carbs (g), sodium (mg) and fluid (ml) are reported as distinct unit fields. Optional `weather=true` geocodes the race `location`, fetches the race window's forecast, and scales FLUID and SODIUM by a bounded heat multiplier (~1.0–1.5×, echoed in the `heat` block with the load and resolved location) — carbs are never scaled by weather (heat drives sweat loss, not carbohydrate oxidation), the 1000 ml/hr absorption cap still applies, and a flagged default stays flagged (scaling a generic number does not make it measured). Without the flag the response is byte-identical to the base contract; weather-mode degradations keep the base plan and set `heat_reason` (`location_ungeocodable` | `forecast_out_of_range` | `weather_unavailable`).
 // @Tags         races
 // @Produce      json
 // @Param        id                   path   string  true   "Race UUID"
 // @Param        body_weight_kg       query  number  true   "Athlete body weight in kilograms, 30..200"
 // @Param        sweat_rate_ml_per_hr query  number  false  "Measured sweat rate in ml/hr; personalises fluid and sodium"
+// @Param        weather              query  boolean false  "Scale fluid/sodium by the race-day forecast (opt-in; carbs untouched)"
 // @Success      200  {object}  FuelingPlan
 // @Failure      400  {object}  map[string]string  "body_weight_kg_required | body_weight_kg_out_of_range | sweat_rate_out_of_range | sweat_rate_invalid"
 // @Failure      404  {object}  map[string]string  "race_not_found"
@@ -265,7 +266,7 @@ func (h *Handlers) fuelingPlan(c *gin.Context) {
 		}
 		p.SweatRateMlPerHr = &sr
 	}
-	plan, err := h.svc.PlanFueling(c.Request.Context(), id, p)
+	plan, err := h.svc.PlanFuelingWithWeather(c.Request.Context(), id, p, c.Query("weather") == "true")
 	if err != nil {
 		respondServiceError(c, err)
 		return

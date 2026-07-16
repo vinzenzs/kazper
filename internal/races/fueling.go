@@ -25,6 +25,9 @@ const (
 type FuelingParams struct {
 	BodyWeightKg     float64
 	SweatRateMlPerHr *float64
+	// Heat is the weather-mode scaling, resolved by the service. nil (the
+	// default) computes exactly the deterministic plan this always produced.
+	Heat *HeatScaling
 }
 
 func (p FuelingParams) validate() error {
@@ -76,6 +79,13 @@ type FuelingPlan struct {
 	TotalDurationMin int               `json:"total_duration_min"`
 	Legs             []*LegFuelingPlan `json:"legs"`
 	Total            FuelTotals        `json:"total"`
+
+	// Heat and HeatReason appear ONLY in weather mode (`weather=true`), and
+	// exactly one is set when it's on. Without the flag both are absent and the
+	// response is byte-identical to the pre-weather contract
+	// (add-race-weather-adjustments).
+	Heat       *HeatScaling `json:"heat,omitempty"`
+	HeatReason *string      `json:"heat_reason,omitempty"`
 }
 
 func baseCarbsGPerHr(totalMin int) float64 {
@@ -127,6 +137,16 @@ func ComputeFueling(race *Race, p FuelingParams) *FuelingPlan {
 		sodiumDefaulted = false
 	}
 
+	// Weather mode scales fluid and sodium — never carbs (heat drives sweat
+	// loss, not carbohydrate oxidation). The defaulted flags are deliberately
+	// NOT cleared: scaling a generic 600 ml/hr by the heat does not turn it into
+	// a measured number, and the rationale must keep saying so. The absorption
+	// cap is re-applied after scaling — heat cannot make a gut drink faster.
+	if p.Heat != nil && p.Heat.FluidMultiplier > 0 {
+		fluidBase = math.Min(fluidBase*p.Heat.FluidMultiplier, fluidCapMlHr)
+		sodiumBase = math.Round(sodiumBase * p.Heat.FluidMultiplier)
+	}
+
 	plan := &FuelingPlan{
 		RaceID:           race.ID,
 		RaceName:         race.Name,
@@ -135,6 +155,7 @@ func ComputeFueling(race *Race, p FuelingParams) *FuelingPlan {
 		SweatRateMlPerHr: p.SweatRateMlPerHr,
 		TotalDurationMin: totalMin,
 		Legs:             make([]*LegFuelingPlan, 0, len(race.Legs)),
+		Heat:             p.Heat,
 	}
 
 	for _, leg := range race.Legs {

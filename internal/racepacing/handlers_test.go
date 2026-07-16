@@ -21,7 +21,10 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
-type fixture struct{ r *gin.Engine }
+type fixture struct {
+	r   *gin.Engine
+	svc *racepacing.Service
+}
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
@@ -35,8 +38,9 @@ func setup(t *testing.T) *fixture {
 	races.NewHandlers(races.NewService(pool, racesRepo)).Register(g)
 	acRepo := athleteconfig.NewRepo(pool)
 	athleteconfig.NewHandlers(athleteconfig.NewService(acRepo, pool)).Register(g)
-	racepacing.NewHandlers(racepacing.NewService(racesRepo, acRepo, racepacing.NewRepo(pool))).Register(g)
-	return &fixture{r: r}
+	svc := racepacing.NewService(racesRepo, acRepo, racepacing.NewRepo(pool))
+	racepacing.NewHandlers(svc).Register(g)
+	return &fixture{r: r, svc: svc}
 }
 
 func (f *fixture) do(t *testing.T, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {

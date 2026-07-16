@@ -10,9 +10,9 @@ import (
 
 // Sentinel errors map 1:1 to API error codes.
 var (
-	ErrEmpty       = errors.New("wellness_empty")
-	ErrNoteTooLong = errors.New("note_too_long")
-	ErrRangeInvalid = errors.New("range_invalid")
+	ErrEmpty         = errors.New("wellness_empty")
+	ErrNoteTooLong   = errors.New("note_too_long")
+	ErrRangeInvalid  = errors.New("range_invalid")
 	ErrRangeTooLarge = errors.New("range_too_large")
 	ErrMetricInvalid = errors.New("metric_invalid")
 )
@@ -31,7 +31,7 @@ type ScoreError struct{ Field string }
 func (e *ScoreError) Error() string { return "wellness_score_invalid" }
 
 const (
-	maxNoteLen  = 2000
+	maxNoteLen   = 2000
 	maxRangeDays = 92
 )
 

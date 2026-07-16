@@ -29,10 +29,11 @@ func (h *Handlers) Register(rg *gin.RouterGroup) {
 
 // plan godoc
 // @Summary      Per-leg race pacing plan
-// @Description  Computes, per race leg, a duration-banded intensity target from the athlete-config thresholds: bike legs a power band as a % of `ftp_watts`, run legs a pace band vs `threshold_pace_sec_per_km`, swim legs a pace band per 100 m vs `threshold_swim_pace_sec_per_100m` (CSS). Each leg carries a `source` (computed/override/none), per-leg `intensity_factor` and `estimated_tss`, and a `rationale`; the race carries `estimated_tss_total`, `tss_complete`, and a `missing_thresholds` union. Unset thresholds degrade the affected legs only (still 200). Compute-on-read; nothing computed is persisted. Power lives only in `_w` fields, run pace in `_sec_per_km`, swim pace in `_sec_per_100m` (unit isolation).
+// @Description  Computes, per race leg, a duration-banded intensity target from the athlete-config thresholds: bike legs a power band as a % of `ftp_watts`, run legs a pace band vs `threshold_pace_sec_per_km`, swim legs a pace band per 100 m vs `threshold_swim_pace_sec_per_100m` (CSS). Each leg carries a `source` (computed/override/none), per-leg `intensity_factor` and `estimated_tss`, and a `rationale`; the race carries `estimated_tss_total`, `tss_complete`, and a `missing_thresholds` union. Unset thresholds degrade the affected legs only (still 200). Compute-on-read; nothing computed is persisted. Power lives only in `_w` fields, run pace in `_sec_per_km`, swim pace in `_sec_per_100m` (unit isolation). Optional `weather=true` additionally geocodes the race `location`, fetches the race window's forecast, and annotates each computable leg with a `heat_adjusted` sibling BESIDE its original band (originals never change), plus a race-level `heat` block — so "plan A cool / plan B hot" can be read side by side. Without the flag the response is byte-identical to the base contract. Weather-mode degradations keep the base plan and say why: `heat_reason` of `location_ungeocodable` (the race's location text geocodes nowhere), `forecast_out_of_range` (beyond ~16 days — a race two weeks out has no reliable forecast, which is why the flag is opt-in), or `weather_unavailable`.
 // @Tags         races
 // @Produce      json
-// @Param        id  path  string  true  "Race id (uuid)"
+// @Param        id       path   string  true   "Race id (uuid)"
+// @Param        weather  query  boolean false  "Annotate heat-adjusted bands from the race-day forecast (opt-in; originals retained)"
 // @Success      200  {object}  PacingPlan
 // @Failure      404  {object}  map[string]string  "race_not_found"
 // @Security     BearerAuth
@@ -43,7 +44,7 @@ func (h *Handlers) plan(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "race_not_found"})
 		return
 	}
-	plan, err := h.svc.Plan(c.Request.Context(), id)
+	plan, err := h.svc.PlanWithWeather(c.Request.Context(), id, c.Query("weather") == "true")
 	if err != nil {
 		writeErr(c, err)
 		return

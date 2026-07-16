@@ -1782,6 +1782,51 @@ definitions:
       suggested_value:
         type: number
     type: object
+  heat.Analytics:
+    properties:
+      assumed_outdoor:
+        description: |-
+          AssumedOutdoor counts sessions with a null environment that were included
+          anyway — the caveat, made visible rather than buried.
+        type: integer
+      buckets:
+        items:
+          $ref: '#/definitions/heat.Bucket'
+        type: array
+      decoupling_vs_heat_index:
+        $ref: '#/definitions/heat.Correlation'
+      ef_vs_heat_index:
+        $ref: '#/definitions/heat.Correlation'
+      from:
+        type: string
+      sessions:
+        type: integer
+      to:
+        type: string
+      tz:
+        type: string
+    type: object
+  heat.Bucket:
+    properties:
+      bucket:
+        type: string
+      mean_decoupling_pct:
+        type: number
+      mean_duration_min:
+        type: number
+      mean_ef:
+        type: number
+      mean_heat_index_c:
+        type: number
+      mean_output_rel_pct:
+        description: |-
+          MeanOutputRelPct is the bucket's mean power relative to the window's
+          overall mean (100 = the window baseline), so the gradient reads without
+          knowing the athlete's absolute numbers.
+        type: number
+      sessions:
+        type: integer
+    type: object
   heat.Conditions:
     properties:
       cloud_cover_pct:
@@ -1791,6 +1836,15 @@ definitions:
       temperature_c:
         type: number
       wind_speed_mps:
+        type: number
+    type: object
+  heat.Correlation:
+    properties:
+      "n":
+        type: integer
+      reason:
+        type: string
+      rho:
         type: number
     type: object
   heat.FluidNote:
@@ -2777,6 +2831,44 @@ definitions:
       token:
         type: string
     type: object
+  racepacing.HeatAdjustedLeg:
+    properties:
+      estimated_tss:
+        type: number
+      intensity_factor:
+        type: number
+      reduction_pct:
+        type: number
+      target_pace_high_sec_per_100m:
+        type: number
+      target_pace_high_sec_per_km:
+        type: number
+      target_pace_low_sec_per_100m:
+        type: number
+      target_pace_low_sec_per_km:
+        type: number
+      target_power_high_w:
+        type: integer
+      target_power_low_w:
+        type: integer
+    type: object
+  racepacing.HeatBlock:
+    properties:
+      acclimatization:
+        type: string
+      conditions:
+        $ref: '#/definitions/heat.Conditions'
+      forecast_at:
+        type: string
+      heat_index_c:
+        type: number
+      load_c:
+        type: number
+      location:
+        type: string
+      reduction_pct:
+        type: number
+    type: object
   racepacing.LegPacingPlan:
     properties:
       discipline:
@@ -2785,6 +2877,13 @@ definitions:
         type: number
       expected_duration_min:
         type: integer
+      heat_adjusted:
+        allOf:
+        - $ref: '#/definitions/racepacing.HeatAdjustedLeg'
+        description: |-
+          HeatAdjusted is the weather-mode sibling of this leg's band — present
+          only with `weather=true` and only when the leg has a computable target.
+          The fields above are never modified by it.
       intensity_factor:
         type: number
       missing_thresholds:
@@ -2836,6 +2935,17 @@ definitions:
     properties:
       estimated_tss_total:
         type: number
+      heat:
+        allOf:
+        - $ref: '#/definitions/racepacing.HeatBlock'
+        description: |-
+          Heat and HeatReason appear ONLY in weather mode (`weather=true`), and
+          exactly one of them is set when it's on. Without the flag both are absent
+          and the response is byte-identical to the pre-weather contract — a race
+          two weeks out has no reliable forecast, so the deterministic plan stays
+          the default (add-race-weather-adjustments).
+      heat_reason:
+        type: string
       legs:
         items:
           $ref: '#/definitions/racepacing.LegPacingPlan'
@@ -3031,6 +3141,16 @@ definitions:
     properties:
       body_weight_kg:
         type: number
+      heat:
+        allOf:
+        - $ref: '#/definitions/races.HeatScaling'
+        description: |-
+          Heat and HeatReason appear ONLY in weather mode (`weather=true`), and
+          exactly one is set when it's on. Without the flag both are absent and the
+          response is byte-identical to the pre-weather contract
+          (add-race-weather-adjustments).
+      heat_reason:
+        type: string
       legs:
         items:
           $ref: '#/definitions/races.LegFuelingPlan'
@@ -3047,6 +3167,25 @@ definitions:
         $ref: '#/definitions/races.FuelTotals'
       total_duration_min:
         type: integer
+    type: object
+  races.HeatScaling:
+    properties:
+      acclimatization:
+        type: string
+      conditions:
+        $ref: '#/definitions/heat.Conditions'
+      fluid_multiplier:
+        description: FluidMultiplier is echoed so the scaled numbers can be taken
+          back apart.
+        type: number
+      forecast_at:
+        type: string
+      heat_index_c:
+        type: number
+      load_c:
+        type: number
+      location:
+        type: string
     type: object
   races.LegFuelingPlan:
     properties:
@@ -9961,7 +10100,15 @@ paths:
         bike 1.0, run 0.7, other 0.8). Fluid and sodium derive from `sweat_rate_ml_per_hr`
         when supplied (fluid capped at 1000 ml/hr; sodium = sweat_rate/1000 × 800
         mg/L), else a flagged 600 ml/hr and 600 mg/hr. Carbs (g), sodium (mg) and
-        fluid (ml) are reported as distinct unit fields.
+        fluid (ml) are reported as distinct unit fields. Optional `weather=true` geocodes
+        the race `location`, fetches the race window's forecast, and scales FLUID
+        and SODIUM by a bounded heat multiplier (~1.0–1.5×, echoed in the `heat` block
+        with the load and resolved location) — carbs are never scaled by weather (heat
+        drives sweat loss, not carbohydrate oxidation), the 1000 ml/hr absorption
+        cap still applies, and a flagged default stays flagged (scaling a generic
+        number does not make it measured). Without the flag the response is byte-identical
+        to the base contract; weather-mode degradations keep the base plan and set
+        `heat_reason` (`location_ungeocodable` | `forecast_out_of_range` | `weather_unavailable`).
       parameters:
       - description: Race UUID
         in: path
@@ -9977,6 +10124,10 @@ paths:
         in: query
         name: sweat_rate_ml_per_hr
         type: number
+      - description: Scale fluid/sodium by the race-day forecast (opt-in; carbs untouched)
+        in: query
+        name: weather
+        type: boolean
       produces:
       - application/json
       responses:
@@ -10013,13 +10164,26 @@ paths:
         and a `missing_thresholds` union. Unset thresholds degrade the affected legs
         only (still 200). Compute-on-read; nothing computed is persisted. Power lives
         only in `_w` fields, run pace in `_sec_per_km`, swim pace in `_sec_per_100m`
-        (unit isolation).'
+        (unit isolation). Optional `weather=true` additionally geocodes the race `location`,
+        fetches the race window''s forecast, and annotates each computable leg with
+        a `heat_adjusted` sibling BESIDE its original band (originals never change),
+        plus a race-level `heat` block — so "plan A cool / plan B hot" can be read
+        side by side. Without the flag the response is byte-identical to the base
+        contract. Weather-mode degradations keep the base plan and say why: `heat_reason`
+        of `location_ungeocodable` (the race''s location text geocodes nowhere), `forecast_out_of_range`
+        (beyond ~16 days — a race two weeks out has no reliable forecast, which is
+        why the flag is opt-in), or `weather_unavailable`.'
       parameters:
       - description: Race id (uuid)
         in: path
         name: id
         required: true
         type: string
+      - description: Annotate heat-adjusted bands from the race-day forecast (opt-in;
+          originals retained)
+        in: query
+        name: weather
+        type: boolean
       produces:
       - application/json
       responses:
@@ -12651,6 +12815,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Fatigue-resistance (durability) fade table over a window
+      tags:
+      - workouts
+  /workouts/heat-analytics:
+    get:
+      description: 'Buckets the window''s OUTDOOR completed workouts by session heat
+        index (`<20` / `20-25` / `25-30` / `>30` °C) and reports, per bucket, the
+        session count and the mean duration, EF, decoupling, and power relative to
+        the window''s own baseline (100 = this athlete''s mean over the window). Adds
+        Spearman correlations of EF and decoupling against heat index, gated at 10
+        pairs (`insufficient_pairs` below it — sparse data can''t produce a confident
+        number). Indoor sessions are excluded (a trainer''s temperature says nothing
+        about racing in the heat); sessions with a null environment are included and
+        counted in `assumed_outdoor` so the caveat is visible; sessions with no stored
+        temperature are skipped. **Read the duration confound**: hot sessions skew
+        long, and duration is reported per bucket precisely so a "heat" effect that
+        is really a distance effect is visible. This is DESCRIPTIVE, not a model fit
+        — it exists as the evidence stream for a human refining the heat-adjustment
+        constants, and nothing here refits anything. Compute-on-read; persists nothing.
+        Range capped at 400 days.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Inclusive end date YYYY-MM-DD; max 400-day span
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/heat.Analytics'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Heat-vs-performance evidence over history
       tags:
       - workouts
   /workouts/intensity-distribution:

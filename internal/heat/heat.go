@@ -336,6 +336,11 @@ const (
 	fluidPerLoadCAbove24   = 0.03 // +3% per °C of load above 24
 )
 
+// roundTo1 / roundTo2 wrap the shared boundary rounding so this package's
+// helpers read consistently.
+func roundTo1(v float64) float64 { return numfmt.Round1(v) }
+func roundTo2(v float64) float64 { return numfmt.Round2(v) }
+
 // ComputeFluid scales a personal sweat rate by the heat load. signal is nil
 // when nothing personal is derivable, in which case the generic default is used
 // AND flagged as such.

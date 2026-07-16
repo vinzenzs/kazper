@@ -293,6 +293,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// Personal fluid guidance from the device's own sweat-loss estimates —
 	// reported under its own source label, never as a field test.
 	heatSvc.SetSweatRateProvider(heat.GarminSweatSignal{Repo: workoutsRepo})
+	// Race-day weather modes: the same heat model behind an opt-in flag.
+	heatSvc.SetGeocoder(weatherClient)
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
 	// (add-meal-workout-link).
@@ -303,6 +305,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	}
 	racesRepo := races.NewRepo(pool)
 	racesSvc := races.NewService(pool, racesRepo)
+	racePacingSvc := racepacing.NewService(racesRepo, athleteConfigEffective, racepacing.NewRepo(pool))
+	// Opt-in race-day weather on both race plans: the same heat model, behind a
+	// `weather=true` flag. Without the flag both stay byte-identical.
+	racesSvc.SetHeatProvider(heatSvc)
+	racePacingSvc.SetHeatProvider(heatSvc)
 	// Macrocycle service needs the races repo for race_id FK validation; the
 	// repo was created above (it backs the phase service's macrocycle checker).
 	macrocycleSvc := macrocycle.NewService(macrocycleRepo, racesRepo)
@@ -428,7 +435,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// bands from athlete-config thresholds over the race/leg tables, plus
 	// persisted per-leg overrides. Multi-repo aggregator (races + athlete-config).
 	racepacing.NewHandlers(
-		racepacing.NewService(racesRepo, athleteConfigEffective, racepacing.NewRepo(pool)),
+		racePacingSvc,
 	).Register(api)
 	mealplan.NewHandlers(mealPlanSvc).Register(api)
 	shoppinglist.NewHandlers(shoppingSvc).Register(api)
@@ -511,7 +518,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	expenditure.NewHandlers(expenditureSvc, cfg.DefaultUserTZ, logger).Register(api)
 	fuelplan.NewHandlers(fuelPlanSvc, cfg.DefaultUserTZ, logger).Register(api)
 	locations.NewHandlers(locationsSvc, cfg.DefaultUserTZ).Register(api)
-	heat.NewHandlers(heatSvc, logger).Register(api)
+	heat.NewHandlers(heatSvc, cfg.DefaultUserTZ, logger).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,

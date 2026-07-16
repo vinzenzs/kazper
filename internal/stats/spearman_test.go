@@ -1,4 +1,4 @@
-package wellness
+package stats
 
 import (
 	"testing"
@@ -9,13 +9,13 @@ import (
 func TestSpearman_PerfectMonotone(t *testing.T) {
 	a := []float64{1, 2, 3, 4, 5}
 	b := []float64{10, 20, 30, 40, 50} // strictly increasing → rho = 1
-	assert.InDelta(t, 1.0, spearman(a, b), 1e-9)
+	assert.InDelta(t, 1.0, Spearman(a, b), 1e-9)
 }
 
 func TestSpearman_PerfectInverse(t *testing.T) {
 	a := []float64{1, 2, 3, 4, 5}
 	b := []float64{50, 40, 30, 20, 10} // strictly decreasing → rho = -1
-	assert.InDelta(t, -1.0, spearman(a, b), 1e-9)
+	assert.InDelta(t, -1.0, Spearman(a, b), 1e-9)
 }
 
 func TestSpearman_WithTies(t *testing.T) {
@@ -23,14 +23,14 @@ func TestSpearman_WithTies(t *testing.T) {
 	// hand computation. a ranks: {1,1}→1.5, {2}→3, {3,3}→4.5; b similarly.
 	a := []float64{1, 1, 2, 3, 3}
 	b := []float64{2, 2, 5, 8, 8}
-	rho := spearman(a, b)
+	rho := Spearman(a, b)
 	assert.InDelta(t, 1.0, rho, 1e-9, "monotone-with-matching-ties → 1")
 }
 
 func TestSpearman_NoAssociation(t *testing.T) {
 	a := []float64{3, 3, 3, 3, 3} // zero variance → 0 by definition
 	b := []float64{1, 2, 3, 4, 5}
-	assert.Equal(t, 0.0, spearman(a, b))
+	assert.Equal(t, 0.0, Spearman(a, b))
 }
 
 func TestRank_AveragesTies(t *testing.T) {

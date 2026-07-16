@@ -37,6 +37,14 @@ type PacingPlan struct {
 	// MissingThresholds is the union of the legs' missing thresholds (empty slice
 	// serialized, never null, so a client can iterate unconditionally).
 	MissingThresholds []string `json:"missing_thresholds"`
+
+	// Heat and HeatReason appear ONLY in weather mode (`weather=true`), and
+	// exactly one of them is set when it's on. Without the flag both are absent
+	// and the response is byte-identical to the pre-weather contract — a race
+	// two weeks out has no reliable forecast, so the deterministic plan stays
+	// the default (add-race-weather-adjustments).
+	Heat       *HeatBlock `json:"heat,omitempty"`
+	HeatReason *string    `json:"heat_reason,omitempty"`
 }
 
 // LegPacingPlan is one leg's pacing entry. Discipline-inappropriate target
@@ -63,6 +71,11 @@ type LegPacingPlan struct {
 	// MissingThresholds names the unset athlete-config field(s) this leg needed.
 	MissingThresholds []string `json:"missing_thresholds,omitempty"`
 	Rationale         string   `json:"rationale"`
+
+	// HeatAdjusted is the weather-mode sibling of this leg's band — present
+	// only with `weather=true` and only when the leg has a computable target.
+	// The fields above are never modified by it.
+	HeatAdjusted *HeatAdjustedLeg `json:"heat_adjusted,omitempty"`
 }
 
 // Override mirrors a race_leg_pacing_overrides row. Exactly one unit family is

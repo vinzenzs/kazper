@@ -54,3 +54,45 @@ func TestLogLocationPeriod_PlaceAndCoordinateForms(t *testing.T) {
 	assert.Equal(t, "Null Island", coordBody["name"])
 	assert.NotContains(t, coordBody, "place")
 }
+
+func TestHeatAnalytics_BuildShapes(t *testing.T) {
+	spec, ok := ByName(MCPRegistry())["heat_analytics"]
+	require.True(t, ok, "tool heat_analytics missing from MCPRegistry")
+	assert.Equal(t, TierRead, spec.Tier)
+
+	call, err := spec.Build(json.RawMessage(`{"from":"2026-04-01","to":"2026-09-30"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "GET", call.Method)
+	assert.Equal(t, "/workouts/heat-analytics", call.Path)
+	assert.Equal(t, "2026-04-01", call.Query.Get("from"))
+	assert.Equal(t, "2026-09-30", call.Query.Get("to"))
+	assert.False(t, call.Query.Has("tz"))
+
+	withTZ, err := spec.Build(mustMarshal(t, HeatAnalyticsArgs{
+		From: "2026-04-01", To: "2026-09-30", TZ: "Europe/Berlin",
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "Europe/Berlin", withTZ.Query.Get("tz"))
+}
+
+// The race weather modes ride the existing tools as an optional arg — and the
+// flag must be sent ONLY when asked for, so the default stays deterministic.
+func TestRaceWeatherModes_FlagIsOptIn(t *testing.T) {
+	specs := ByName(MCPRegistry())
+
+	pacing := specs["plan_race_pacing"]
+	off, err := pacing.Build(json.RawMessage(`{"race_id":"r1"}`))
+	require.NoError(t, err)
+	assert.False(t, off.Query.Has("weather"), "no flag unless asked")
+	on, err := pacing.Build(json.RawMessage(`{"race_id":"r1","weather":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "true", on.Query.Get("weather"))
+
+	fueling := specs["plan_race_fueling"]
+	fOff, err := fueling.Build(json.RawMessage(`{"id":"r1","body_weight_kg":70}`))
+	require.NoError(t, err)
+	assert.False(t, fOff.Query.Has("weather"))
+	fOn, err := fueling.Build(json.RawMessage(`{"id":"r1","body_weight_kg":70,"weather":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "true", fOn.Query.Get("weather"))
+}

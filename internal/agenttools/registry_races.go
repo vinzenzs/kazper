@@ -71,6 +71,7 @@ type PlanRaceFuelingArgs struct {
 	ID               string   `json:"id" jsonschema:"race UUID"`
 	BodyWeightKg     float64  `json:"body_weight_kg" jsonschema:"athlete body weight in kilograms, 30..200"`
 	SweatRateMlPerHr *float64 `json:"sweat_rate_ml_per_hr,omitempty" jsonschema:"optional measured sweat rate in ml/hr; personalises fluid and sodium (else a flagged 600 ml/hr default is used)"`
+	Weather          bool     `json:"weather,omitempty" jsonschema:"opt-in: scale fluid and sodium by the race-day forecast heat (carbs untouched). Only useful inside ~16 days of the race."`
 }
 
 func racesSpecs() []Spec {
@@ -206,6 +207,9 @@ func racesSpecs() []Spec {
 				q.Set("body_weight_kg", strconv.FormatFloat(a.BodyWeightKg, 'f', -1, 64))
 				if a.SweatRateMlPerHr != nil {
 					q.Set("sweat_rate_ml_per_hr", strconv.FormatFloat(*a.SweatRateMlPerHr, 'f', -1, 64))
+				}
+				if a.Weather {
+					q.Set("weather", "true")
 				}
 				return HTTPCall{Method: "GET", Path: "/races/" + url.PathEscape(a.ID) + "/fueling-plan", Query: q}, nil
 			},

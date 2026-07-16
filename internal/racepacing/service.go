@@ -33,6 +33,9 @@ type ConfigRepo interface {
 
 // Service computes the pacing plan and manages per-leg overrides.
 type Service struct {
+	// heat is optional: unwired leaves weather mode inert rather than erroring.
+	heat HeatProvider
+
 	races     RacesRepo
 	config    ConfigRepo
 	overrides *Repo
@@ -42,9 +45,16 @@ func NewService(racesRepo RacesRepo, configRepo ConfigRepo, overridesRepo *Repo)
 	return &Service{races: racesRepo, config: configRepo, overrides: overridesRepo}
 }
 
-// Plan loads race + legs, thresholds, and overrides and computes the plan. The
-// races repo's ErrNotFound propagates (→ race_not_found).
+// Plan computes the deterministic cool-weather plan. Kept as-is so every
+// existing caller is untouched; PlanWithWeather is the opt-in superset.
 func (s *Service) Plan(ctx context.Context, raceID uuid.UUID) (*PacingPlan, error) {
+	return s.PlanWithWeather(ctx, raceID, false)
+}
+
+// PlanWithWeather loads race + legs, thresholds, and overrides and computes the
+// plan; with withWeather it additionally annotates heat. The races repo's
+// ErrNotFound propagates (→ race_not_found).
+func (s *Service) PlanWithWeather(ctx context.Context, raceID uuid.UUID, withWeather bool) (*PacingPlan, error) {
 	race, err := s.races.GetRace(ctx, raceID)
 	if err != nil {
 		return nil, err
@@ -58,6 +68,16 @@ func (s *Service) Plan(ctx context.Context, raceID uuid.UUID) (*PacingPlan, erro
 		return nil, err
 	}
 	plan := compute(race, cfg, ovs)
+
+	// Weather is strictly additive and strictly opt-in: the base plan above is
+	// already complete and is never modified below.
+	if withWeather && s.heat != nil {
+		location := ""
+		if race.Location != nil {
+			location = *race.Location
+		}
+		s.applyHeat(ctx, &plan, location, race.RaceDate)
+	}
 	return &plan, nil
 }
 

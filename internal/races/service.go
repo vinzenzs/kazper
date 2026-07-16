@@ -43,7 +43,12 @@ const (
 type Service struct {
 	pool *pgxpool.Pool
 	repo *Repo
+	// heat is optional: unwired leaves weather mode inert rather than erroring.
+	heat HeatProvider
 }
+
+// SetHeatProvider enables `weather=true` on the fueling plan.
+func (s *Service) SetHeatProvider(p HeatProvider) { s.heat = p }
 
 func NewService(pool *pgxpool.Pool, repo *Repo) *Service {
 	return &Service{pool: pool, repo: repo}
@@ -200,6 +205,13 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 
 // PlanFueling computes the per-leg fuelling plan for a stored race.
 func (s *Service) PlanFueling(ctx context.Context, id uuid.UUID, p FuelingParams) (*FuelingPlan, error) {
+	return s.PlanFuelingWithWeather(ctx, id, p, false)
+}
+
+// PlanFuelingWithWeather is the opt-in superset: with withWeather it resolves
+// the race-day heat and scales fluid/sodium by a bounded multiplier. Without
+// it, byte-identical to PlanFueling.
+func (s *Service) PlanFuelingWithWeather(ctx context.Context, id uuid.UUID, p FuelingParams, withWeather bool) (*FuelingPlan, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
 	}
@@ -207,7 +219,11 @@ func (s *Service) PlanFueling(ctx context.Context, id uuid.UUID, p FuelingParams
 	if err != nil {
 		return nil, err
 	}
-	return ComputeFueling(race, p), nil
+	scaling, reason := s.resolveHeatScaling(ctx, race, withWeather)
+	p.Heat = scaling
+	plan := ComputeFueling(race, p)
+	plan.HeatReason = reason
+	return plan, nil
 }
 
 // ----- validators -----

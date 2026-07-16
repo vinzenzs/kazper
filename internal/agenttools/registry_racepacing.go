@@ -18,7 +18,8 @@ func init() { registerMCPDomain(racePacingSpecs()) }
 
 // PlanRacePacingArgs is the input to plan_race_pacing.
 type PlanRacePacingArgs struct {
-	RaceID string `json:"race_id" jsonschema:"the race id (uuid) to compute a per-leg pacing plan for"`
+	RaceID  string `json:"race_id" jsonschema:"the race id (uuid) to compute a per-leg pacing plan for"`
+	Weather bool   `json:"weather,omitempty" jsonschema:"opt-in: also annotate each leg with a heat-adjusted band from the race-day forecast. Only useful inside ~16 days of the race."`
 }
 
 // SetRaceLegPacingOverrideArgs is the input to set_race_leg_pacing_override.
@@ -57,7 +58,14 @@ func racePacingSpecs() []Spec {
 				"degrades only the affected legs (still 200) and names the missing field — tell the user to set it " +
 				"in athlete-config rather than guessing. This is a duration-banded baseline, NOT course-specific " +
 				"(no gradient/wind/aero); use it to anchor pacing advice instead of estimating watts/pace from " +
-				"scratch. Read-only.",
+				"scratch. " +
+				"Pass `weather: true` inside ~16 days of the race to ALSO get a `heat_adjusted` band beside " +
+				"each original band, plus a race-level `heat` block (load, acclimatization, resolved location). " +
+				"The originals never change — present it as \"plan A if it's cool / plan B if it's hot\", not as " +
+				"a replacement. Further out there is no reliable forecast and you'll get " +
+				"`heat_reason: \"forecast_out_of_range\"` with the base plan intact; `location_ungeocodable` " +
+				"means the race's `location` text doesn't resolve to a place (fix the race, don't guess). " +
+				"Read-only.",
 			SchemaType: PlanRacePacingArgs{},
 			Tier:       TierRead,
 			Build: func(in json.RawMessage) (HTTPCall, error) {
@@ -65,7 +73,11 @@ func racePacingSpecs() []Spec {
 				if err := DecodeInto(in, &a); err != nil {
 					return HTTPCall{}, err
 				}
-				return HTTPCall{Method: "GET", Path: "/races/" + url.PathEscape(a.RaceID) + "/pacing-plan"}, nil
+				q := url.Values{}
+				if a.Weather {
+					q.Set("weather", "true")
+				}
+				return HTTPCall{Method: "GET", Path: "/races/" + url.PathEscape(a.RaceID) + "/pacing-plan", Query: q}, nil
 			},
 		},
 		{

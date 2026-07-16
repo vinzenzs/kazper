@@ -101,7 +101,7 @@ func setup(t *testing.T, body string, opts ...func(*setupOpts)) *fixture {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	rg := r.Group("/")
-	heat.NewHandlers(svc, nil).Register(rg)
+	heat.NewHandlers(svc, "UTC", nil).Register(rg)
 	return &fixture{r: r, workoutsRepo: wRepo, locRepo: locRepo, calls: &calls}
 }
 

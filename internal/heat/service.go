@@ -57,11 +57,17 @@ type Service struct {
 	weather   WeatherClient
 	config    ConfigReader
 	sweat     SweatRateProvider
+	geocoder  Geocoder
+	// now is injectable so the race-heat forecast-horizon gate is testable.
+	now func() time.Time
 }
 
 func NewService(w WorkoutsReader, l LocationResolver, wx WeatherClient, c ConfigReader) *Service {
-	return &Service{workouts: w, locations: l, weather: wx, config: c}
+	return &Service{workouts: w, locations: l, weather: wx, config: c, now: time.Now}
 }
+
+// SetNow overrides the clock (tests only).
+func (s *Service) SetNow(f func() time.Time) { s.now = f }
 
 // SetSweatRateProvider enables the personalized fluid note.
 func (s *Service) SetSweatRateProvider(p SweatRateProvider) { s.sweat = p }
