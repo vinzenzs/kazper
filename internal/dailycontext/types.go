@@ -39,6 +39,12 @@ type DailyContext struct {
 	Weight       *WeightBlock          `json:"weight"` // nil when no entry ever logged
 	Phase        *PhaseBlock           `json:"phase"`  // nil when no phase covers the date
 	GoalOverride GoalOverrideBlock     `json:"goal_override"`
+	// Today's and tomorrow's planned-load classification + suggested carb target,
+	// beside the goals data so the morning check-in reads it without another
+	// call. Omitted entirely when nothing is computable. Suggestions only — the
+	// full week and the inputs behind each tier stay behind /nutrition/fuel-plan,
+	// and applying a number is the goal-override PUT (add-periodized-fuel-targets).
+	FuelPlan *FuelPlanBlock `json:"fuel_plan,omitempty"`
 	// Same-day-or-null Garmin snapshots — no carryover (a stale recovery/fitness
 	// reading is misleading). nil when no snapshot exists for the date.
 	Recovery *recoverymetrics.Snapshot `json:"recovery"`
@@ -137,4 +143,24 @@ type PhaseBlock struct {
 type GoalOverrideBlock struct {
 	Present bool         `json:"present"`
 	Goals   *goals.Goals `json:"goals"`
+}
+
+// FuelPlanBlock is the check-in view of fuel periodization: "today easy, 5 g/kg;
+// tomorrow heavy, 9 — front-load tonight". Deliberately compact — the sessions,
+// effective goals and deltas behind each tier live on /nutrition/fuel-plan.
+type FuelPlanBlock struct {
+	Today    *FuelPlanDay `json:"today,omitempty"`
+	Tomorrow *FuelPlanDay `json:"tomorrow,omitempty"`
+}
+
+// FuelPlanDay is one day's classification. SuggestedCarbsG is absent when no
+// body-weight data backs the g/kg denominator — the tier still means something
+// without it. PlanMissing marks a day the plan doesn't reach, so its rest tier
+// doesn't read as a planned rest day.
+type FuelPlanDay struct {
+	Date            string   `json:"date"`
+	Tier            string   `json:"tier"`
+	CarbsGPerKg     float64  `json:"carbs_g_per_kg"`
+	SuggestedCarbsG *float64 `json:"suggested_carbs_g,omitempty"`
+	PlanMissing     bool     `json:"plan_missing,omitempty"`
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/energy"
 	"github.com/vinzenzs/kazper/internal/expenditure"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
+	"github.com/vinzenzs/kazper/internal/fuelplan"
 	"github.com/vinzenzs/kazper/internal/garminauth"
 	"github.com/vinzenzs/kazper/internal/garmincontrol"
 	"github.com/vinzenzs/kazper/internal/garminsyncstatus"
@@ -262,6 +263,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// body-weight capability's own trend (one smoothing truth) plus the raw
 	// weigh-ins behind its gate — narrow reads, no writes, no goals coupling.
 	expenditureSvc := expenditure.NewService(mealsRepo, bodyWeightSvc, bodyWeightRepo)
+	// Fuel periodization classifies PLANNED load and prices each tier against
+	// the weight trend + the date's effective goal. Reading goals here is
+	// deliberate (design D4): the comparison is the endpoint's purpose. It
+	// still never writes one — applying a suggestion is the override PUT.
+	fuelPlanSvc := fuelplan.NewService(workoutsRepo, bodyWeightSvc, goalsResolver)
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
 	// (add-meal-workout-link).
@@ -474,12 +480,17 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	garminsyncstatus.NewHandlers(syncStatusSvc, garminEnabled).Register(api)
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	expenditure.NewHandlers(expenditureSvc, cfg.DefaultUserTZ, logger).Register(api)
+	fuelplan.NewHandlers(fuelPlanSvc, cfg.DefaultUserTZ, logger).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
 		recoveryMetricsRepo, fitnessMetricsRepo, hydrationBalanceRepo,
 		coachMemoryRepo, wellness.NewRepo(pool), supplements.NewRepo(pool),
 	)
+	// The morning check-in reads today's + tomorrow's fuel tier without a second
+	// call. Optional-setter (the summarySvc.SetBodyWeightRepo pattern) rather
+	// than widening an already-wide constructor.
+	dailyCtxSvc.SetFuelPlanProvider(fuelPlanSvc)
 	dailycontext.NewHandlers(dailyCtxSvc, cfg.DefaultUserTZ, logger).Register(api)
 	coachCtxSvc := coachcontext.NewService(workoutsRepo, fitnessMetricsRepo, recoveryMetricsRepo, phasesRepo, athleteConfigRepo, bodyWeightRepo)
 	// Cross-inject multisport so the recent-load by_sport summary decomposes a

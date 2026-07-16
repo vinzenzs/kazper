@@ -5344,6 +5344,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/nutrition/fuel-plan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Classifies each day in the window by its PLANNED load and suggests a matching carbohydrate target — \"fuel for the work required\". Tier from total planned TSS: ` + "`" + `rest` + "`" + ` (no planned session) / ` + "`" + `easy` + "`" + ` (\u003c 60) / ` + "`" + `moderate` + "`" + ` (60–150) / ` + "`" + `heavy` + "`" + ` (\u003e 150, or any single planned session of 150 min or more — a long endurance day is glycogen-expensive at any intensity). Tiers map to a fixed 3 / 5 / 7 / 9 g/kg ladder, multiplied by the latest smoothed body-weight trend (echoed with its date) to give ` + "`" + `suggested_carbs_g` + "`" + `, reported beside that date's currently-effective goal carbs (override \u003e phase template \u003e default) and the ` + "`" + `delta_g` + "`" + ` between them. Days past the last materialized plan day carry ` + "`" + `plan_missing: true` + "`" + ` — a rest suggestion and a no-plan-data suggestion must not look alike. No weight data degrades to tiers and g/kg without gram targets (` + "`" + `reason: \"weight_missing\"` + "`" + `). Window defaults to today plus six days, capped at 14. SUGGESTIONS ONLY: compute-on-read, persists nothing, and never writes a goal or override — applying a day's number is the existing per-date goal-override PUT.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Periodized carb targets from planned training load",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD (defaults to today)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD (defaults to from + 6 days); max 14-day span",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IANA timezone (defaults to DEFAULT_USER_TZ)",
+                        "name": "tz",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/fuelplan.Plan"
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large | tz_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/performance/pmc": {
             "get": {
                 "security": [
@@ -12420,6 +12472,14 @@ const docTemplate = `{
                 "fitness": {
                     "$ref": "#/definitions/fitnessmetrics.Snapshot"
                 },
+                "fuel_plan": {
+                    "description": "Today's and tomorrow's planned-load classification + suggested carb target,\nbeside the goals data so the morning check-in reads it without another\ncall. Omitted entirely when nothing is computable. Suggestions only — the\nfull week and the inputs behind each tier stay behind /nutrition/fuel-plan,\nand applying a number is the goal-override PUT (add-periodized-fuel-targets).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dailycontext.FuelPlanBlock"
+                        }
+                    ]
+                },
                 "goal_override": {
                     "$ref": "#/definitions/dailycontext.GoalOverrideBlock"
                 },
@@ -12499,6 +12559,37 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dailycontext.WorkoutLite"
                     }
+                }
+            }
+        },
+        "dailycontext.FuelPlanBlock": {
+            "type": "object",
+            "properties": {
+                "today": {
+                    "$ref": "#/definitions/dailycontext.FuelPlanDay"
+                },
+                "tomorrow": {
+                    "$ref": "#/definitions/dailycontext.FuelPlanDay"
+                }
+            }
+        },
+        "dailycontext.FuelPlanDay": {
+            "type": "object",
+            "properties": {
+                "carbs_g_per_kg": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "plan_missing": {
+                    "type": "boolean"
+                },
+                "suggested_carbs_g": {
+                    "type": "number"
+                },
+                "tier": {
+                    "type": "string"
                 }
             }
         },
@@ -13271,6 +13362,110 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "vo2max_running": {
+                    "type": "number"
+                }
+            }
+        },
+        "fuelplan.Day": {
+            "type": "object",
+            "properties": {
+                "carbs_g_per_kg": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "delta_g": {
+                    "type": "number"
+                },
+                "goal_carbs_g": {
+                    "$ref": "#/definitions/goals.Range"
+                },
+                "plan_missing": {
+                    "type": "boolean"
+                },
+                "planned_tss_total": {
+                    "type": "number"
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/fuelplan.Session"
+                    }
+                },
+                "suggested_carbs_g": {
+                    "type": "number"
+                },
+                "tier": {
+                    "$ref": "#/definitions/fuelplan.Tier"
+                }
+            }
+        },
+        "fuelplan.Plan": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/fuelplan.Day"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                },
+                "weight": {
+                    "$ref": "#/definitions/fuelplan.Weight"
+                }
+            }
+        },
+        "fuelplan.Session": {
+            "type": "object",
+            "properties": {
+                "planned_duration_min": {
+                    "type": "number"
+                },
+                "planned_tss": {
+                    "type": "number"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "fuelplan.Tier": {
+            "type": "string",
+            "enum": [
+                "rest",
+                "easy",
+                "moderate",
+                "heavy"
+            ],
+            "x-enum-varnames": [
+                "TierRest",
+                "TierEasy",
+                "TierModerate",
+                "TierHeavy"
+            ]
+        },
+        "fuelplan.Weight": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "trend_kg": {
                     "type": "number"
                 }
             }

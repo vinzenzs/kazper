@@ -831,6 +831,15 @@ definitions:
         type: string
       fitness:
         $ref: '#/definitions/fitnessmetrics.Snapshot'
+      fuel_plan:
+        allOf:
+        - $ref: '#/definitions/dailycontext.FuelPlanBlock'
+        description: |-
+          Today's and tomorrow's planned-load classification + suggested carb target,
+          beside the goals data so the morning check-in reads it without another
+          call. Omitted entirely when nothing is computable. Suggestions only — the
+          full week and the inputs behind each tier stay behind /nutrition/fuel-plan,
+          and applying a number is the goal-override PUT (add-periodized-fuel-targets).
       goal_override:
         $ref: '#/definitions/dailycontext.GoalOverrideBlock'
       hydration:
@@ -892,6 +901,26 @@ definitions:
         items:
           $ref: '#/definitions/dailycontext.WorkoutLite'
         type: array
+    type: object
+  dailycontext.FuelPlanBlock:
+    properties:
+      today:
+        $ref: '#/definitions/dailycontext.FuelPlanDay'
+      tomorrow:
+        $ref: '#/definitions/dailycontext.FuelPlanDay'
+    type: object
+  dailycontext.FuelPlanDay:
+    properties:
+      carbs_g_per_kg:
+        type: number
+      date:
+        type: string
+      plan_missing:
+        type: boolean
+      suggested_carbs_g:
+        type: number
+      tier:
+        type: string
     type: object
   dailycontext.GoalOverrideBlock:
     properties:
@@ -1396,6 +1425,76 @@ definitions:
       vo2max_cycling:
         type: number
       vo2max_running:
+        type: number
+    type: object
+  fuelplan.Day:
+    properties:
+      carbs_g_per_kg:
+        type: number
+      date:
+        type: string
+      delta_g:
+        type: number
+      goal_carbs_g:
+        $ref: '#/definitions/goals.Range'
+      plan_missing:
+        type: boolean
+      planned_tss_total:
+        type: number
+      sessions:
+        items:
+          $ref: '#/definitions/fuelplan.Session'
+        type: array
+      suggested_carbs_g:
+        type: number
+      tier:
+        $ref: '#/definitions/fuelplan.Tier'
+    type: object
+  fuelplan.Plan:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/fuelplan.Day'
+        type: array
+      from:
+        type: string
+      reason:
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+      weight:
+        $ref: '#/definitions/fuelplan.Weight'
+    type: object
+  fuelplan.Session:
+    properties:
+      planned_duration_min:
+        type: number
+      planned_tss:
+        type: number
+      sport:
+        type: string
+      workout_id:
+        type: string
+    type: object
+  fuelplan.Tier:
+    enum:
+    - rest
+    - easy
+    - moderate
+    - heavy
+    type: string
+    x-enum-varnames:
+    - TierRest
+    - TierEasy
+    - TierModerate
+    - TierHeavy
+  fuelplan.Weight:
+    properties:
+      date:
+        type: string
+      trend_kg:
         type: number
     type: object
   garmincontrol.scheduleMultisportRequest:
@@ -7999,6 +8098,54 @@ paths:
       security:
       - BearerAuth: []
       summary: Adaptive energy expenditure (TDEE) from energy balance
+      tags:
+      - nutrition
+  /nutrition/fuel-plan:
+    get:
+      description: 'Classifies each day in the window by its PLANNED load and suggests
+        a matching carbohydrate target — "fuel for the work required". Tier from total
+        planned TSS: `rest` (no planned session) / `easy` (< 60) / `moderate` (60–150)
+        / `heavy` (> 150, or any single planned session of 150 min or more — a long
+        endurance day is glycogen-expensive at any intensity). Tiers map to a fixed
+        3 / 5 / 7 / 9 g/kg ladder, multiplied by the latest smoothed body-weight trend
+        (echoed with its date) to give `suggested_carbs_g`, reported beside that date''s
+        currently-effective goal carbs (override > phase template > default) and the
+        `delta_g` between them. Days past the last materialized plan day carry `plan_missing:
+        true` — a rest suggestion and a no-plan-data suggestion must not look alike.
+        No weight data degrades to tiers and g/kg without gram targets (`reason: "weight_missing"`).
+        Window defaults to today plus six days, capped at 14. SUGGESTIONS ONLY: compute-on-read,
+        persists nothing, and never writes a goal or override — applying a day''s
+        number is the existing per-date goal-override PUT.'
+      parameters:
+      - description: Inclusive start date YYYY-MM-DD (defaults to today)
+        in: query
+        name: from
+        type: string
+      - description: Inclusive end date YYYY-MM-DD (defaults to from + 6 days); max
+          14-day span
+        in: query
+        name: to
+        type: string
+      - description: IANA timezone (defaults to DEFAULT_USER_TZ)
+        in: query
+        name: tz
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fuelplan.Plan'
+        "400":
+          description: range_required | date_invalid | range_invalid | range_too_large
+            | tz_invalid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Periodized carb targets from planned training load
       tags:
       - nutrition
   /performance/pmc:

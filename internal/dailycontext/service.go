@@ -11,6 +11,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/bodyweight"
 	"github.com/vinzenzs/kazper/internal/coachmemory"
 	"github.com/vinzenzs/kazper/internal/fitnessmetrics"
+	"github.com/vinzenzs/kazper/internal/fuelplan"
 	"github.com/vinzenzs/kazper/internal/goals"
 	"github.com/vinzenzs/kazper/internal/hydration"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
@@ -41,7 +42,22 @@ type Service struct {
 	wellnessRepo      *wellness.Repo
 	supplementsRepo   *supplements.Repo
 	summarySvc        *summary.Service
+
+	// fuelPlanSvc is optional, wired via SetFuelPlanProvider (the
+	// summarySvc.SetBodyWeightRepo pattern) rather than widening the already-wide
+	// constructor. nil leaves the fuel_plan block out entirely.
+	fuelPlanSvc FuelPlanProvider
 }
+
+// FuelPlanProvider is the narrow read behind the fuel_plan block: classify a
+// date window. Kept an interface so dailycontext stays testable without the
+// planned-workouts / weight-trend / goals stack behind it.
+type FuelPlanProvider interface {
+	PlanFor(ctx context.Context, p fuelplan.Params) (*fuelplan.Plan, error)
+}
+
+// SetFuelPlanProvider enables the today+tomorrow fuel_plan block.
+func (s *Service) SetFuelPlanProvider(p FuelPlanProvider) { s.fuelPlanSvc = p }
 
 // NewService wires all dependencies. Order matches the BuildFor fetch order
 // for ease of mental mapping.
@@ -310,6 +326,29 @@ func (s *Service) BuildFor(ctx context.Context, date time.Time, loc *time.Locati
 		})
 	}
 
+	// Today's and tomorrow's fuel-plan classification. Best-effort by design
+	// (D5): a fuel-plan failure must not fail the whole check-in bundle, so the
+	// block is simply omitted — unlike the load-bearing reads above, which
+	// cancel the group.
+	if s.fuelPlanSvc != nil {
+		g.Go(func() error {
+			plan, err := s.fuelPlanSvc.PlanFor(gctx, fuelplan.Params{
+				From: date,
+				To:   date.AddDate(0, 0, 1),
+				Loc:  loc,
+			})
+			if err != nil || plan == nil || len(plan.Days) == 0 {
+				return nil // block omitted; the rest of the payload is unaffected
+			}
+			block := &FuelPlanBlock{Today: compactFuelDay(plan.Days[0])}
+			if len(plan.Days) > 1 {
+				block.Tomorrow = compactFuelDay(plan.Days[1])
+			}
+			out.FuelPlan = block
+			return nil
+		})
+	}
+
 	// Goal override on the date.
 	g.Go(func() error {
 		ov, err := s.goalOverridesRepo.GetOverride(gctx, date)
@@ -376,4 +415,15 @@ func roundGoals(g *goals.Goals) *goals.Goals {
 	out.PotassiumMg = round(g.PotassiumMg)
 	out.ZincMg = round(g.ZincMg)
 	return &out
+}
+
+// compactFuelDay trims a full fuel-plan day down to the check-in fields.
+func compactFuelDay(d fuelplan.Day) *FuelPlanDay {
+	return &FuelPlanDay{
+		Date:            d.Date,
+		Tier:            string(d.Tier),
+		CarbsGPerKg:     d.CarbsGPerKg,
+		SuggestedCarbsG: d.SuggestedCarbsG,
+		PlanMissing:     d.PlanMissing,
+	}
 }
