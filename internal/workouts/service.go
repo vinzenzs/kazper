@@ -34,6 +34,7 @@ var (
 	ErrSessionGroupInvalid    = errors.New("session_group_invalid")
 	ErrStatusInvalid          = errors.New("status_invalid")
 	ErrTrainingFocusInvalid   = errors.New("training_focus_invalid")
+	ErrEnvironmentInvalid     = errors.New("environment_invalid")
 	ErrSplitInvalid           = errors.New("split_invalid")
 	ErrSetInvalid             = errors.New("set_invalid")
 )
@@ -120,6 +121,7 @@ type CreateInput struct {
 	RPE             *int
 	GIDistressScore *int
 	TrainingFocus   *string
+	Environment     *string
 	DistanceM       *float64
 	AvgPowerW       *int
 	TemperatureC    *float64
@@ -330,10 +332,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Workout, error) {
 // pointer sets, nil + ClearX=true clears to NULL, nil + ClearX=false leaves
 // the field unchanged. The handler decodes JSON `null` into ClearX=true.
 type PatchInput struct {
-	Name                 *string
-	Notes                *string
-	KcalBurned           *float64
-	AvgHR                *int
+	Name       *string
+	Notes      *string
+	KcalBurned *float64
+	AvgHR      *int
 	// TSS tri-state: non-nil pointer sets tss (→ tss_source='manual'), nil +
 	// ClearTSS=true clears both tss and tss_source, nil + false leaves unchanged.
 	// PATCH never derives. The handler decodes JSON null into ClearTSS.
@@ -349,6 +351,11 @@ type PatchInput struct {
 	// into ClearTrainingFocus=true.
 	TrainingFocus      *string
 	ClearTrainingFocus bool
+
+	// Environment tri-state, same shape. The handler maps both JSON null and
+	// the empty-string sentinel onto ClearEnvironment.
+	Environment      *string
+	ClearEnvironment bool
 
 	DistanceM         *float64
 	ClearDistanceM    bool
@@ -393,6 +400,9 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 	if in.TrainingFocus != nil && !ValidTrainingFocus(*in.TrainingFocus) {
 		return nil, ErrTrainingFocusInvalid
 	}
+	if in.Environment != nil && !ValidEnvironment(*in.Environment) {
+		return nil, ErrEnvironmentInvalid
+	}
 	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
 		return nil, err
 	}
@@ -412,6 +422,8 @@ func (s *Service) Patch(ctx context.Context, id uuid.UUID, in PatchInput) (*Work
 		ClearGIDistressScore: in.ClearGIDistressScore,
 		TrainingFocus:        in.TrainingFocus,
 		ClearTrainingFocus:   in.ClearTrainingFocus,
+		Environment:          in.Environment,
+		ClearEnvironment:     in.ClearEnvironment,
 		DistanceM:            in.DistanceM,
 		ClearDistanceM:       in.ClearDistanceM,
 		AvgPowerW:            in.AvgPowerW,
@@ -579,6 +591,10 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 	if err != nil {
 		return nil, err
 	}
+	env, err := buildEnvironment(in.Environment)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateIngestionMetrics(in.DistanceM, in.AvgPowerW, in.TemperatureC, in.SweatLossML, in.SessionGroup); err != nil {
 		return nil, err
 	}
@@ -607,6 +623,7 @@ func (s *Service) buildWorkout(ctx context.Context, in CreateInput) (*Workout, e
 		RPE:              in.RPE,
 		GIDistressScore:  in.GIDistressScore,
 		TrainingFocus:    tf,
+		Environment:      env,
 		DistanceM:        in.DistanceM,
 		AvgPowerW:        in.AvgPowerW,
 		TemperatureC:     in.TemperatureC,
@@ -848,6 +865,20 @@ func validateGIDistressScore(v *int) error {
 		return ErrGIDistressScoreInvalid
 	}
 	return nil
+}
+
+// buildEnvironment validates an optional environment string and converts it to
+// the typed enum pointer. nil in → nil out (not stated); a non-nil value must be
+// one of the closed set or ErrEnvironmentInvalid is returned.
+func buildEnvironment(s *string) (*Environment, error) {
+	if s == nil {
+		return nil, nil
+	}
+	e, err := ParseEnvironment(*s)
+	if err != nil {
+		return nil, ErrEnvironmentInvalid
+	}
+	return &e, nil
 }
 
 // buildTrainingFocus validates an optional training_focus string and converts it

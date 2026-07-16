@@ -9859,7 +9859,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid",
+                        "description": "source_invalid | sport_invalid | window_invalid | started_at_too_far_future | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid | environment_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid | set_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -10487,7 +10487,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `, ` + "`" + `rpe` + "`" + `, ` + "`" + `gi_distress_score` + "`" + `, ` + "`" + `training_focus` + "`" + `, ` + "`" + `distance_m` + "`" + `, ` + "`" + `avg_power_w` + "`" + `, ` + "`" + `temperature_c` + "`" + `, ` + "`" + `sweat_loss_ml` + "`" + `, ` + "`" + `session_group` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear.",
+                "description": "Accepts ` + "`" + `name` + "`" + `, ` + "`" + `notes` + "`" + `, ` + "`" + `kcal_burned` + "`" + `, ` + "`" + `avg_hr` + "`" + `, ` + "`" + `tss` + "`" + `, ` + "`" + `rpe` + "`" + `, ` + "`" + `gi_distress_score` + "`" + `, ` + "`" + `training_focus` + "`" + `, ` + "`" + `environment` + "`" + `, ` + "`" + `distance_m` + "`" + `, ` + "`" + `avg_power_w` + "`" + `, ` + "`" + `temperature_c` + "`" + `, ` + "`" + `sweat_loss_ml` + "`" + `, ` + "`" + `session_group` + "`" + `. ` + "`" + `source` + "`" + `, ` + "`" + `external_id` + "`" + `, ` + "`" + `sport` + "`" + `, ` + "`" + `started_at` + "`" + `, ` + "`" + `ended_at` + "`" + ` are immutable — delete and re-create if those are wrong. Tri-state on the nullable fields: omit to leave unchanged, value to set, JSON null to clear (` + "`" + `environment` + "`" + ` also accepts the empty string as a clear).",
                 "consumes": [
                     "application/json"
                 ],
@@ -10525,7 +10525,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
+                        "description": "field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | environment_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid | session_group_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -17154,6 +17154,17 @@ const docTemplate = `{
                 }
             }
         },
+        "workouts.Environment": {
+            "type": "string",
+            "enum": [
+                "indoor",
+                "outdoor"
+            ],
+            "x-enum-varnames": [
+                "EnvironmentIndoor",
+                "EnvironmentOutdoor"
+            ]
+        },
         "workouts.MissedSession": {
             "type": "object",
             "properties": {
@@ -17372,6 +17383,14 @@ const docTemplate = `{
                 },
                 "ended_at": {
                     "type": "string"
+                },
+                "environment": {
+                    "description": "Environment states whether ambient weather applied (indoor/outdoor).\nNullable — NULL/absent means \"not stated\". Derived by the bridge from the\nGarmin activity type, settable manually everywhere.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/workouts.Environment"
+                        }
+                    ]
                 },
                 "external_id": {
                     "type": "string"

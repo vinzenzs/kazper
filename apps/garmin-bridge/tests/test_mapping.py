@@ -420,6 +420,83 @@ def test_sport_typekey_collapses_to_enum():
         assert got and got[0]["sport"] == expect, f"{type_key} -> {got[0]['sport']} (want {expect})"
 
 
+def test_environment_derived_from_typekey():
+    # The field answers "did ambient weather apply", not "was there a roof":
+    # a pool swim is indoor, open water is outdoor.
+    cases = {
+        "treadmill_running": "indoor",
+        "virtual_ride": "indoor",
+        "indoor_cycling": "indoor",
+        "indoor_rowing": "indoor",
+        "lap_swimming": "indoor",
+        "strength_training": "indoor",
+        "trail_running": "outdoor",
+        "gravel_cycling": "outdoor",
+        "mountain_biking": "outdoor",
+        "open_water_swimming": "outdoor",
+    }
+    for i, (type_key, expect) in enumerate(cases.items()):
+        raw = {"activities": [{
+            "activityId": 9500 + i,
+            "startTimeGMT": "2026-06-12 06:00:00",
+            "duration": 1800.0,
+            "activityType": {"typeKey": type_key},
+        }]}
+        got = mapping.map_workouts(raw)
+        assert got and got[0]["environment"] == expect, (
+            f"{type_key} -> {got[0].get('environment')} (want {expect})"
+        )
+
+
+def test_environment_omitted_for_types_that_do_not_state_it():
+    # A bare "cycling" could be a road ride or rollers; "golf" has no slot at
+    # all. Both omit the key so the backend stores null ("not stated") — a
+    # guessed label would silently poison acclimatization and heat analytics.
+    for i, type_key in enumerate(["cycling", "swimming", "running", "golf", "totally_made_up"]):
+        raw = {"activities": [{
+            "activityId": 9600 + i,
+            "startTimeGMT": "2026-06-12 06:00:00",
+            "duration": 1800.0,
+            "activityType": {"typeKey": type_key},
+        }]}
+        got = mapping.map_workouts(raw)
+        assert got, f"{type_key} must still sync"
+        assert "environment" not in got[0], f"{type_key} must not state an environment"
+
+
+def test_unknown_type_still_syncs_without_environment():
+    # The directPower posture: an unrecognized key can never fail the mapping.
+    raw = {
+        "activities": [
+            {
+                "activityId": 5,
+                "activityType": {"typeKey": "underwater_basket_weaving"},
+                "startTimeGMT": "2026-06-12 10:00:00",
+                "duration": 600.0,
+            }
+        ]
+    }
+    workouts = mapping.map_workouts(raw)
+    assert len(workouts) == 1
+    assert workouts[0]["sport"] == "other"
+    assert "environment" not in workouts[0]
+
+
+def test_missing_activity_type_does_not_crash_environment_mapping():
+    raw = {
+        "activities": [
+            {
+                "activityId": 6,
+                "startTimeGMT": "2026-06-12 10:00:00",
+                "duration": 600.0,
+            }
+        ]
+    }
+    workouts = mapping.map_workouts(raw)
+    assert len(workouts) == 1
+    assert "environment" not in workouts[0]
+
+
 def test_workouts_mapping(raw_day):
     workouts = mapping.map_workouts(raw_day)
     assert len(workouts) == 3

@@ -25,7 +25,7 @@ func NewRepo(q store.Querier) *Repo {
 	return &Repo{q: q}
 }
 
-const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus, tss_source, variability_index, efficiency_factor, decoupling_pct`
+const selectCols = `id, external_id, source, sport, status, name, started_at, ended_at, kcal_burned, avg_hr, tss, rpe, gi_distress_score, distance_m, avg_power_w, temperature_c, sweat_loss_ml, session_group, template_id, plan_slot_id, garmin_workout_id, garmin_schedule_id, needs_link, notes, created_at, updated_at, elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor, avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te, secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5, humidity_pct, wind_speed_mps, multisport_template_id, training_focus, tss_source, variability_index, efficiency_factor, decoupling_pct, environment`
 
 // Upsert inserts a new workout row, or updates an existing row when
 // external_id collides with the partial unique index. Returns `created=true`
@@ -62,7 +62,8 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             elevation_gain_m, elevation_loss_m, normalized_power_w, intensity_factor,
             avg_cadence, avg_stride_m, max_hr, aerobic_te, anaerobic_te,
             secs_in_zone_1, secs_in_zone_2, secs_in_zone_3, secs_in_zone_4, secs_in_zone_5,
-            humidity_pct, wind_speed_mps, training_focus, tss_source
+            humidity_pct, wind_speed_mps, training_focus, tss_source,
+            environment
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7,
@@ -74,7 +75,8 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             $23, $24, $25, $26,
             $27, $28, $29, $30, $31,
             $32, $33, $34, $35, $36,
-            $37, $38, $39, $40
+            $37, $38, $39, $40,
+            $41
         )
         ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET
             source             = EXCLUDED.source,
@@ -112,7 +114,8 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
             humidity_pct       = EXCLUDED.humidity_pct,
             wind_speed_mps     = EXCLUDED.wind_speed_mps,
             training_focus     = EXCLUDED.training_focus,
-            tss_source         = EXCLUDED.tss_source
+            tss_source         = EXCLUDED.tss_source,
+            environment        = EXCLUDED.environment
         RETURNING id, created_at = $20 AS inserted
     `
 	row := r.q.QueryRow(ctx, q,
@@ -129,6 +132,7 @@ func (r *Repo) Upsert(ctx context.Context, w *Workout) (created bool, err error)
 		w.SecsInZone1, w.SecsInZone2, w.SecsInZone3, w.SecsInZone4, w.SecsInZone5,
 		w.HumidityPct, w.WindSpeedMPS, trainingFocusArg(w.TrainingFocus),
 		w.TSSSource,
+		environmentArg(w.Environment),
 	)
 	var (
 		returnedID uuid.UUID
@@ -509,6 +513,12 @@ type PatchParams struct {
 	TrainingFocus      *string
 	ClearTrainingFocus bool
 
+	// Environment shares the same tri-state. The handler maps BOTH JSON null
+	// (this endpoint's idiom for every nullable field) and the empty string
+	// (the sentinel the spec names) onto ClearEnvironment.
+	Environment      *string
+	ClearEnvironment bool
+
 	// Ingestion metrics share the same tri-state as the rehearsal signals:
 	// non-nil pointer sets, nil + ClearX=true clears to NULL, nil +
 	// ClearX=false leaves unchanged.
@@ -533,6 +543,7 @@ func (p PatchParams) HasUpdates() bool {
 		p.RPE != nil || p.ClearRPE ||
 		p.GIDistressScore != nil || p.ClearGIDistressScore ||
 		p.TrainingFocus != nil || p.ClearTrainingFocus ||
+		p.Environment != nil || p.ClearEnvironment ||
 		p.DistanceM != nil || p.ClearDistanceM ||
 		p.AvgPowerW != nil || p.ClearAvgPowerW ||
 		p.TemperatureC != nil || p.ClearTemperatureC ||
@@ -596,6 +607,13 @@ func (r *Repo) Patch(ctx context.Context, id uuid.UUID, p PatchParams) error {
 	} else if p.TrainingFocus != nil {
 		sets = append(sets, fmt.Sprintf("training_focus = $%d", next))
 		args = append(args, *p.TrainingFocus)
+		next++
+	}
+	if p.ClearEnvironment {
+		sets = append(sets, "environment = NULL")
+	} else if p.Environment != nil {
+		sets = append(sets, fmt.Sprintf("environment = $%d", next))
+		args = append(args, *p.Environment)
 		next++
 	}
 	if p.ClearDistanceM {
@@ -948,6 +966,16 @@ func (r *Repo) GetByIDWithChildren(ctx context.Context, id uuid.UUID) (*Workout,
 // trainingFocusArg converts the typed nullable enum pointer into the *string the
 // driver encodes (nil → SQL NULL). Keeps the typed field on Workout while letting
 // pgx bind it as plain TEXT.
+// environmentArg unwraps the enum to the *string the driver wants; nil stays
+// nil so an unstated environment writes NULL.
+func environmentArg(e *Environment) *string {
+	if e == nil {
+		return nil
+	}
+	s := string(*e)
+	return &s
+}
+
 func trainingFocusArg(tf *TrainingFocus) *string {
 	if tf == nil {
 		return nil
@@ -967,6 +995,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		sportStr      string
 		statusStr     string
 		trainingFocus *string
+		environment   *string
 	)
 	err := s.Scan(
 		&w.ID, &w.ExternalID, &sourceStr, &sportStr, &statusStr, &w.Name,
@@ -987,6 +1016,7 @@ func scanWorkout(s scanner) (*Workout, error) {
 		&trainingFocus,
 		&w.TSSSource,
 		&w.VariabilityIndex, &w.EfficiencyFactor, &w.DecouplingPct,
+		&environment,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1000,6 +1030,10 @@ func scanWorkout(s scanner) (*Workout, error) {
 	if trainingFocus != nil {
 		tf := TrainingFocus(*trainingFocus)
 		w.TrainingFocus = &tf
+	}
+	if environment != nil {
+		e := Environment(*environment)
+		w.Environment = &e
 	}
 	return &w, nil
 }

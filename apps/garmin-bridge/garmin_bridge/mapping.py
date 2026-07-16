@@ -74,6 +74,52 @@ _SPORT_BY_TYPEKEY = {
 }
 
 
+# Garmin activityType.typeKey → the workout `environment` enum
+# (indoor/outdoor). The field answers "did ambient weather apply to this
+# session", NOT "was there a roof" — which is why lap/pool swimming is indoor
+# while open-water swimming is outdoor.
+#
+# Deliberately partial: only keys whose type *states* the answer appear. A bare
+# "cycling" could be a road ride or rollers, so it is absent and the workout's
+# environment stays null ("not stated") rather than being guessed — a wrong
+# label would silently poison acclimatization and the heat analytics, while a
+# null is honest and PATCHable. An unknown key can never fail the sync.
+_ENVIRONMENT_BY_TYPEKEY = {
+    # indoor — no ambient weather
+    "treadmill_running": "indoor",
+    "indoor_running": "indoor",
+    "virtual_run": "indoor",
+    "indoor_cycling": "indoor",
+    "virtual_ride": "indoor",
+    "recumbent_cycling": "indoor",
+    "indoor_hand_cycling": "indoor",
+    "indoor_cardio": "indoor",
+    "indoor_rowing": "indoor",
+    "lap_swimming": "indoor",
+    "strength_training": "indoor",
+    "yoga": "indoor",
+    "mobility": "indoor",
+    # outdoor — ambient weather applies
+    "trail_running": "outdoor",
+    "street_running": "outdoor",
+    "track_running": "outdoor",
+    "obstacle_run": "outdoor",
+    "ultra_run": "outdoor",
+    "road_biking": "outdoor",
+    "mountain_biking": "outdoor",
+    "gravel_cycling": "outdoor",
+    "cyclocross": "outdoor",
+    "downhill_biking": "outdoor",
+    "track_cycling": "outdoor",
+    "bmx": "outdoor",
+    "e_bike_mountain": "outdoor",
+    "e_bike_fitness": "outdoor",
+    "enduro_mtb": "outdoor",
+    "e_enduro_mtb": "outdoor",
+    "open_water_swimming": "outdoor",
+}
+
+
 # --- safe extraction helpers --------------------------------------------
 
 
@@ -366,6 +412,9 @@ def map_workouts(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "external_id": f"garmin:{activity_id}",
                 "source": "garmin",
                 "sport": _SPORT_BY_TYPEKEY.get(type_key, "other"),
+                # Absent for a type that doesn't state it — _prune drops the key
+                # and the backend stores null ("not stated"), never a guess.
+                "environment": _ENVIRONMENT_BY_TYPEKEY.get(type_key),
                 "status": "completed",
                 "name": act.get("activityName"),
                 "started_at": started,

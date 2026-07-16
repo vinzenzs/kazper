@@ -116,6 +116,34 @@ func ParseTrainingFocus(s string) (TrainingFocus, error) {
 	return TrainingFocus(s), nil
 }
 
+// Environment states whether ambient weather applied to a session. Nullable on
+// a workout: null means "not stated", never "outdoor by default" — downstream
+// heat logic treats an unstated environment as assumed-outdoor and must say so.
+//
+// Note the question it answers is "did ambient weather apply", not "was there a
+// roof": a pool swim is EnvironmentIndoor.
+type Environment string
+
+const (
+	EnvironmentIndoor  Environment = "indoor"
+	EnvironmentOutdoor Environment = "outdoor"
+)
+
+func ValidEnvironment(s string) bool {
+	switch Environment(s) {
+	case EnvironmentIndoor, EnvironmentOutdoor:
+		return true
+	}
+	return false
+}
+
+func ParseEnvironment(s string) (Environment, error) {
+	if !ValidEnvironment(s) {
+		return "", fmt.Errorf("invalid environment %q", s)
+	}
+	return Environment(s), nil
+}
+
 // Workout mirrors a workouts row.
 type Workout struct {
 	ID         uuid.UUID `json:"id"`
@@ -146,6 +174,11 @@ type Workout struct {
 	// Trainingsbereiche). Nullable — NULL/absent means "unclassified". Declared
 	// intent, set by the user/coach; never derived from the secs_in_zone_* actuals.
 	TrainingFocus *TrainingFocus `json:"training_focus,omitempty"`
+
+	// Environment states whether ambient weather applied (indoor/outdoor).
+	// Nullable — NULL/absent means "not stated". Derived by the bridge from the
+	// Garmin activity type, settable manually everywhere.
+	Environment *Environment `json:"environment,omitempty"`
 
 	// Source-agnostic ingestion metrics — all nullable, populated by whatever
 	// writer measured them (Garmin today). distance in metres, average power in

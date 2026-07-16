@@ -3987,6 +3987,14 @@ definitions:
       missed:
         type: integer
     type: object
+  workouts.Environment:
+    enum:
+    - indoor
+    - outdoor
+    type: string
+    x-enum-varnames:
+    - EnvironmentIndoor
+    - EnvironmentOutdoor
   workouts.MissedSession:
     properties:
       date:
@@ -4155,6 +4163,13 @@ definitions:
         type: number
       ended_at:
         type: string
+      environment:
+        allOf:
+        - $ref: '#/definitions/workouts.Environment'
+        description: |-
+          Environment states whether ambient weather applied (indoor/outdoor).
+          Nullable — NULL/absent means "not stated". Derived by the bridge from the
+          Garmin activity type, settable manually everywhere.
       external_id:
         type: string
       garmin_schedule_id:
@@ -11281,8 +11296,9 @@ paths:
         "400":
           description: source_invalid | sport_invalid | window_invalid | started_at_too_far_future
             | kcal_burned_invalid | avg_hr_invalid | tss_invalid | training_focus_invalid
-            | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
-            | session_group_invalid | status_invalid | split_invalid | set_invalid
+            | environment_invalid | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid
+            | sweat_loss_ml_invalid | session_group_invalid | status_invalid | split_invalid
+            | set_invalid
           schema:
             additionalProperties:
               type: string
@@ -11347,11 +11363,12 @@ paths:
       consumes:
       - application/json
       description: 'Accepts `name`, `notes`, `kcal_burned`, `avg_hr`, `tss`, `rpe`,
-        `gi_distress_score`, `training_focus`, `distance_m`, `avg_power_w`, `temperature_c`,
-        `sweat_loss_ml`, `session_group`. `source`, `external_id`, `sport`, `started_at`,
-        `ended_at` are immutable — delete and re-create if those are wrong. Tri-state
-        on the nullable fields: omit to leave unchanged, value to set, JSON null to
-        clear.'
+        `gi_distress_score`, `training_focus`, `environment`, `distance_m`, `avg_power_w`,
+        `temperature_c`, `sweat_loss_ml`, `session_group`. `source`, `external_id`,
+        `sport`, `started_at`, `ended_at` are immutable — delete and re-create if
+        those are wrong. Tri-state on the nullable fields: omit to leave unchanged,
+        value to set, JSON null to clear (`environment` also accepts the empty string
+        as a clear).'
       parameters:
       - description: Workout UUID
         in: path
@@ -11374,8 +11391,8 @@ paths:
             $ref: '#/definitions/workouts.Workout'
         "400":
           description: field_immutable | kcal_burned_invalid | avg_hr_invalid | tss_invalid
-            | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | distance_m_invalid
-            | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
+            | rpe_invalid | gi_distress_score_invalid | training_focus_invalid | environment_invalid
+            | distance_m_invalid | avg_power_w_invalid | temperature_c_invalid | sweat_loss_ml_invalid
             | session_group_invalid
           schema:
             additionalProperties:
