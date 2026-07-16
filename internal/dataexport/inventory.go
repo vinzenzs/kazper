@@ -63,6 +63,7 @@ var exportedTables = []string{
 	"coach_memory",
 	"wellness_entries",
 	"supplement_entries",
+	"location_periods",
 }
 
 // excludedTables lists tables deliberately kept out of the export: secrets,

@@ -4395,6 +4395,240 @@ const docTemplate = `{
                 }
             }
         },
+        "/locations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every period intersecting ` + "`" + `[from, to]` + "`" + ` (inclusive) ascending by ` + "`" + `start_date` + "`" + `. Overlap, not containment: a camp starting before the window and ending inside it is still returned. ` + "`" + `200` + "`" + ` with an empty array when none. Range capped at 400 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locations"
+                ],
+                "summary": "List location periods overlapping a window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive start date YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive end date YYYY-MM-DD; max 400-day span",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"locations\\\": [Period]}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "range_required | date_invalid | range_invalid | range_too_large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records where the athlete is over an inclusive date range, so weather/heat reads for those dates resolve to that place instead of home. ` + "`" + `name` + "`" + `, ` + "`" + `lat` + "`" + ` (-90..90) and ` + "`" + `lon` + "`" + ` (-180..180) are required — city-grade coordinates are all the forecast needs. Overlapping periods are ACCEPTED: a weekend trip nested inside a training camp resolves to the weekend for its dates (latest ` + "`" + `start_date` + "`" + ` wins). No PATCH — corrections and trip extensions are delete + re-log. ` + "`" + `Idempotency-Key` + "`" + ` is supported. Nothing downstream is precomputed, so sessions already scheduled in the range follow the trip automatically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locations"
+                ],
+                "summary": "Log a travel location period",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-supplied idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Location period",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/locations.createBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "{\\\"location\\\": Period}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "name_required | lat_lon_invalid | date_invalid | range_invalid | note_too_long | invalid_json",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/locations/resolve": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the one location a date resolves to: the covering travel period with the latest ` + "`" + `start_date` + "`" + ` (` + "`" + `source: \"travel\"` + "`" + `), else the configured home coordinates (` + "`" + `source: \"home\"` + "`" + `, ` + "`" + `name: \"home\"` + "`" + `), else ` + "`" + `404 location_unconfigured` + "`" + ` when neither exists. This is the SAME primitive every weather consumer reads, so when a heat forecast surprises, one call shows which location produced it — the endpoint can never disagree with behavior.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locations"
+                ],
+                "summary": "Resolve the effective location for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date YYYY-MM-DD (defaults to today in the server timezone)",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/locations.Resolved"
+                        }
+                    },
+                    "400": {
+                        "description": "date_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "location_unconfigured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/locations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locations"
+                ],
+                "summary": "Get a location period",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Location period UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{\\\"location\\\": Period}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a period. This is also the correction path — there is no PATCH; re-log with the right dates or coordinates.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locations"
+                ],
+                "summary": "Delete a location period",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Location period UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/macrocycles": {
             "get": {
                 "security": [
@@ -13965,6 +14199,60 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "locations.Resolved": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/locations.Source"
+                }
+            }
+        },
+        "locations.Source": {
+            "type": "string",
+            "enum": [
+                "travel",
+                "home"
+            ],
+            "x-enum-varnames": [
+                "SourceTravel",
+                "SourceHome"
+            ]
+        },
+        "locations.createBody": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "start_date": {
                     "type": "string"
                 }
             }

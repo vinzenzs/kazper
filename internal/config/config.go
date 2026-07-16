@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +55,14 @@ type Config struct {
 	// Basic auth is base64, not encryption — reach the dashboard over TLS/Tailscale.
 	WebUser     string `mapstructure:"WEB_USER"`
 	WebPassword string `mapstructure:"WEB_PASSWORD"`
+	// Home location for the weather/heat arc (add-location-periods). Optional and
+	// gated on BOTH halves — a one-sided pair is an operator mistake, so it fails
+	// fast at startup (the WEB_USER/WEB_PASSWORD pattern). Held as strings rather
+	// than floats deliberately: 0 is a real coordinate, so a numeric zero value
+	// could not be told apart from "unset". Home is quasi-static infrastructure
+	// like DEFAULT_USER_TZ — moving house is a config change, not a travel log.
+	HomeLat string `mapstructure:"HOME_LAT"`
+	HomeLon string `mapstructure:"HOME_LON"`
 	// GarminBridgeURL is the in-cluster base URL of the garmin-bridge (per
 	// add-garmin-mcp-login). When set, /garmin/login + /garmin/login/mfa proxy
 	// to it; when empty those endpoints return 503 garmin_disabled. Optional and
@@ -124,6 +133,10 @@ type Config struct {
 // envKeys lists every environment variable Config recognises. Listed
 // explicitly so missing values become validation errors rather than silently
 // resolving to zero, and so they show up in `--help`-style introspection.
+// ErrHomeLocationIncomplete is returned when exactly one half of the
+// HOME_LAT/HOME_LON pair is set — coordinates are meaningless alone.
+var ErrHomeLocationIncomplete = errors.New("HOME_LAT and HOME_LON must be set together")
+
 var envKeys = []string{
 	"DATABASE_URL",
 	"HTTP_ADDR",
@@ -134,6 +147,8 @@ var envKeys = []string{
 	"GARMIN_BRIDGE_URL",
 	"WEB_USER",
 	"WEB_PASSWORD",
+	"HOME_LAT",
+	"HOME_LON",
 	"FCM_PROJECT_ID",
 	"FCM_SERVICE_ACCOUNT_JSON",
 	"DEFAULT_USER_TZ",
@@ -247,6 +262,12 @@ func (c *Config) ValidateForServe() error {
 	if c.OFFTimeoutSeconds <= 0 {
 		return errors.New("OFF_TIMEOUT_SECONDS must be a positive integer")
 	}
+	// Home location is opt-in and gated on both halves; a partial or malformed
+	// pair is a likely operator mistake, so fail fast rather than silently
+	// resolving every weather read to "unconfigured".
+	if _, _, _, err := c.HomeLocation(); err != nil {
+		return err
+	}
 	if c.IdempotencyTTLHours <= 0 {
 		return errors.New("IDEMPOTENCY_TTL_HOURS must be a positive integer")
 	}
@@ -305,6 +326,31 @@ func (c *Config) FCMServiceAccount() ([]byte, error) {
 		return nil, errors.New("FCM_SERVICE_ACCOUNT_JSON is not a Google service-account credential")
 	}
 	return data, nil
+}
+
+// HomeLocation parses the configured home coordinates. Returns ok=false when
+// the pair is unset (a legitimate state — the athlete simply hasn't configured
+// home, and weather consumers degrade to `location_unconfigured` rather than
+// guessing a city). An error means the pair is set but malformed.
+//
+// ValidateForServe rejects a one-sided or malformed pair at startup, so a
+// booted server only ever sees "unset" or "valid here".
+func (c *Config) HomeLocation() (lat, lon float64, ok bool, err error) {
+	if c.HomeLat == "" && c.HomeLon == "" {
+		return 0, 0, false, nil
+	}
+	if (c.HomeLat == "") != (c.HomeLon == "") {
+		return 0, 0, false, ErrHomeLocationIncomplete
+	}
+	lat, err = strconv.ParseFloat(strings.TrimSpace(c.HomeLat), 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return 0, 0, false, fmt.Errorf("HOME_LAT %q invalid: must be a number in [-90, 90]", c.HomeLat)
+	}
+	lon, err = strconv.ParseFloat(strings.TrimSpace(c.HomeLon), 64)
+	if err != nil || lon < -180 || lon > 180 {
+		return 0, 0, false, fmt.Errorf("HOME_LON %q invalid: must be a number in [-180, 180]", c.HomeLon)
+	}
+	return lat, lon, true, nil
 }
 
 // GarminEncKey decodes GARMIN_TOKEN_ENC_KEY from base64 and verifies it is a

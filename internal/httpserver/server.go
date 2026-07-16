@@ -40,6 +40,7 @@ import (
 	"github.com/vinzenzs/kazper/internal/hydration"
 	"github.com/vinzenzs/kazper/internal/hydrationbalance"
 	"github.com/vinzenzs/kazper/internal/idempotency"
+	"github.com/vinzenzs/kazper/internal/locations"
 	"github.com/vinzenzs/kazper/internal/macrocycle"
 	"github.com/vinzenzs/kazper/internal/mealplan"
 	"github.com/vinzenzs/kazper/internal/meals"
@@ -268,6 +269,18 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	// deliberate (design D4): the comparison is the endpoint's purpose. It
 	// still never writes one — applying a suggestion is the override PUT.
 	fuelPlanSvc := fuelplan.NewService(workoutsRepo, bodyWeightSvc, goalsResolver)
+	// Where the athlete is on a date: travel periods over a configured home.
+	// ValidateForServe already rejected a one-sided or malformed HOME_LAT/
+	// HOME_LON pair, so an error here is impossible in a booted server; an
+	// unset pair is a legitimate state that resolves to location_unconfigured.
+	homeLat, homeLon, homeSet, err := cfg.HomeLocation()
+	if err != nil {
+		return err
+	}
+	locationsRepo := locations.NewRepo(pool)
+	locationsSvc := locations.NewService(locationsRepo, locations.Home{
+		Lat: homeLat, Lon: homeLon, Set: homeSet,
+	})
 	// Protein-distribution needs to resolve weight at the queried date. Same
 	// optional-setter pattern that meals/hydration use for SetWorkoutsRepo
 	// (add-meal-workout-link).
@@ -485,6 +498,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	energy.NewHandlers(energySvc, cfg.DefaultUserTZ).Register(api)
 	expenditure.NewHandlers(expenditureSvc, cfg.DefaultUserTZ, logger).Register(api)
 	fuelplan.NewHandlers(fuelPlanSvc, cfg.DefaultUserTZ, logger).Register(api)
+	locations.NewHandlers(locationsSvc, cfg.DefaultUserTZ).Register(api)
 	dailyCtxSvc := dailycontext.NewService(
 		summarySvc, hydrationRepo, workoutsRepo, workoutFuelRepo,
 		bodyWeightRepo, goalsOverridesRepo, phasesRepo,
